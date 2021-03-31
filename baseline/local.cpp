@@ -2,13 +2,14 @@
 #define DIALS_BASELINE_THRESHOLD_H
 
 #include <cmath>
+#include <cassert>
 // #include <dials/algorithms/image/filter/distance.h>
 // #include <dials/algorithms/image/filter/index_of_dispersion_filter.h>
 // #include <dials/algorithms/image/filter/mean_and_variance.h>
 // #include <dials/error.h>
 #include <iostream>
-#include <scitbx/array_family/ref_reductions.h>
-#include <scitbx/array_family/tiny_types.h>
+// #include <scitbx/array_family/ref_reductions.h>
+// #include <scitbx/array_family/tiny_types.h>
 #include <vector>
 
 namespace dials { namespace algorithms {
@@ -29,8 +30,10 @@ namespace dials { namespace algorithms {
             T y;
         };
 
-        DispersionThreshold(int2 image_size,
-                            int2 kernel_size,
+        DispersionThreshold(uint16_t image_size_x,
+                            uint16_t image_size_y,
+                            uint16_t kernel_size_x,
+                            uint16_t kernel_size_y,
                             double nsig_b,
                             double nsig_s,
                             double threshold,
@@ -42,10 +45,10 @@ namespace dials { namespace algorithms {
               threshold_(threshold),
               min_count_(min_count) {
             // Check the input
-            DIALS_ASSERT(threshold_ >= 0);
-            DIALS_ASSERT(nsig_b >= 0 && nsig_s >= 0);
-            DIALS_ASSERT(image_size.all_gt(0));
-            DIALS_ASSERT(kernel_size.all_gt(0));
+            assert(threshold_ >= 0);
+            assert(nsig_b >= 0 && nsig_s >= 0);
+            assert(image_size.all_gt(0));
+            assert(kernel_size.all_gt(0));
 
             // Ensure the min counts are valid
             std::size_t num_kernel =
@@ -53,7 +56,7 @@ namespace dials { namespace algorithms {
             if (min_count_ <= 0) {
                 min_count_ = num_kernel;
             } else {
-                DIALS_ASSERT(min_count_ <= num_kernel && min_count_ > 1);
+                assert(min_count_ <= num_kernel && min_count_ > 1);
             }
 
             // Allocate the buffer
@@ -256,12 +259,12 @@ namespace dials { namespace algorithms {
                        const af::const_ref<bool, af::c_grid<2>> &mask,
                        af::ref<bool, af::c_grid<2>> dst) {
             // check the input
-            DIALS_ASSERT(src.accessor().all_eq(image_size_));
-            DIALS_ASSERT(src.accessor().all_eq(mask.accessor()));
-            DIALS_ASSERT(src.accessor().all_eq(dst.accessor()));
+            assert(src.accessor().all_eq(image_size_));
+            assert(src.accessor().all_eq(mask.accessor()));
+            assert(src.accessor().all_eq(dst.accessor()));
 
             // Get the table
-            DIALS_ASSERT(sizeof(T) <= sizeof(double));
+            assert(sizeof(T) <= sizeof(double));
 
             // Cast the buffer to the table type
             af::ref<Data<T>> table(reinterpret_cast<Data<T> *>(&buffer_[0]),
@@ -287,13 +290,13 @@ namespace dials { namespace algorithms {
                               const af::const_ref<double, af::c_grid<2>> &gain,
                               af::ref<bool, af::c_grid<2>> dst) {
             // check the input
-            DIALS_ASSERT(src.accessor().all_eq(image_size_));
-            DIALS_ASSERT(src.accessor().all_eq(mask.accessor()));
-            DIALS_ASSERT(src.accessor().all_eq(gain.accessor()));
-            DIALS_ASSERT(src.accessor().all_eq(dst.accessor()));
+            assert(src.accessor().all_eq(image_size_));
+            assert(src.accessor().all_eq(mask.accessor()));
+            assert(src.accessor().all_eq(gain.accessor()));
+            assert(src.accessor().all_eq(dst.accessor()));
 
             // Get the table
-            DIALS_ASSERT(sizeof(T) <= sizeof(double));
+            assert(sizeof(T) <= sizeof(double));
 
             // Cast the buffer to the table type
             af::ref<Data<T>> table((Data<T> *)&buffer_[0], buffer_.size());
