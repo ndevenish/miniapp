@@ -33,16 +33,29 @@ if [[ -d ENV ]]; then
     fi
 fi
 
+# Load a module, with error catching
+load_module() {
+    MODULE="${1:?}"
+    if ! type module >/dev/null 2>&1 || [[ "$(module load "${MODULE}" 2>&1)" == *ERROR* ]]; then
+        return 1
+    fi
+    module load "${MODULE}"
+}
+
+conda=conda
+if command -v mamba > /dev/null || load_module mamba >/dev/null 2>&1; then
+    conda=mamba
+    module load mamba
+fi
+
 packages=(boost-cpp benchmark gtest cmake hdf5)
 
 if [[ ! -d ENV ]]; then
-    module load mamba
-    mamba create -yp ENV "${packages[@]}"
+    "$conda" create -yp ENV "${packages[@]}"
     echo "$ENV_VERSION" > ENV/.miniapp_version
 elif [[ $INSTALL_ENV == "yes" ]]; then
-    module load mamba
     conda activate ENV/
-    mamba install "${packages[@]}"
+    "$conda" install "${packages[@]}"
     echo "$ENV_VERSION" > ENV/.miniapp_version
 fi
 
