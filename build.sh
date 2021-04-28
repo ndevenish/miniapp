@@ -2,6 +2,8 @@
 
 set -e
 
+ENV_VERSION=1
+
 # Takes a path to the dials build path first
 if [[ -z $1 && ! -f .dials_build ]]; then
     echo "Usage: build.sh [/path/to/dials/build]"
@@ -23,8 +25,25 @@ echo "$DIALS_BUILD" > .dials_build
 
 eval "$(conda shell.bash hook)"
 
+INSTALL_ENV=""
+if [[ -d ENV ]]; then
+    if [[ ! -f ENV/.miniapp_version || ! "$ENV_VERSION" == "$(cat ENV/.miniapp_version)" ]]; then
+        echo "Environment incomplete or from previous version; reinstalling"
+        INSTALL_ENV="yes"
+    fi
+fi
+
+packages=(boost-cpp benchmark gtest cmake hdf5)
+
 if [[ ! -d ENV ]]; then
-    conda create -yp ENV boost-cpp benchmark gtest cmake
+    module load mamba
+    mamba create -yp ENV "${packages[@]}"
+    echo "$ENV_VERSION" > ENV/.miniapp_version
+elif [[ $INSTALL_ENV == "yes" ]]; then
+    module load mamba
+    conda activate ENV/
+    mamba install "${packages[@]}"
+    echo "$ENV_VERSION" > ENV/.miniapp_version
 fi
 
 conda activate ENV/
