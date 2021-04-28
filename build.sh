@@ -63,6 +63,10 @@ conda activate ENV/
 mkdir -p baseline/_build
 cd baseline/_build
 cmake .. -DDIALS_BUILD="$DIALS_BUILD"
-make
+if [[ -f build.ninja ]]; then
+    ninja
+else
+    make
+fi
 echo "h5read and baseline should be in baseline/_build"
 
