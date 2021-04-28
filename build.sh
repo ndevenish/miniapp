@@ -55,7 +55,7 @@ if [[ ! -d ENV ]]; then
     echo "$ENV_VERSION" > ENV/.miniapp_version
 elif [[ $INSTALL_ENV == "yes" ]]; then
     conda activate ENV/
-    "$conda" install "${packages[@]}"
+    "$conda" install -y "${packages[@]}"
     echo "$ENV_VERSION" > ENV/.miniapp_version
 fi
 
