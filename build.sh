@@ -2,7 +2,7 @@
 
 set -e
 
-ENV_VERSION=1
+ENV_VERSION=2
 
 # Takes a path to the dials build path first
 if [[ -z $1 && ! -f .dials_build ]]; then
@@ -48,7 +48,7 @@ if command -v mamba > /dev/null || load_module mamba >/dev/null 2>&1; then
     module load mamba
 fi
 
-packages=(boost-cpp benchmark gtest cmake hdf5)
+packages=(boost-cpp benchmark gtest cmake hdf5 hdf5-external-filter-plugins)
 
 if [[ ! -d ENV ]]; then
     "$conda" create -yp ENV "${packages[@]}"
