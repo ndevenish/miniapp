@@ -17,4 +17,4 @@ add_subdirectory(../h5read h5read)
 
 add_executable(load load.cc)
 target_link_libraries(load h5read)
-add_fpga_variants(load)
+fpga_add_variants(load)
