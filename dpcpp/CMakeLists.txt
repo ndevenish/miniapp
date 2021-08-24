@@ -17,17 +17,4 @@ add_subdirectory(../h5read h5read)
 
 add_executable(load load.cc)
 target_link_libraries(load h5read)
-
-### FPGA Emulator
-add_executable(load.fpga_emu load.cc)
-target_link_libraries(load.fpga_emu FPGA::EMULATED h5read)
-
-### Generate FPGA Report
-add_executable(load_report.a load.cc)
-target_link_libraries(load_report.a PRIVATE h5read FPGA::FPGA)
-target_link_options(load_report.a PRIVATE "-fsycl-link=early")
-
-# FPGA Hardware
-add_executable(load.fpga load.cc)
-target_link_libraries(load.fpga h5read FPGA::FPGA)
-set_target_properties(load.fpga PROPERTIES EXCLUDE_FROM_ALL yes)
+add_fpga_variants(load)
