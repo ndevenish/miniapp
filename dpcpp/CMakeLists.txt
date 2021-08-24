@@ -11,21 +11,23 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS yes)
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
 
-# find_package(Boost REQUIRED)
-# find_package(Dials REQUIRED)
-# find_package(HDF5 REQUIRED)
-# find_package(benchmark REQUIRED)
+find_package(FPGA REQUIRED)
 
 add_subdirectory(../h5read h5read)
 
 add_executable(load load.cc)
 target_link_libraries(load h5read)
 
-# add_library(baseline SHARED baseline.cpp )
-# target_link_libraries(baseline PUBLIC Dials::Dials benchmark::benchmark h5read)
+### FPGA Emulator
+add_executable(load.fpga_emu load.cc)
+target_link_libraries(load.fpga_emu FPGA::EMULATED h5read)
 
-# add_executable(bm bm.cpp)
-# target_link_libraries(bm baseline)
+### Generate FPGA Report
+add_executable(load_report.a load.cc)
+target_link_libraries(load_report.a PRIVATE h5read FPGA::FPGA)
+target_link_options(load_report.a PRIVATE "-fsycl-link=early")
 
-# add_executable(miniapp miniapp.c)
-# target_link_libraries(miniapp PUBLIC hdf5::hdf5 baseline h5read)
+# FPGA Hardware
+add_executable(load.fpga load.cc)
+target_link_libraries(load.fpga h5read FPGA::FPGA)
+set_target_properties(load.fpga PROPERTIES EXCLUDE_FROM_ALL yes)

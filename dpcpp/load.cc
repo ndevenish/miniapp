@@ -1,4 +1,6 @@
 #include <CL/sycl.hpp>
+#include <CL/sycl/INTEL/fpga_extensions.hpp>
+#include <algorithm>
 #include <iostream>
 
 #include "h5read.h"
@@ -18,7 +20,20 @@ int main(int argc, char** argv) {
     auto imagefile = h5read_parse_standard_args(argc, argv);
     auto modules = h5read_get_image_modules(imagefile, 0);
 
-    queue Q;
+#ifdef FPGA
+// Select either:
+//  - the FPGA emulator device (CPU emulation of the FPGA)
+//  - the FPGA device (a real FPGA)
+#if defined(FPGA_EMULATOR)
+    INTEL::fpga_emulator_selector device_selector;
+#else
+    INTEL::fpga_selector device_selector;
+#endif
+    queue Q(device_selector);  //, dpc_common::exception_handler);
+#else
+    queue Q;  //, dpc_common::exception_handler);
+#endif
+
     const size_t num_pixels = modules->slow * modules->fast;
     uint16_t* module_data = malloc_shared<uint16_t>(num_pixels, Q);
 
@@ -26,10 +41,12 @@ int main(int argc, char** argv) {
     std::cout << "Using Device: " << BOLD
               << Q.get_device().get_info<info::device::name>() << NC << std::endl;
 
+    std::cout << "Module size s,f: " << modules->slow << ", " << modules->fast
+              << std::endl;
     // Count the zeros in our modules data on-host
     size_t host_zeros = 0;
-    for (int i = 0; i < modules->slow; ++i) {
-        for (int j = 0; j < modules->fast; ++j) {
+    for (int i = 0; i < std::min(modules->slow, (size_t)512); ++i) {
+        for (int j = 0; j < std::min(modules->fast, (size_t)1024); ++j) {
             if (modules->data[i * modules->fast + j] == 0) {
                 host_zeros += 1;
             }
@@ -45,8 +62,12 @@ int main(int argc, char** argv) {
     int sum = 0;
     int slow = modules->slow;
     int fast = modules->fast;
-    auto module_size = range<2>{modules->slow, modules->fast};
+    auto module_size = range<2>{512, 1024};  // modules->slow, modules->fast};
+#ifdef FPGA
+    auto module_range = module_size;
+#else
     auto module_range = range<2>{64, 64};
+#endif
     Q.submit([&](handler& h) {
         h.parallel_for(nd_range(module_size, module_range),
                        reduction(&sum, std::plus<>()),
