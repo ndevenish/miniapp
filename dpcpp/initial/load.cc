@@ -60,6 +60,7 @@ int main(int argc, char** argv) {
     std::copy(modules->data, modules->data + num_pixels, module_data);
 
     int sum = 0;
+    buffer buf_sum(&sum);
     int slow = modules->slow;
     int fast = modules->fast;
     auto module_size = range<2>{512, 1024};  // modules->slow, modules->fast};
@@ -69,15 +70,14 @@ int main(int argc, char** argv) {
     auto module_range = range<2>{64, 64};
 #endif
     Q.submit([&](handler& h) {
-        h.parallel_for(nd_range(module_size, module_range),
-                       reduction(&sum, std::plus<>()),
-                       [=](nd_item<2> idx, auto& sum) {
-                           int y = idx.get_global_id()[0];
-                           int x = idx.get_global_id()[1];
-                           if (module_data[y * fast + x] == 0) {
-                               sum += 1;
-                           }
-                       });
+        h.parallel_for(nd_range(module_size, module_range), [=](nd_item<2> idx) {
+            accessor sum(buf_sum, h, write_only);
+            int y = idx.get_global_id()[0];
+            int x = idx.get_global_id()[1];
+            if (module_data[y * fast + x] == 0) {
+                sum[0] += 1;
+            }
+        });
     });
     Q.wait();
     auto col = sum == host_zeros ? G : R;
