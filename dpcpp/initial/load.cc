@@ -58,13 +58,32 @@ int main(int argc, char** argv) {
         }
     }
     std::cout << "Number of pixels in module:        " << modules.slow * modules.fast
-
               << std::endl;
     std::cout << "Host count zeros for first module: " << host_zeros << std::endl;
 
     // Copy our module to the shared buffer
     std::copy(modules.data, modules.data + num_pixels, module_data);
 
+    auto fast = modules.fast;
+    auto slow = modules.slow;
+    auto module_size = range<2>{512, 1024};
+    auto module_range = range<2>{128, 128};
+    const int num_blocks =
+      module_size[0] / module_range[0] * module_size[1] / module_range[1];
+    std::cout << "Number of separate ranges: " << num_blocks << std::endl;
+
+    uint32_t* interim_sum = malloc_device<uint32_t>(num_blocks, Q);
+
+    {
+        Q.submit([&](handler& h) {
+            h.parallel_for(nd_range(module_size, module_range), [=](nd_item<2> idx) {
+                int y = idx.get_global_id()[0];
+                int x = idx.get_global_id()[1];
+                if (module_data[y * fast + x] == 0) {
+                }
+            });
+        });
+    }
     // int sum = 0;
     // buffer buf_sum(&sum);
     // int slow = modules->slow;
