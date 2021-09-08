@@ -16,9 +16,7 @@ constexpr auto NC = "\033[0m";
 using namespace sycl;
 
 int main(int argc, char** argv) {
-    // Read a single module from a supplied file
-    auto imagefile = h5read_parse_standard_args(argc, argv);
-    auto modules = h5read_get_image_modules(imagefile, 0);
+    auto reader = H5Read(argc, argv);
 
 #ifdef FPGA
 // Select either:
@@ -34,9 +32,6 @@ int main(int argc, char** argv) {
     queue Q;  //, dpc_common::exception_handler);
 #endif
 
-    const size_t num_pixels = modules->slow * modules->fast;
-    uint16_t* module_data = malloc_shared<uint16_t>(num_pixels, Q);
-
     // Print information about the device we are using
     std::string device_kind = Q.get_device().is_cpu()           ? "CPU"
                               : Q.get_device().is_gpu()         ? "GPU"
@@ -45,24 +40,30 @@ int main(int argc, char** argv) {
     std::cout << "Using " << BOLD << device_kind << NC << " Device: " << BOLD
               << Q.get_device().get_info<info::device::name>() << NC << std::endl;
 
-    std::cout << "Module size s,f: " << modules->slow << ", " << modules->fast
+    // Read a single module from a supplied file
+    auto modules = reader.get_image_modules(0);
+    const size_t num_pixels = modules.slow * modules.fast;
+    uint16_t* module_data = malloc_shared<uint16_t>(num_pixels, Q);
+
+    std::cout << "Module size s,f: " << modules.slow << ", " << modules.fast
               << std::endl;
 
     // Count the zeros in our modules data on-host
     size_t host_zeros = 0;
-    for (int i = 0; i < std::min(modules->slow, (size_t)512); ++i) {
-        for (int j = 0; j < std::min(modules->fast, (size_t)1024); ++j) {
-            if (modules->data[i * modules->fast + j] == 0) {
+    for (int i = 0; i < std::min(modules.slow, (size_t)512); ++i) {
+        for (int j = 0; j < std::min(modules.fast, (size_t)1024); ++j) {
+            if (modules.data[i * modules.fast + j] == 0) {
                 host_zeros += 1;
             }
         }
     }
-    std::cout << "Number of pixels in module:        " << modules->slow * modules->fast
+    std::cout << "Number of pixels in module:        " << modules.slow * modules.fast
+
               << std::endl;
     std::cout << "Host count zeros for first module: " << host_zeros << std::endl;
 
     // Copy our module to the shared buffer
-    std::copy(modules->data, modules->data + num_pixels, module_data);
+    std::copy(modules.data, modules.data + num_pixels, module_data);
 
     // int sum = 0;
     // buffer buf_sum(&sum);
@@ -90,6 +91,4 @@ int main(int argc, char** argv) {
     //     std::endl;
 
     free(module_data, Q);
-    h5read_free_image_modules(modules);
-    h5read_free(imagefile);
 }
