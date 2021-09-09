@@ -1,3 +1,6 @@
+#include <fmt/color.h>
+#include <fmt/core.h>
+
 #include <CL/sycl.hpp>
 #include <CL/sycl/INTEL/fpga_extensions.hpp>
 #include <algorithm>
@@ -72,42 +75,26 @@ int main(int argc, char** argv) {
       module_size[0] / module_range[0] * module_size[1] / module_range[1];
     std::cout << "Number of separate ranges: " << num_blocks << std::endl;
 
-    uint32_t* interim_sum = malloc_device<uint32_t>(num_blocks, Q);
-
-    {
-        Q.submit([&](handler& h) {
-            h.parallel_for(nd_range(module_size, module_range), [=](nd_item<2> idx) {
-                int y = idx.get_global_id()[0];
-                int x = idx.get_global_id()[1];
-                if (module_data[y * fast + x] == 0) {
+    // uint32_t* interim_sum = malloc_device<uint32_t>(num_blocks, Q);
+    auto result = malloc_shared<uint32_t>(1, Q);
+    *result = 0;
+    Q.submit([&](handler& h) {
+        h.single_task<class QRD>([=]() {
+            int zeros = 0;
+            for (int i = 0; i < num_pixels; ++i) {
+                if (module_data[i] == 0) {
+                    zeros++;
                 }
-            });
+            }
+            result[0] = zeros;
         });
-    }
-    // int sum = 0;
-    // buffer buf_sum(&sum);
-    // int slow = modules->slow;
-    // int fast = modules->fast;
-    //     auto module_size = range<2>{512, 1024};  // modules->slow, modules->fast};
-    // #ifdef FPGA
-    //     auto module_range = module_size;
-    // #else
-    //     auto module_range = range<2>{64, 64};
-    // #endif
-    //     Q.submit([&](handler& h) {
-    //         h.parallel_for(nd_range(module_size, module_range), [=](nd_item<2> idx) {
-    //             accessor sum(buf_sum, h, write_only);
-    //             int y = idx.get_global_id()[0];
-    //             int x = idx.get_global_id()[1];
-    //             if (module_data[y * fast + x] == 0) {
-    //                 sum[0] += 1;
-    //             }
-    //         });
-    //     });
-    //     Q.wait();
-    //     auto col = sum == host_zeros ? G : R;
-    //     std::cout << "Pixel count from kernel:           " << col << sum << NC <<
-    //     std::endl;
+    });
+    Q.wait();
 
-    free(module_data, Q);
+    uint32_t kernel_zeros = result[0];
+    auto color = fg(kernel_zeros == host_zeros ? fmt::color::green : fmt::color::red);
+    fmt::print(color, "{:35}", "Result from kernel:");
+
+    free(result, Q.get_context());
+    free(module_data, Q.get_context());
 }

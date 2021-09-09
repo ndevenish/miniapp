@@ -4,7 +4,7 @@ set(CMAKE_CXX_COMPILER dpcpp)
 project(dpcpp CXX)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/../../cmake/Modules")
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_EXPORT_COMPILE_COMMANDS yes)
 
@@ -14,7 +14,8 @@ include(AlwaysColourCompilation)
 find_package(FPGA REQUIRED)
 
 add_subdirectory(../../h5read h5read)
+add_subdirectory(../../dependencies/fmt fmt)
 
 add_executable(load load.cc)
-target_link_libraries(load h5read)
+target_link_libraries(load h5read fmt::fmt)
 fpga_add_variants(load)
