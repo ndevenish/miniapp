@@ -18,6 +18,8 @@ constexpr auto NC = "\033[0m";
 
 using namespace sycl;
 
+class ZeroCounter;
+
 int main(int argc, char** argv) {
     auto reader = H5Read(argc, argv);
 
@@ -30,9 +32,9 @@ int main(int argc, char** argv) {
 #else
     INTEL::fpga_selector device_selector;
 #endif
-    queue Q(device_selector);  //, dpc_common::exception_handler);
+    queue Q(device_selector, property::queue::enable_profiling{});
 #else
-    queue Q;  //, dpc_common::exception_handler);
+    queue Q{property::queue::enable_profiling{}};
 #endif
 
     // Print information about the device we are using
@@ -40,46 +42,48 @@ int main(int argc, char** argv) {
                               : Q.get_device().is_gpu()         ? "GPU"
                               : Q.get_device().is_accelerator() ? "FPGA"
                                                                 : "Unknown";
-    std::cout << "Using " << BOLD << device_kind << NC << " Device: " << BOLD
-              << Q.get_device().get_info<info::device::name>() << NC << std::endl;
+    fmt::print("Using {0}{2}{1} Device: {0}{3}{1}\n",
+               BOLD,
+               NC,
+               device_kind,
+               Q.get_device().get_info<info::device::name>());
 
     // Read a single module from a supplied file
     auto modules = reader.get_image_modules(0);
     const size_t num_pixels = modules.slow * modules.fast;
     uint16_t* module_data = malloc_shared<uint16_t>(num_pixels, Q);
+    bool* module_mask = malloc_shared<bool>(num_pixels, Q);
 
-    std::cout << "Module size s,f: " << modules.slow << ", " << modules.fast
-              << std::endl;
+    fmt::print("Module size s,f: {}, {}\n", modules.slow, modules.fast);
 
     // Count the zeros in our modules data on-host
     size_t host_zeros = 0;
-    for (int i = 0; i < std::min(modules.slow, (size_t)512); ++i) {
-        for (int j = 0; j < std::min(modules.fast, (size_t)1024); ++j) {
-            if (modules.data[i * modules.fast + j] == 0) {
-                host_zeros += 1;
-            }
-        }
+    for (auto pixel : modules.modules[0]) {
+        if (pixel == 0) host_zeros++;
     }
-    std::cout << "Number of pixels in module:        " << modules.slow * modules.fast
-              << std::endl;
-    std::cout << "Host count zeros for first module: " << host_zeros << std::endl;
+
+    // for (int i = 0; i < modules.slow; ++i) {
+    //     for (int j = 0; j < modules.fast; ++j) {
+    //         if (modules.data[i * modules.fast + j] == 0) {
+    //             host_zeros += 1;
+    //         }
+    //     }
+    // }
+    fmt::print("Number of pixels in module:        {}\n", modules.slow * modules.fast);
+    fmt::print("Host count zeros for first module: {}\n", host_zeros);
 
     // Copy our module to the shared buffer
-    std::copy(modules.data, modules.data + num_pixels, module_data);
+    std::copy(modules.modules[0].begin(), modules.modules[0].end(), module_data);
+    std::copy(modules.modules[0].begin(), modules.modules[0].end(), module_mask);
 
     auto fast = modules.fast;
     auto slow = modules.slow;
-    auto module_size = range<2>{512, 1024};
-    auto module_range = range<2>{128, 128};
-    const int num_blocks =
-      module_size[0] / module_range[0] * module_size[1] / module_range[1];
-    std::cout << "Number of separate ranges: " << num_blocks << std::endl;
 
-    // uint32_t* interim_sum = malloc_device<uint32_t>(num_blocks, Q);
     auto result = malloc_shared<uint32_t>(1, Q);
     *result = 0;
-    Q.submit([&](handler& h) {
-        h.single_task<class QRD>([=]() {
+
+    event e = Q.submit([&](handler& h) {
+        h.single_task<class ZeroCounter>([=]() {
             int zeros = 0;
             for (int i = 0; i < num_pixels; ++i) {
                 if (module_data[i] == 0) {
@@ -90,10 +94,15 @@ int main(int argc, char** argv) {
         });
     });
     Q.wait();
+    double start = e.get_profiling_info<info::event_profiling::command_start>();
+    double end = e.get_profiling_info<info::event_profiling::command_end>();
+    double kernel_time = (double)(end - start) * 1e-6;
 
     uint32_t kernel_zeros = result[0];
     auto color = fg(kernel_zeros == host_zeros ? fmt::color::green : fmt::color::red);
-    fmt::print(color, "{:35}", "Result from kernel:");
+    fmt::print(color, "{:34} {}\n", "Result from kernel:", kernel_zeros);
+
+    fmt::print("In: {}ms\n", kernel_time);
 
     free(result, Q.get_context());
     free(module_data, Q.get_context());
