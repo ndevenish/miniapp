@@ -87,7 +87,7 @@ int main(int argc, char** argv) {
     event e = Q.submit([&](handler& h) {
         h.single_task<class ZeroCounter>([=]() {
             int zeros = 0;
-            global_ptr<uint16_t> GlobalPtr(module_data);
+            host_ptr<uint16_t> GlobalPtr(module_data);
             for (int i = 0; i < num_pixels; ++i) {
                 // Try requesting an explicitly prefetching LSU
                 // Note: This appears to do nothing, access is still listed as BC?
