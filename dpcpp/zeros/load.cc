@@ -20,8 +20,6 @@ using namespace sycl;
 
 class ZeroCounter;
 
-using PrefetchingLSU = INTEL::lsu<INTEL::prefetch<true>>;
-
 int main(int argc, char** argv) {
     auto reader = H5Read(argc, argv);
 
@@ -87,12 +85,8 @@ int main(int argc, char** argv) {
     event e = Q.submit([&](handler& h) {
         h.single_task<class ZeroCounter>([=]() {
             int zeros = 0;
-            global_ptr<uint16_t> GlobalPtr(module_data);
             for (int i = 0; i < num_pixels; ++i) {
-                // Try requesting an explicitly prefetching LSU
-                // Note: This appears to do nothing, access is still listed as BC?
-                uint16_t data = PrefetchingLSU::load(GlobalPtr + i);
-                if (data == 0) {
+                if (module_data[i] == 0) {
                     zeros++;
                 }
             }
