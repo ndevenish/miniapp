@@ -35,6 +35,12 @@ double event_ms(const sycl::event& e) {
               - e.get_profiling_info<info::event_profiling::command_start>());
 }
 
+/// Return value of event in terms of Gigabits per second
+double event_Gbps(const sycl::event& e, size_t bytes) {
+    const double ms = event_ms(e);
+    return (bytes * 8 / 1e9) / (ms / 1000.0);
+}
+
 int main(int argc, char** argv) {
     auto reader = H5Read(argc, argv);
 
@@ -70,26 +76,31 @@ int main(int argc, char** argv) {
     uint16_t* image_data = malloc_device<uint16_t>(num_pixels, Q);
     size_t* result = malloc_shared<size_t>(1, Q);
     auto local_data = std::make_unique<uint16_t[]>(num_pixels);
-    fmt::print("Uploading mask data to accelerator\n");
+    fmt::print("Uploading mask data to accelerator.... ");
     auto e_mask_upload = Q.submit(
       [&](handler& h) { h.memcpy(mask_data, reader.get_mask().data(), num_pixels); });
     Q.wait();
-    fmt::print(" ...done in {:.1f} ms\n", event_ms(e_mask_upload));
+    fmt::print("done in {:.1f} ms ({:.2f} Gbps)\n",
+               event_ms(e_mask_upload),
+               event_Gbps(e_mask_upload, num_pixels));
 
     fmt::print("Starting image loop:\n");
     for (int i = 0; i < reader.get_number_of_images(); ++i) {
         fmt::print("\nReading Image {}\n", i);
         reader.get_image_into(i, local_data.get());
         fmt::print("Uploading data.... ");
-        event e_upload = Q.submit(
-          [&](handler& h) { h.memcpy(image_data, local_data.get(), num_pixels); });
+        event e_upload = Q.submit([&](handler& h) {
+            h.memcpy(image_data, local_data.get(), num_pixels * sizeof(uint16_t));
+        });
         Q.wait();
-        fmt::print("done in {:.2f} ms\n", event_ms(e_upload));
+        fmt::print("done in {:.2f} ms ({:.2f} Gbps)\n",
+                   event_ms(e_upload),
+                   event_Gbps(e_upload, num_pixels * sizeof(H5Read::image_type)));
 
         fmt::print("Starting Kernels\n");
         size_t host_sum = 0;
         for (int px = 0; px < num_pixels; ++px) {
-            host_sum += image_data[px];
+            host_sum += local_data[px];
         }
 
         event e_producer = Q.submit([&](handler& h) {
@@ -112,10 +123,9 @@ int main(int argc, char** argv) {
             });
         });
         Q.wait();
-        auto cons = event_ms(e_producer);
-        auto cons_Gbps =
-          (8 * num_pixels * sizeof(H5Read::image_type) / 1e9) / (cons / 1e3);
-        fmt::print(" ... consumed in {:.2f} ms ({:.3f} Gbps)\n", cons, cons_Gbps);
+        fmt::print(" ... consumed in {:.2f} ms ({:.3f} Gbps)\n",
+                   event_ms(e_producer),
+                   event_Gbps(e_producer, num_pixels * sizeof(uint16_t)));
 
         fmt::print(" ... piped    in {:.2f} ms\n", event_ms(e_module));
 
