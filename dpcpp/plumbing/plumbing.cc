@@ -67,8 +67,9 @@ int main(int argc, char** argv) {
 
     // Mask data is the same for all images, so we copy it early
     uint8_t* mask_data = malloc_device<uint8_t>(num_pixels, Q);
-    uint16_t* image_data = malloc_shared<uint16_t>(num_pixels, Q);
+    uint16_t* image_data = malloc_device<uint16_t>(num_pixels, Q);
     size_t* result = malloc_shared<size_t>(1, Q);
+    auto local_data = std::make_unique<uint16_t[]>(num_pixels);
     fmt::print("Uploading mask data to accelerator\n");
     auto e_mask_upload = Q.submit(
       [&](handler& h) { h.memcpy(mask_data, reader.get_mask().data(), num_pixels); });
@@ -77,8 +78,15 @@ int main(int argc, char** argv) {
 
     fmt::print("Starting image loop:\n");
     for (int i = 0; i < reader.get_number_of_images(); ++i) {
-        fmt::print("Reading Image {}\n", i);
-        reader.get_image_into(i, image_data);
+        fmt::print("\nReading Image {}\n", i);
+        reader.get_image_into(i, local_data.get());
+        fmt::print("Uploading data.... ");
+        event e_upload = Q.submit(
+          [&](handler& h) { h.memcpy(image_data, local_data.get(), num_pixels); });
+        Q.wait();
+        fmt::print("done in {:.2f} ms\n", event_ms(e_upload));
+
+        fmt::print("Starting Kernels\n");
         size_t host_sum = 0;
         for (int px = 0; px < num_pixels; ++px) {
             host_sum += image_data[px];
