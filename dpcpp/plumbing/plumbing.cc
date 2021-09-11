@@ -107,7 +107,7 @@ int main(int argc, char** argv) {
         auto cons = event_ms(e_producer);
         auto cons_Gbps =
           (8 * num_pixels * sizeof(H5Read::image_type) / 1e9) / (cons / 1e3);
-        fmt::print(" ... consumed in {:2f} ms ({:.3f} Gbps)\n", cons, cons_Gbps);
+        fmt::print(" ... consumed in {:.2f} ms ({:.3f} Gbps)\n", cons, cons_Gbps);
 
         fmt::print(" ... piped    in {:.2f} ms\n", event_ms(e_module));
 
