@@ -67,7 +67,7 @@ int main(int argc, char** argv) {
 
     // Mask data is the same for all images, so we copy it early
     uint8_t* mask_data = malloc_device<uint8_t>(num_pixels, Q);
-    uint16_t* image_data = malloc_host<uint16_t>(num_pixels, Q);
+    uint16_t* image_data = malloc_shared<uint16_t>(num_pixels, Q);
     size_t* result = malloc_shared<size_t>(1, Q);
     fmt::print("Uploading mask data to accelerator\n");
     auto e_mask_upload = Q.submit(
@@ -105,7 +105,8 @@ int main(int argc, char** argv) {
         });
         Q.wait();
         auto cons = event_ms(e_producer);
-        auto cons_gbps = (num_pixels * sizeof(H5Read::image_type) / 1e9) / (cons / 1e3);
+        auto cons_Gbps =
+          (8 * num_pixels * sizeof(H5Read::image_type) / 1e9) / (cons / 1e3);
         fmt::print(" ... consumed in {} ms ({:.3f} Gbps)\n", cons, cons_gbps);
 
         fmt::print(" ... piped    in {} ms\n", event_ms(e_module));
