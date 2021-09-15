@@ -4,6 +4,7 @@
 #include <CL/sycl.hpp>
 #include <CL/sycl/INTEL/fpga_extensions.hpp>
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <iostream>
 
@@ -23,7 +24,8 @@ template <int id>
 class ToModulePipe;
 
 template <int id>
-using ProducerPipeToModule = INTEL::pipe<class ToModulePipe<id>, H5Read::image_type, 5>;
+using ProducerPipeToModule =
+  INTEL::pipe<class ToModulePipe<id>, std::array<H5Read::image_type, 4>, 5>;
 
 template <int Index>
 class Module;
@@ -47,6 +49,7 @@ double event_Gbps(const sycl::event& e, size_t bytes) {
 }
 
 int main(int argc, char** argv) {
+    auto start_time = std::chrono::high_resolution_clock::now();
     auto reader = H5Read(argc, argv);
 
 #ifdef FPGA
@@ -93,61 +96,42 @@ int main(int argc, char** argv) {
     for (int i = 0; i < reader.get_number_of_images(); ++i) {
         fmt::print("\nReading Image {}\n", i);
         reader.get_image_into(i, image_data);
-        // Old "upload data to accelerator"
-        // fmt::print("Uploading data.... ");
-        // event e_upload = Q.submit([&](handler& h) {
-        //     h.memcpy(image_data, local_data.get(), num_pixels * sizeof(uint16_t));
-        // });
-        // Q.wait();
-        // fmt::print("done in {:.2f} ms ({:.2f} Gbps)\n",
-        //            event_ms(e_upload),
-        //            event_Gbps(e_upload, num_pixels * sizeof(H5Read::image_type)));
 
-        fmt::print("Starting Kernels\n");
+        fmt::print("Calculating host sum\n");
         size_t host_sum = 0;
         for (int px = 0; px < num_pixels; ++px) {
             host_sum += image_data[px];
         }
-
+        fmt::print("Starting Kernels\n");
         auto t1 = std::chrono::high_resolution_clock::now();
 
         event e_producer = Q.submit([&](handler& h) {
             h.single_task<class Producer>([=]() {
                 // For now, send every pixel into one pipe
-                size_t max = num_pixels / 2;
-                for (size_t i = 0; i < max; ++i) {
-                    ProducerPipeToModule<0>::write(image_data[i]);
+                for (size_t i = 0; i < num_pixels; i += 4) {
+                    ProducerPipeToModule<0>::write(
+                      *reinterpret_cast<std::array<H5Read::image_type, 4>*>(image_data
+                                                                            + i));
                 }
             });
         });
-        event e_producer_2 = Q.submit([&](handler& h) {
-            h.single_task([=]() {
-                size_t min = num_pixels / 2;
-                // For now, send every pixel into one pipe
-                for (size_t i = min; i < num_pixels; ++i) {
-                    ProducerPipeToModule<1>::write(image_data[i]);
-                }
-            });
-        });
+
         // Launch a module kernel for every module
         event e_module = Q.submit([&](handler& h) {
             h.single_task<class Module<0>>([=](){
                 size_t sum_pixels = 0;
-                for (size_t i = 0; i < num_pixels / 2; ++i) {
-                    sum_pixels += ProducerPipeToModule<0>::read();
+                for (size_t i = 0; i < num_pixels; i += 4) {
+                    std::array<H5Read::image_type, 4> data =
+                      ProducerPipeToModule<0>::read();
+#pragma unroll
+                    for (uint16_t px : data) {
+                        sum_pixels += px;
+                    }
                 }
                 result[0] = sum_pixels;
             });
         });
-        event e_module_1 = Q.submit([&](handler& h) {
-            h.single_task<class Module<1>>([=](){
-                size_t sum_pixels = 0;
-                for (size_t i = 0; i < num_pixels / 2; ++i) {
-                    sum_pixels += ProducerPipeToModule<1>::read();
-                }
-                result[1] = sum_pixels;
-            });
-        });
+
         Q.wait();
         auto t2 = std::chrono::high_resolution_clock::now();
         // double ms = max(event_ms(e_producer), event_ms(e_producer_2));
@@ -155,17 +139,17 @@ int main(int argc, char** argv) {
           std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1).count()
           * 1000;
 
-        fmt::print(" ... produced #0 in {:.2f} ms ({:.3f} Gbps)\n",
+        fmt::print(" ... produced in {:.2f} ms ({:.3g} Gbps)\n",
                    event_ms(e_producer),
                    event_Gbps(e_producer, num_pixels * sizeof(uint16_t) / 2));
-        fmt::print(" ... produced #1 in {:.2f} ms ({:.3f} Gbps)\n",
-                   event_ms(e_producer_2),
-                   event_Gbps(e_producer_2, num_pixels * sizeof(uint16_t) / 2));
-        fmt::print(" ... Total consumed + piped in host time {:.2f} ms ({:.3f} Gbps)\n",
+        fmt::print(" ... consumed in {:.2f} ms ({:.3g} Gbps)\n",
+                   event_ms(e_module),
+                   event_Gbps(e_module, num_pixels * sizeof(uint16_t) / 2));
+        fmt::print(" ... Total consumed + piped in host time {:.2f} ms ({:.3g} Gbps)\n",
                    ms_all,
                    Gbps(num_pixels * sizeof(uint16_t), ms_all));
 
-        auto device_sum = result[0] + result[1];
+        auto device_sum = result[0];
         auto color = fg(host_sum == device_sum ? fmt::color::green : fmt::color::red);
         fmt::print(color, "     Sum = {} / {}\n", device_sum, host_sum);
     }
@@ -173,4 +157,10 @@ int main(int argc, char** argv) {
     free(result, Q);
     free(image_data, Q);
     free(mask_data, Q);
+    auto end_time = std::chrono::high_resolution_clock::now();
+    ;
+    fmt::print(
+      "Total run duration: {:.2f} s\n",
+      std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time)
+        .count());
 }
