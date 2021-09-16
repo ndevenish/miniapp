@@ -8,7 +8,6 @@
 #include <chrono>
 #include <iostream>
 
-#include "eiger2xe.h"
 #include "h5read.h"
 
 constexpr auto R = "\033[31m";
@@ -48,12 +47,6 @@ double Gbps(size_t bytes, double ms) {
 double event_Gbps(const sycl::event& e, size_t bytes) {
     const double ms = event_ms(e);
     return Gbps(bytes, ms);
-}
-
-// From https://stackoverflow.com/a/66146159/1118662
-constexpr int int_ceil(float f) {
-    const int i = static_cast<int>(f);
-    return f > i ? i + 1 : i;
 }
 
 int main(int argc, char** argv) {
@@ -113,50 +106,14 @@ int main(int argc, char** argv) {
         fmt::print("Starting Kernels\n");
         auto t1 = std::chrono::high_resolution_clock::now();
 
-        constexpr size_t BLOCK_SIZE = std::tuple_size<PipedPixelsArray>::value;
-        constexpr size_t BLOCK_REMAINDER = E2XE_16M_FAST % BLOCK_SIZE;
-        constexpr size_t FULL_BLOCKS = (E2XE_16M_FAST - BLOCK_REMAINDER) / BLOCK_SIZE;
-        constexpr size_t NUM_BLOCKS = int_ceil(E2XE_16M_FAST / BLOCK_SIZE);
-        fmt::print("{} blocks ({} full) of {} width, last block padded with {} zeros",
-                   NUM_BLOCKS,
-                   FULL_BLOCKS,
-                   BLOCK_SIZE,
-                   BLOCK_REMAINDER);
-
         event e_producer = Q.submit([&](handler& h) {
             h.single_task<class Producer>([=]() {
                 // For now, send every pixel into one pipe
-                // static_assert(E2XE_16M_FAST %
-                // std::tuple_size<PipedPixelsArray>::value
-                //               == 0);
-                // size_t i = 0;
-                for (size_t i = 0; i < num_pixels; i += E2XE_16M_FAST) {
-                    // Now we have a "remainder" block we want to send
-                    // We need to use the initial portion and pad with zeros
-                    PipedPixelsArray remain{};
-#pragma unroll
-                    for (size_t r = 0; r < BLOCK_SIZE - BLOCK_REMAINDER; ++r) {
-                        remain[i] = image_data[i + FULL_BLOCKS * BLOCK_SIZE + r];
-                    }
-
-                    // Do "real" blocks
-                    for (size_t block = 0; block < FULL_BLOCKS; ++block) {
-                        ProducerPipeToModule<0>::write(
-                          *reinterpret_cast<PipedPixelsArray*>(image_data + i
-                                                               + block * BLOCK_SIZE));
-                    }
-                    if constexpr (BLOCK_REMAINDER > 0) {
-                        ProducerPipeToModule<0>::write(remain);
-                    }
+                for (size_t i = 0; i < num_pixels;
+                     i += std::tuple_size<PipedPixelsArray>::value) {
+                    ProducerPipeToModule<0>::write(
+                      *reinterpret_cast<PipedPixelsArray*>(image_data + i));
                 }
-
-                // }
-                // for (size_t i = 0; i < num_pixels;)
-                // for (size_t i = 0; i < num_pixels;
-                //  i += std::tuple_size<PipedPixelsArray>::value) {
-                //      ProducerPipeToModule<0>::write(
-                //        *reinterpret_cast<PipedPixelsArray*>(image_data + i));
-                //  }
             });
         });
 
@@ -164,7 +121,8 @@ int main(int argc, char** argv) {
         event e_module = Q.submit([&](handler& h) {
             h.single_task<class Module<0>>([=](){
                 size_t sum_pixels = 0;
-                for (size_t i = 0; i < NUM_BLOCKS * E2XE_16M_FAST; ++i) {
+                for (size_t i = 0; i < num_pixels;
+                     i += std::tuple_size<PipedPixelsArray>::value) {
                     PipedPixelsArray data = ProducerPipeToModule<0>::read();
 #pragma unroll
                     for (uint16_t px : data) {
