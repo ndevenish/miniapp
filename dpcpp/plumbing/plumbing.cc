@@ -85,8 +85,9 @@ int main(int argc, char** argv) {
 
     // Mask data is the same for all images, so we copy it early
     uint8_t* mask_data = malloc_device<uint8_t>(num_pixels, Q);
-    uint16_t* image_data = malloc_host<uint16_t>(num_pixels, Q);
+    uint16_t* image_data = malloc_device<uint16_t>(num_pixels, Q);
     size_t* result = malloc_shared<size_t>(2, Q);
+    auto local_data = std::make_unique<uint16_t[]>(num_pixels);
 
     fmt::print("Uploading mask data to accelerator.... ");
     auto e_mask_upload = Q.submit(
@@ -99,11 +100,19 @@ int main(int argc, char** argv) {
     fmt::print("Starting image loop:\n");
     for (int i = 0; i < reader.get_number_of_images(); ++i) {
         fmt::print("\nReading Image {}\n", i);
-        reader.get_image_into(i, image_data);
+        reader.get_image_into(i, local_data.get());
+        fmt::print("Uploading data... ");
+        event e_upload = Q.submit(
+          [&](handler& h) { h.memcpy(image_data, local_data.get(), num_pixels); });
+        Q.wait();
+        fmt::print("done in {:.2f} ms ({:.2f} GB/s)\n",
+                   event_ms(e_upload),
+                   event_GBps(e_upload, num_pixels));
 
         constexpr size_t BLOCK_SIZE = std::tuple_size<PipedPixelsArray>::value;
         constexpr size_t BLOCK_REMAINDER = E2XE_16M_FAST % BLOCK_SIZE;
         constexpr size_t FULL_BLOCKS = (E2XE_16M_FAST - BLOCK_REMAINDER) / BLOCK_SIZE;
+        constexpr size_t BLOCK_N_PIXELS = BLOCK_SIZE * FULL_BLOCKS * E2XE_16M_SLOW;
 
         fmt::print("Calculating host sum\n");
         // Now we are using blocks and discarding excess, do that here
@@ -159,13 +168,13 @@ int main(int argc, char** argv) {
 
         fmt::print(" ... produced in {:.2f} ms ({:.3g} GBps)\n",
                    event_ms(e_producer),
-                   event_GBps(e_producer, num_pixels * sizeof(uint16_t) / 2));
+                   event_GBps(e_producer, BLOCK_N_PIXELS * sizeof(uint16_t) / 2));
         fmt::print(" ... consumed in {:.2f} ms ({:.3g} GBps)\n",
                    event_ms(e_module),
-                   event_GBps(e_module, num_pixels * sizeof(uint16_t) / 2));
+                   event_GBps(e_module, BLOCK_N_PIXELS * sizeof(uint16_t) / 2));
         fmt::print(" ... Total consumed + piped in host time {:.2f} ms ({:.3g} GBps)\n",
                    ms_all,
-                   GBps(num_pixels * sizeof(uint16_t), ms_all));
+                   GBps(BLOCK_N_PIXELS * sizeof(uint16_t), ms_all));
 
         auto device_sum = result[0];
         auto color = fg(host_sum == device_sum ? fmt::color::green : fmt::color::red);
