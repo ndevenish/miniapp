@@ -8,6 +8,7 @@
 #include <chrono>
 #include <iostream>
 
+#include "eiger2xe.h"
 #include "h5read.h"
 
 constexpr auto R = "\033[31m";
@@ -78,6 +79,8 @@ int main(int argc, char** argv) {
                device_kind,
                Q.get_device().get_info<info::device::name>());
 
+    auto slow = reader.get_image_slow();
+    auto fast = reader.get_image_fast();
     const size_t num_pixels = reader.get_image_slow() * reader.get_image_fast();
 
     // Mask data is the same for all images, so we copy it early
@@ -98,21 +101,35 @@ int main(int argc, char** argv) {
         fmt::print("\nReading Image {}\n", i);
         reader.get_image_into(i, image_data);
 
+        constexpr size_t BLOCK_SIZE = std::tuple_size<PipedPixelsArray>::value;
+        constexpr size_t BLOCK_REMAINDER = E2XE_16M_FAST % BLOCK_SIZE;
+        constexpr size_t FULL_BLOCKS = (E2XE_16M_FAST - BLOCK_REMAINDER) / BLOCK_SIZE;
+
         fmt::print("Calculating host sum\n");
+        // Now we are using blocks and discarding excess, do that here
         size_t host_sum = 0;
-        for (int px = 0; px < num_pixels; ++px) {
-            host_sum += image_data[px];
+        for (int y = 0; y < slow; ++y) {
+            for (int px = 0; px < BLOCK_SIZE * FULL_BLOCKS; ++px) {
+                host_sum += image_data[y * fast + px];
+            }
         }
+
         fmt::print("Starting Kernels\n");
         auto t1 = std::chrono::high_resolution_clock::now();
 
         event e_producer = Q.submit([&](handler& h) {
             h.single_task<class Producer>([=]() {
                 // For now, send every pixel into one pipe
-                for (size_t i = 0; i < num_pixels;
-                     i += std::tuple_size<PipedPixelsArray>::value) {
-                    ProducerPipeToModule<0>::write(
-                      *reinterpret_cast<PipedPixelsArray*>(image_data + i));
+                // We are using blocks based on the pipe width - this is
+                // likely not an exact divisor of the fast width, so for
+                // now just ignore the excess pixels
+                for (size_t y = 0; y < slow; ++y) {
+                    size_t i = y * E2XE_16M_FAST;
+                    for (size_t block = 0; block < FULL_BLOCKS; ++block) {
+                        ProducerPipeToModule<0>::write(
+                          *reinterpret_cast<PipedPixelsArray*>(image_data + i));
+                        i += BLOCK_SIZE;
+                    }
                 }
             });
         });
@@ -121,8 +138,9 @@ int main(int argc, char** argv) {
         event e_module = Q.submit([&](handler& h) {
             h.single_task<class Module<0>>([=](){
                 size_t sum_pixels = 0;
-                for (size_t i = 0; i < num_pixels;
-                     i += std::tuple_size<PipedPixelsArray>::value) {
+
+                // We have evenly sized blocks send to us
+                for (size_t block = 0; block < FULL_BLOCKS * slow; ++block) {
                     PipedPixelsArray data = ProducerPipeToModule<0>::read();
 #pragma unroll
                     for (uint16_t px : data) {
