@@ -24,7 +24,7 @@ using namespace sycl;
 template <int id>
 class ToModulePipe;
 
-using PipedPixelsArray = std::array<H5Read::image_type, 16>;
+using PipedPixelsArray = std::array<H5Read::image_type, 32>;
 
 template <int id>
 using ProducerPipeToModule = INTEL::pipe<class ToModulePipe<id>, PipedPixelsArray, 5>;
