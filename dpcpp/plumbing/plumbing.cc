@@ -40,14 +40,14 @@ double event_ms(const sycl::event& e) {
               - e.get_profiling_info<info::event_profiling::command_start>());
 }
 
-double Gbps(size_t bytes, double ms) {
-    return (static_cast<double>(bytes) * 8.0 / 1e9) / (ms / 1000.0);
+double GBps(size_t bytes, double ms) {
+    return (static_cast<double>(bytes) / 1e9) / (ms / 1000.0);
 }
 
-/// Return value of event in terms of Gigabits per second
-double event_Gbps(const sycl::event& e, size_t bytes) {
+/// Return value of event in terms of GigaBytes per second
+double event_GBps(const sycl::event& e, size_t bytes) {
     const double ms = event_ms(e);
-    return Gbps(bytes, ms);
+    return GBps(bytes, ms);
 }
 
 int main(int argc, char** argv) {
@@ -92,9 +92,9 @@ int main(int argc, char** argv) {
     auto e_mask_upload = Q.submit(
       [&](handler& h) { h.memcpy(mask_data, reader.get_mask().data(), num_pixels); });
     Q.wait();
-    fmt::print("done in {:.1f} ms ({:.2f} Gbps)\n",
+    fmt::print("done in {:.1f} ms ({:.2f} GBps)\n",
                event_ms(e_mask_upload),
-               event_Gbps(e_mask_upload, num_pixels));
+               event_GBps(e_mask_upload, num_pixels));
 
     fmt::print("Starting image loop:\n");
     for (int i = 0; i < reader.get_number_of_images(); ++i) {
@@ -153,20 +153,19 @@ int main(int argc, char** argv) {
 
         Q.wait();
         auto t2 = std::chrono::high_resolution_clock::now();
-        // double ms = max(event_ms(e_producer), event_ms(e_producer_2));
         double ms_all =
           std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1).count()
           * 1000;
 
-        fmt::print(" ... produced in {:.2f} ms ({:.3g} Gbps)\n",
+        fmt::print(" ... produced in {:.2f} ms ({:.3g} GBps)\n",
                    event_ms(e_producer),
-                   event_Gbps(e_producer, num_pixels * sizeof(uint16_t) / 2));
-        fmt::print(" ... consumed in {:.2f} ms ({:.3g} Gbps)\n",
+                   event_GBps(e_producer, num_pixels * sizeof(uint16_t) / 2));
+        fmt::print(" ... consumed in {:.2f} ms ({:.3g} GBps)\n",
                    event_ms(e_module),
-                   event_Gbps(e_module, num_pixels * sizeof(uint16_t) / 2));
-        fmt::print(" ... Total consumed + piped in host time {:.2f} ms ({:.3g} Gbps)\n",
+                   event_GBps(e_module, num_pixels * sizeof(uint16_t) / 2));
+        fmt::print(" ... Total consumed + piped in host time {:.2f} ms ({:.3g} GBps)\n",
                    ms_all,
-                   Gbps(num_pixels * sizeof(uint16_t), ms_all));
+                   GBps(num_pixels * sizeof(uint16_t), ms_all));
 
         auto device_sum = result[0];
         auto color = fg(host_sum == device_sum ? fmt::color::green : fmt::color::red);
