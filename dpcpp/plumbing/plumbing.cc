@@ -23,9 +23,10 @@ using namespace sycl;
 template <int id>
 class ToModulePipe;
 
+using PipedPixelsArray = std::array<H5Read::image_type, 16>;
+
 template <int id>
-using ProducerPipeToModule =
-  INTEL::pipe<class ToModulePipe<id>, std::array<H5Read::image_type, 4>, 5>;
+using ProducerPipeToModule = INTEL::pipe<class ToModulePipe<id>, PipedPixelsArray, 5>;
 
 template <int Index>
 class Module;
@@ -108,10 +109,10 @@ int main(int argc, char** argv) {
         event e_producer = Q.submit([&](handler& h) {
             h.single_task<class Producer>([=]() {
                 // For now, send every pixel into one pipe
-                for (size_t i = 0; i < num_pixels; i += 4) {
+                for (size_t i = 0; i < num_pixels;
+                     i += std::tuple_size<PipedPixelsArray>::value) {
                     ProducerPipeToModule<0>::write(
-                      *reinterpret_cast<std::array<H5Read::image_type, 4>*>(image_data
-                                                                            + i));
+                      *reinterpret_cast<PipedPixelsArray*>(image_data + i));
                 }
             });
         });
@@ -120,9 +121,9 @@ int main(int argc, char** argv) {
         event e_module = Q.submit([&](handler& h) {
             h.single_task<class Module<0>>([=](){
                 size_t sum_pixels = 0;
-                for (size_t i = 0; i < num_pixels; i += 4) {
-                    std::array<H5Read::image_type, 4> data =
-                      ProducerPipeToModule<0>::read();
+                for (size_t i = 0; i < num_pixels;
+                     i += std::tuple_size<PipedPixelsArray>::value) {
+                    PipedPixelsArray data = ProducerPipeToModule<0>::read();
 #pragma unroll
                     for (uint16_t px : data) {
                         sum_pixels += px;
