@@ -1,5 +1,6 @@
 #include <fmt/color.h>
 #include <fmt/core.h>
+#include <fmt/ranges.h>
 
 #include <CL/sycl.hpp>
 #include <CL/sycl/INTEL/fpga_extensions.hpp>
@@ -23,6 +24,22 @@ using namespace sycl;
 
 template <int id>
 class ToModulePipe;
+
+// From https://stackoverflow.com/a/10585543/1118662
+constexpr bool is_power_of_two(int x) {
+    return x && ((x & (x - 1)) == 0);
+}
+constexpr size_t clog2(size_t n) {
+    return ((n < 2) ? 0 : 1 + clog2(n / 2));
+}
+constexpr size_t cpow(size_t x, size_t power) {
+    int ret = 1;
+    for (int i = 0; i < power; ++i) {
+        ret *= x;
+    }
+    return ret;
+    // return power == 0 ? 1 : x * pow(x, power - 1);
+}
 
 using PipedPixelsArray = std::array<H5Read::image_type, 32>;
 
@@ -53,6 +70,10 @@ double event_GBps(const sycl::event& e, size_t bytes) {
 int main(int argc, char** argv) {
     auto start_time = std::chrono::high_resolution_clock::now();
     auto reader = H5Read(argc, argv);
+
+    // for (int i = 0; i < 10; ++i) {
+    //     fmt::print("{}: {}\n", i, pow(2, i));
+    // }
 
 #ifdef FPGA
 // Select either:
@@ -86,7 +107,7 @@ int main(int argc, char** argv) {
     // Mask data is the same for all images, so we copy it early
     uint8_t* mask_data = malloc_device<uint8_t>(num_pixels, Q);
     uint16_t* image_data = malloc_host<uint16_t>(num_pixels, Q);
-    size_t* result = malloc_shared<size_t>(2, Q);
+    PipedPixelsArray* result = malloc_shared<PipedPixelsArray>(2, Q);
 
     fmt::print("Uploading mask data to accelerator.... ");
     auto e_mask_upload = Q.submit(
@@ -96,14 +117,23 @@ int main(int argc, char** argv) {
                event_ms(e_mask_upload),
                event_GBps(e_mask_upload, num_pixels));
 
+    constexpr size_t BLOCK_SIZE = std::tuple_size<PipedPixelsArray>::value;
+    constexpr size_t BLOCK_SIZE_BITS = clog2(BLOCK_SIZE);
+    constexpr size_t BLOCK_REMAINDER = E2XE_16M_FAST % BLOCK_SIZE;
+    constexpr size_t FULL_BLOCKS = (E2XE_16M_FAST - BLOCK_REMAINDER) / BLOCK_SIZE;
+    static_assert(is_power_of_two(BLOCK_SIZE));
+    fmt::print(
+      "Block data:\n           SIZE: {}\n           BITS: {}\n      REMAINDER: "
+      "{}\n    FULL_BLOCKS: {}\n",
+      BLOCK_SIZE,
+      BLOCK_SIZE_BITS,
+      BLOCK_REMAINDER,
+      FULL_BLOCKS);
+
     fmt::print("Starting image loop:\n");
     for (int i = 0; i < reader.get_number_of_images(); ++i) {
         fmt::print("\nReading Image {}\n", i);
         reader.get_image_into(i, image_data);
-
-        constexpr size_t BLOCK_SIZE = std::tuple_size<PipedPixelsArray>::value;
-        constexpr size_t BLOCK_REMAINDER = E2XE_16M_FAST % BLOCK_SIZE;
-        constexpr size_t FULL_BLOCKS = (E2XE_16M_FAST - BLOCK_REMAINDER) / BLOCK_SIZE;
 
         fmt::print("Calculating host sum\n");
         // Now we are using blocks and discarding excess, do that here
@@ -141,13 +171,23 @@ int main(int argc, char** argv) {
 
                 // We have evenly sized blocks send to us
                 for (size_t block = 0; block < FULL_BLOCKS * slow; ++block) {
-                    PipedPixelsArray data = ProducerPipeToModule<0>::read();
+                    PipedPixelsArray sum = ProducerPipeToModule<0>::read();
+                    result[0] = sum;
+
+                    // Parallel prefix scan - upsweep a binary tree
+                    // After this, every 1,2,4,8,... node has the correct
+                    // sum of the two nodes below it
 #pragma unroll
-                    for (uint16_t px : data) {
-                        sum_pixels += px;
+                    for (int d = 0; d < BLOCK_SIZE_BITS; ++d) {
+#pragma unroll
+                        for (int k = 0; k < BLOCK_SIZE; k += cpow(2, d + 1)) {
+                            sum[k + cpow(2, d + 1) - 1] =
+                              sum[k + cpow(2, d) - 1] + sum[k + cpow(2, d + 1) - 1];
+                        }
                     }
+                    result[1] = sum;
                 }
-                result[0] = sum_pixels;
+                // result[0] = sum_pixels;
             });
         });
 
@@ -167,9 +207,12 @@ int main(int argc, char** argv) {
                    ms_all,
                    GBps(num_pixels * sizeof(uint16_t), ms_all));
 
-        auto device_sum = result[0];
-        auto color = fg(host_sum == device_sum ? fmt::color::green : fmt::color::red);
-        fmt::print(color, "     Sum = {} / {}\n", device_sum, host_sum);
+        // auto device_sum = result[0];
+        // auto color = fg(host_sum == device_sum ? fmt::color::green :
+        // fmt::color::red); fmt::print(color, "     Sum = {} / {}\n", device_sum,
+        // host_sum);
+        fmt::print("In:  {}\n", result[0]);
+        fmt::print("Out: {}\n", result[1]);
     }
 
     free(result, Q);
