@@ -103,7 +103,7 @@ int main(int argc, char** argv) {
 
     // Mask data is the same for all images, so we copy it early
     uint16_t* image_data = malloc_host<uint16_t>(num_pixels, Q);
-    size_t* result = malloc_shared<size_t>(1, Q);
+    size_t* result = malloc_shared<size_t>(2, Q);
     // Make sure we're allocated on a 512 bit alignment
     assert(image_data % 64 == 0);
     constexpr size_t BLOCK_SIZE = std::tuple_size<PipedPixelsArray>::value;
@@ -142,18 +142,23 @@ int main(int argc, char** argv) {
         event e_producer = Q.submit([&](handler& h) {
             h.single_task<class Producer>([=]() {
                 size_t global_sum = 0;
+                size_t num_pixels = 0;
                 for (size_t block = 0; block < TOTAL_BLOCKS_UNALIGNED; ++block) {
                     PipedPixelsArray data = *reinterpret_cast<PipedPixelsArray*>(
                       image_data + block * BLOCK_SIZE);
 
                     size_t local_sum = 0;
+                    size_t num_local = 0;
 #pragma unroll
                     for (int i = 0; i < BLOCK_SIZE; ++i) {
                         local_sum += data[i];
+                        num_local += 1;
                     }
                     global_sum += local_sum;
+                    num_pixels += num_local;
                 }
                 result[0] = global_sum;
+                result[1] = num_pixels;
             });
         });
 
@@ -166,6 +171,10 @@ int main(int argc, char** argv) {
         auto device_sum = result[0];
         auto color = fg(host_sum == device_sum ? fmt::color::green : fmt::color::red);
         fmt::print(color, "     Sum = {} / {}\n", device_sum, host_sum);
+
+        auto color_px =
+          fg(result[1] == active_pixels ? fmt::color::green : fmt::color::red);
+        fmt::print(color, "      px = {} / {}\n", result[1], active_pixels);
     }
 
     free(result, Q);
