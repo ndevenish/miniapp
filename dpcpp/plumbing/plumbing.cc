@@ -75,8 +75,8 @@ int main(int argc, char** argv) {
     // Mask data is the same for all images, so we copy it early
     uint8_t* mask_data = malloc_device<uint8_t>(num_pixels, Q);
     uint16_t* image_data = malloc_host<uint16_t>(num_pixels, Q);
-    // PipedPixelsArray* result = malloc_shared<PipedPixelsArray>(2, Q);
-    size_t* result = malloc_shared<size_t>(1, Q);
+    PipedPixelsArray* result = malloc_host<PipedPixelsArray>(2, Q);
+    // size_t* result = malloc_shared<size_t>(1, Q);
     assert(image_data % 64 == 0);
     fmt::print("Uploading mask data to accelerator.... ");
     auto e_mask_upload = Q.submit(
@@ -86,16 +86,18 @@ int main(int argc, char** argv) {
                event_ms(e_mask_upload),
                event_GBps(e_mask_upload, num_pixels));
 
+    // Module/detector compile-time calculations
     constexpr size_t BLOCK_SIZE = std::tuple_size<PipedPixelsArray>::value;
     constexpr size_t BLOCK_SIZE_BITS = clog2(BLOCK_SIZE);
     constexpr size_t BLOCK_REMAINDER = E2XE_16M_FAST % BLOCK_SIZE;
     constexpr size_t FULL_BLOCKS = (E2XE_16M_FAST - BLOCK_REMAINDER) / BLOCK_SIZE;
-    constexpr size_t TOTAL_BLOCKS_UNALIGNED =
-      (E2XE_16M_FAST * E2XE_16M_SLOW) / BLOCK_SIZE;
+    // constexpr size_t TOTAL_BLOCKS_UNALIGNED =
+    //   (E2XE_16M_FAST * E2XE_16M_SLOW) / BLOCK_SIZE;
     static_assert(is_power_of_two(BLOCK_SIZE));
     fmt::print(
-      "Block data:\n           SIZE: {}\n           BITS: {}\n      REMAINDER: "
-      "{}\n    FULL_BLOCKS: {}\n",
+      "Block data:\n           SIZE: {} px per block\n           BITS: {} bits to "
+      "store \n      REMAINDER: "
+      "{} px unprocessed per row\n    FULL_BLOCKS: {} blocks across image width\n",
       BLOCK_SIZE,
       BLOCK_SIZE_BITS,
       BLOCK_REMAINDER,
@@ -109,8 +111,7 @@ int main(int argc, char** argv) {
         fmt::print("Calculating host sum\n");
         // Now we are using blocks and discarding excess, do that here
         size_t host_sum = 0;
-
-        for (int i = 0; i < TOTAL_BLOCKS_UNALIGNED * BLOCK_SIZE; ++i) {
+        for (int i = 0; i < FULL_BLOCKS * BLOCK_SIZE; ++i) {
             host_sum += image_data[i];
         }
         fmt::print("Starting Kernels\n");
@@ -122,14 +123,13 @@ int main(int argc, char** argv) {
                 // We are using blocks based on the pipe width - this is
                 // likely not an exact divisor of the fast width, so for
                 // now just ignore the excess pixels
-                // for (size_t y = 0; y < slow; ++y) {
-                for (size_t block = 0; block < TOTAL_BLOCKS_UNALIGNED; ++block) {
-                    // Have this in running on
-                    // assert((image_data + block * BLOCK_SIZE) % 64 == 0);
-                    ProducerPipeToModule<0>::write(*reinterpret_cast<PipedPixelsArray*>(
-                      image_data + block * BLOCK_SIZE));
+                for (size_t y = 0; y < slow; ++y) {
+                    for (size_t block = 0; block < FULL_BLOCKS; ++block) {
+                        auto image_data_h = host_ptr<PipedPixelsArray>(
+                          reinterpret_cast<PipedPixelsArray*>(image_data + y * fast));
+                        ProducerPipeToModule<0>::write(image_data_h[block]);
+                    }
                 }
-                // }
             });
         });
 
@@ -138,42 +138,27 @@ int main(int argc, char** argv) {
             h.single_task<class Module<0>>([=](){
                 size_t sum_pixels = 0;
 
-                for (size_t block = 0; block < TOTAL_BLOCKS_UNALIGNED; ++block) {
-                    PipedPixelsArray in = ProducerPipeToModule<0>::read();
+                // for (size_t y = 0; y < slow; ++y) {
+                // We have evenly sized blocks send to us
+                for (size_t block = 0; block < FULL_BLOCKS * slow; ++block) {
+                    PipedPixelsArray sum = ProducerPipeToModule<0>::read();
+                    result[0] = sum;
 
-                    size_t local_sum = 0;
-                    for (auto i : in) {
-                        local_sum += i;
+                    // Parallel prefix scan - upsweep a binary tree
+                    // After this, every 1,2,4,8,... node has the correct
+                    // sum of the two nodes below it
+
+#pragma unroll
+                    for (int d = 0; d < BLOCK_SIZE_BITS; ++d) {
+#pragma unroll
+                        for (int k = 0; k < BLOCK_SIZE; k += cpow(2, d + 1)) {
+                            sum[k + cpow(2, d + 1) - 1] =
+                              sum[k + cpow(2, d) - 1] + sum[k + cpow(2, d + 1) - 1];
+                        }
                     }
-                    sum_pixels += local_sum;
+                    result[1] = sum;
                 }
-                // // Just absorb the pipe for now
-                // while (true) {
-                //     PipedPixelsArray sum = ProducerPipeToModule<0>::read();
                 // }
-                //                 // We have evenly sized blocks send to us
-                //                 for (size_t block = 0; block < FULL_BLOCKS * slow;
-                //                 ++block) {
-                //                     PipedPixelsArray sum =
-                //                     ProducerPipeToModule<0>::read(); result[0] = sum;
-
-                //                     // Parallel prefix scan - upsweep a binary tree
-                //                     // After this, every 1,2,4,8,... node has the
-                //                     correct
-                //                     // sum of the two nodes below it
-                // #pragma unroll
-                //                     for (int d = 0; d < BLOCK_SIZE_BITS; ++d) {
-                // #pragma unroll
-                //                         for (int k = 0; k < BLOCK_SIZE; k += cpow(2,
-                //                         d + 1)) {
-                //                             sum[k + cpow(2, d + 1) - 1] =
-                //                               sum[k + cpow(2, d) - 1] + sum[k +
-                //                               cpow(2, d + 1) - 1];
-                //                         }
-                //                     }
-                //                     // result[1] = sum;
-                //                 }
-                result[0] = sum_pixels;
             });
         });
 
@@ -193,18 +178,18 @@ int main(int argc, char** argv) {
                    ms_all,
                    GBps(num_pixels * sizeof(uint16_t), ms_all));
 
-        auto device_sum = result[0];
-        auto color = fg(host_sum == device_sum ? fmt::color::green : fmt::color::red);
-        fmt::print(color, "     Sum = {} / {}\n", device_sum, host_sum);
-        // fmt::print("In:  {}\n", result[0]);
-        // fmt::print("Out: {}\n", result[1]);
+        // auto device_sum = result[0];
+        // auto color = fg(host_sum == device_sum ? fmt::color::green :
+        // fmt::color::red); fmt::print(color, "     Sum = {} / {}\n", device_sum, host_sum);
+        fmt::print("In:  {}\n", result[0]);
+        fmt::print("Out: {}\n", result[1]);
     }
 
     free(result, Q);
     free(image_data, Q);
     free(mask_data, Q);
     auto end_time = std::chrono::high_resolution_clock::now();
-    ;
+
     fmt::print(
       "Total run duration: {:.2f} s\n",
       std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time)
