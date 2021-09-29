@@ -10,16 +10,9 @@
 #include <chrono>
 #include <iostream>
 
+#include "common.hpp"
 #include "eiger2xe.h"
 #include "h5read.h"
-
-constexpr auto R = "\033[31m";
-constexpr auto G = "\033[32m";
-constexpr auto Y = "\033[33m";
-constexpr auto B = "\033[34m";
-constexpr auto GRAY = "\033[37m";
-constexpr auto BOLD = "\033[1m";
-constexpr auto NC = "\033[0m";
 
 using namespace sycl;
 
@@ -42,7 +35,8 @@ constexpr size_t cpow(size_t x, size_t power) {
     // return power == 0 ? 1 : x * pow(x, power - 1);
 }
 
-using PipedPixelsArray = std::array<H5Read::image_type, 32>;
+// Width of this array determines how many pixels we read at once
+using PipedPixelsArray = std::array<H5Read::image_type, 16>;
 
 template <int id>
 using ProducerPipeToModule = INTEL::pipe<class ToModulePipe<id>, PipedPixelsArray, 5>;
@@ -72,34 +66,7 @@ int main(int argc, char** argv) {
     auto start_time = std::chrono::high_resolution_clock::now();
     auto reader = H5Read(argc, argv);
 
-    // for (int i = 0; i < 10; ++i) {
-    //     fmt::print("{}: {}\n", i, pow(2, i));
-    // }
-
-#ifdef FPGA
-// Select either:
-//  - the FPGA emulator device (CPU emulation of the FPGA)
-//  - the FPGA device (a real FPGA)
-#if defined(FPGA_EMULATOR)
-    INTEL::fpga_emulator_selector device_selector;
-#else
-    INTEL::fpga_selector device_selector;
-#endif
-    queue Q(device_selector, property::queue::enable_profiling{});
-#else
-    queue Q{property::queue::enable_profiling{}};
-#endif
-
-    // Print information about the device we are using
-    std::string device_kind = Q.get_device().is_cpu()           ? "CPU"
-                              : Q.get_device().is_gpu()         ? "GPU"
-                              : Q.get_device().is_accelerator() ? "FPGA"
-                                                                : "Unknown";
-    fmt::print("Using {0}{2}{1} Device: {0}{3}{1}\n\n",
-               BOLD,
-               NC,
-               device_kind,
-               Q.get_device().get_info<info::device::name>());
+    auto Q = initialize_queue();
 
     auto slow = reader.get_image_slow();
     auto fast = reader.get_image_fast();
