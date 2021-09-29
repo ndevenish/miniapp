@@ -142,11 +142,12 @@ int main(int argc, char** argv) {
 
         event e_producer = Q.submit([&](handler& h) {
             h.single_task<class Producer>([=]() {
+                auto hp = host_ptr<PipedPixelsArray>(
+                  reinterpret_cast<PipedPixelsArray*>(image_data));
                 size_t global_sum = 0;
                 size_t num_pixels = 0;
                 for (size_t block = 0; block < TOTAL_BLOCKS_UNALIGNED; ++block) {
-                    PipedPixelsArray data = *reinterpret_cast<PipedPixelsArray*>(
-                      image_data + block * BLOCK_SIZE);
+                    PipedPixelsArray data = hp[block];
 
                     size_t local_sum = 0;
                     size_t num_local = 0;
