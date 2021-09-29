@@ -123,8 +123,9 @@ int main(int argc, char** argv) {
     //   FULL_BLOCKS);
 
     fmt::print("Starting image loop:\n");
-    for (int i = 0; i < reader.get_number_of_images(); ++i) {
-        fmt::print("\nReading Image {}\n", i);
+    for (int i_img = 0; i_img < std::max(reader.get_number_of_images(), 8UL); ++i_img) {
+        int i = i_img % reader.get_number_of_images();
+        fmt::print("\nReading Image {} ({})\n", i_img, i);
         reader.get_image_into(i, image_data);
 
         fmt::print("Calculating host sum\n");
