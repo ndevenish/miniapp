@@ -76,7 +76,6 @@ int main(int argc, char** argv) {
     uint8_t* mask_data = malloc_device<uint8_t>(num_pixels, Q);
     uint16_t* image_data = malloc_host<uint16_t>(num_pixels, Q);
     PipedPixelsArray* result = malloc_host<PipedPixelsArray>(2, Q);
-    // size_t* result = malloc_shared<size_t>(1, Q);
     assert(image_data % 64 == 0);
     fmt::print("Uploading mask data to accelerator.... ");
     auto e_mask_upload = Q.submit(
@@ -141,8 +140,9 @@ int main(int argc, char** argv) {
                 // for (size_t y = 0; y < slow; ++y) {
                 // We have evenly sized blocks send to us
                 for (size_t block = 0; block < FULL_BLOCKS * slow; ++block) {
+                    auto result_h = host_ptr<PipedPixelsArray>(result);
                     PipedPixelsArray sum = ProducerPipeToModule<0>::read();
-                    result[0] = sum;
+                    result_h[0] = sum;
 
                     // Parallel prefix scan - upsweep a binary tree
                     // After this, every 1,2,4,8,... node has the correct
@@ -156,7 +156,25 @@ int main(int argc, char** argv) {
                               sum[k + cpow(2, d) - 1] + sum[k + cpow(2, d + 1) - 1];
                         }
                     }
-                    result[1] = sum;
+                    // Total sum for this block is now in sum[-1]
+
+                    // Parallel prefix downsweep the binary tree
+                    // After this, entire block has the correct prefix sum
+                    sum[BLOCK_SIZE - 1] = 0;
+#pragma unroll
+                    for (int d = BLOCK_SIZE_BITS - 1; d >= 0; --d) {
+#pragma unroll
+                        for (int k = 0; k < BLOCK_SIZE; k += cpow(2, d + 1)) {
+                            // Save the left node value
+                            auto t = sum[k + cpow(2, d) - 1];
+                            // Left node becomes parent
+                            sum[k + cpow(2, d) - 1] = sum[k + cpow(2, d + 1) - 1];
+                            // Right node becomes root + previous left value
+                            sum[k + cpow(2, d + 1) - 1] += t;
+                        }
+                    }
+
+                    result_h[1] = sum;
                 }
                 // }
             });
