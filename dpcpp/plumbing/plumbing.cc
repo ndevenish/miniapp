@@ -71,18 +71,18 @@ double event_GBps(const sycl::event& e, size_t bytes) {
     return GBps(bytes, ms);
 }
 
-/// Calculate the prefix sum of a PipedPixelsArray
-void calculate_prefix_sum_inplace(PipedPixelsArray& data) {
-    // Parallel prefix scan - upsweep a binary tree
-    // After this, every 1,2,4,8,... node has the correct
-    // sum of the two nodes below it
-
-    constexpr size_t BLOCK_SIZE = std::tuple_size<PipedPixelsArray>::value;
+/// Calculate the prefix sum of a 2^N sized array
+template <typename T, size_t BLOCK_SIZE>
+void calculate_prefix_sum_inplace(std::array<T, BLOCK_SIZE>& data) {
     constexpr size_t BLOCK_SIZE_BITS = clog2(BLOCK_SIZE);
     static_assert(is_power_of_two(BLOCK_SIZE));
 
+    // We need to store the last element to convert to inclusive
     auto last_element = data[BLOCK_SIZE - 1];
 
+    // Parallel prefix scan - upsweep a binary tree
+    // After this, every 1,2,4,8,... node has the correct
+    // sum of the two nodes below it
 #pragma unroll
     for (int d = 0; d < BLOCK_SIZE_BITS; ++d) {
 #pragma unroll
