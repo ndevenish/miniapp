@@ -91,7 +91,6 @@ void calculate_prefix_sum_inplace(std::array<T, BLOCK_SIZE>& data) {
               data[k + cpow(2, d) - 1] + data[k + cpow(2, d + 1) - 1];
         }
     }
-    // Total sum for this block is now in data[-1]
 
     // Parallel prefix downsweep the binary tree
     // After this, entire block has the correct prefix sum
