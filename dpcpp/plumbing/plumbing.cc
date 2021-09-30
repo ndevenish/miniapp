@@ -120,7 +120,7 @@ int main(int argc, char** argv) {
     // Mask data is the same for all images, so we copy it early
     uint8_t* mask_data = malloc_device<uint8_t>(num_pixels, Q);
     uint16_t* image_data = malloc_host<uint16_t>(num_pixels, Q);
-    PipedPixelsArray* result = malloc_host<PipedPixelsArray>(2, Q);
+    PipedPixelsArray* result = malloc_host<PipedPixelsArray>(4, Q);
     assert(image_data % 64 == 0);
     fmt::print("Uploading mask data to accelerator.... ");
     auto e_mask_upload = Q.submit(
@@ -187,10 +187,23 @@ int main(int argc, char** argv) {
                 for (size_t block = 0; block < FULL_BLOCKS * slow; ++block) {
                     auto result_h = host_ptr<PipedPixelsArray>(result);
                     PipedPixelsArray sum = ProducerPipeToModule<0>::read();
+                    PipedPixelsArray sumsq = sum;
+                    // Calculate the squared
+#pragma unroll
+                    for (int i = 0; i < std::tuple_size<PipedPixelsArray>::value; ++i) {
+                        sumsq[i] = sumsq[i] * sumsq[i];
+                    }
+
                     result_h[0] = sum;
+                    result_h[1] = sumsq;
 
                     calculate_prefix_sum_inplace(sum);
-                    result_h[1] = sum;
+                    calculate_prefix_sum_inplace(sumsq);
+
+                    size_t total = sum[BLOCK_SIZE - 1];
+
+                    result_h[2] = sum;
+                    result_h[3] = sumsq;
                 }
                 // }
             });
@@ -215,8 +228,10 @@ int main(int argc, char** argv) {
         // auto device_sum = result[0];
         // auto color = fg(host_sum == device_sum ? fmt::color::green :
         // fmt::color::red); fmt::print(color, "     Sum = {} / {}\n", device_sum, host_sum);
-        fmt::print("In:  {}\n", result[0]);
-        fmt::print("Out: {}\n", result[1]);
+        fmt::print("In:   {}\n", result[0]);
+        fmt::print("Out:  {}\n\n", result[2]);
+        fmt::print("In²:  {}\n", result[1]);
+        fmt::print("Out²: {}\n", result[3]);
     }
 
     free(result, Q);
