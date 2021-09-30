@@ -23,9 +23,17 @@ class ToModulePipe;
 constexpr bool is_power_of_two(int x) {
     return x && ((x & (x - 1)) == 0);
 }
+
+/// constexpr flooring log2
 constexpr size_t clog2(size_t n) {
-    return ((n < 2) ? 0 : 1 + clog2(n / 2));
+    size_t result = 0;
+    while (n >= 2) {
+        result += 1;
+        n = n / 2;
+    }
+    return result;
 }
+
 constexpr size_t cpow(size_t x, size_t power) {
     int ret = 1;
     for (int i = 0; i < power; ++i) {
@@ -37,6 +45,7 @@ constexpr size_t cpow(size_t x, size_t power) {
 
 // Width of this array determines how many pixels we read at once
 using PipedPixelsArray = std::array<H5Read::image_type, 16>;
+static_assert(is_power_of_two(std::tuple_size<PipedPixelsArray>::value));
 
 template <int id>
 using ProducerPipeToModule = INTEL::pipe<class ToModulePipe<id>, PipedPixelsArray, 5>;
@@ -60,6 +69,42 @@ double GBps(size_t bytes, double ms) {
 double event_GBps(const sycl::event& e, size_t bytes) {
     const double ms = event_ms(e);
     return GBps(bytes, ms);
+}
+
+/// Calculate the prefix sum of a PipedPixelsArray
+void calculate_prefix_sum_inplace(PipedPixelsArray& data) {
+    // Parallel prefix scan - upsweep a binary tree
+    // After this, every 1,2,4,8,... node has the correct
+    // sum of the two nodes below it
+
+    constexpr size_t BLOCK_SIZE = std::tuple_size<PipedPixelsArray>::value;
+    constexpr size_t BLOCK_SIZE_BITS = clog2(BLOCK_SIZE);
+
+#pragma unroll
+    for (int d = 0; d < BLOCK_SIZE_BITS; ++d) {
+#pragma unroll
+        for (int k = 0; k < BLOCK_SIZE; k += cpow(2, d + 1)) {
+            data[k + cpow(2, d + 1) - 1] =
+              data[k + cpow(2, d) - 1] + data[k + cpow(2, d + 1) - 1];
+        }
+    }
+    // Total sum for this block is now in data[-1]
+
+    // Parallel prefix downsweep the binary tree
+    // After this, entire block has the correct prefix sum
+    data[BLOCK_SIZE - 1] = 0;
+#pragma unroll
+    for (int d = BLOCK_SIZE_BITS - 1; d >= 0; --d) {
+#pragma unroll
+        for (int k = 0; k < BLOCK_SIZE; k += cpow(2, d + 1)) {
+            // Save the left node value
+            auto t = data[k + cpow(2, d) - 1];
+            // Left node becomes parent
+            data[k + cpow(2, d) - 1] = data[k + cpow(2, d + 1) - 1];
+            // Right node becomes root + previous left value
+            data[k + cpow(2, d + 1) - 1] += t;
+        }
+    }
 }
 
 int main(int argc, char** argv) {
@@ -144,36 +189,7 @@ int main(int argc, char** argv) {
                     PipedPixelsArray sum = ProducerPipeToModule<0>::read();
                     result_h[0] = sum;
 
-                    // Parallel prefix scan - upsweep a binary tree
-                    // After this, every 1,2,4,8,... node has the correct
-                    // sum of the two nodes below it
-
-#pragma unroll
-                    for (int d = 0; d < BLOCK_SIZE_BITS; ++d) {
-#pragma unroll
-                        for (int k = 0; k < BLOCK_SIZE; k += cpow(2, d + 1)) {
-                            sum[k + cpow(2, d + 1) - 1] =
-                              sum[k + cpow(2, d) - 1] + sum[k + cpow(2, d + 1) - 1];
-                        }
-                    }
-                    // Total sum for this block is now in sum[-1]
-
-                    // Parallel prefix downsweep the binary tree
-                    // After this, entire block has the correct prefix sum
-                    sum[BLOCK_SIZE - 1] = 0;
-#pragma unroll
-                    for (int d = BLOCK_SIZE_BITS - 1; d >= 0; --d) {
-#pragma unroll
-                        for (int k = 0; k < BLOCK_SIZE; k += cpow(2, d + 1)) {
-                            // Save the left node value
-                            auto t = sum[k + cpow(2, d) - 1];
-                            // Left node becomes parent
-                            sum[k + cpow(2, d) - 1] = sum[k + cpow(2, d + 1) - 1];
-                            // Right node becomes root + previous left value
-                            sum[k + cpow(2, d + 1) - 1] += t;
-                        }
-                    }
-
+                    calculate_prefix_sum_inplace(sum);
                     result_h[1] = sum;
                 }
                 // }
