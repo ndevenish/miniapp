@@ -79,6 +79,9 @@ void calculate_prefix_sum_inplace(PipedPixelsArray& data) {
 
     constexpr size_t BLOCK_SIZE = std::tuple_size<PipedPixelsArray>::value;
     constexpr size_t BLOCK_SIZE_BITS = clog2(BLOCK_SIZE);
+    static_assert(is_power_of_two(BLOCK_SIZE));
+
+    auto last_element = data[BLOCK_SIZE - 1];
 
 #pragma unroll
     for (int d = 0; d < BLOCK_SIZE_BITS; ++d) {
@@ -105,6 +108,12 @@ void calculate_prefix_sum_inplace(PipedPixelsArray& data) {
             data[k + cpow(2, d + 1) - 1] += t;
         }
     }
+// This calculated an exclusive sum. We want inclusive, so shift+add
+#pragma unroll
+    for (int i = 1; i < BLOCK_SIZE; ++i) {
+        data[i - 1] = data[i];
+    }
+    data[BLOCK_SIZE - 1] = data[BLOCK_SIZE - 2] + last_element;
 }
 
 int main(int argc, char** argv) {
