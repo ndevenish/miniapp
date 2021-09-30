@@ -130,6 +130,7 @@ int main(int argc, char** argv) {
     uint8_t* mask_data = malloc_device<uint8_t>(num_pixels, Q);
     uint16_t* image_data = malloc_host<uint16_t>(num_pixels, Q);
     PipedPixelsArray* result = malloc_host<PipedPixelsArray>(4, Q);
+
     assert(image_data % 64 == 0);
     fmt::print("Uploading mask data to accelerator.... ");
     auto e_mask_upload = Q.submit(
@@ -155,6 +156,9 @@ int main(int argc, char** argv) {
       BLOCK_SIZE_BITS,
       BLOCK_REMAINDER,
       FULL_BLOCKS);
+
+    std::array<uint16_t, FULL_BLOCKS>* totalblocksum =
+      malloc_host<std::array<uint16_t, FULL_BLOCKS>>(1, Q);
 
     fmt::print("Starting image loop:\n");
     for (int i = 0; i < reader.get_number_of_images(); ++i) {
@@ -191,30 +195,33 @@ int main(int argc, char** argv) {
             h.single_task<class Module<0>>([=](){
                 size_t sum_pixels = 0;
 
-                // for (size_t y = 0; y < slow; ++y) {
-                // We have evenly sized blocks send to us
-                for (size_t block = 0; block < FULL_BLOCKS * slow; ++block) {
-                    auto result_h = host_ptr<PipedPixelsArray>(result);
-                    PipedPixelsArray sum = ProducerPipeToModule<0>::read();
-                    PipedPixelsArray sumsq = sum;
-                    // Calculate the squared
+                for (size_t y = 0; y < slow; ++y) {
+                    std::array<PipedPixelsArray, FULL_BLOCKS> all_blocks = {};
+                    std::array<uint16_t, FULL_BLOCKS> block_sums = {};
+                    // We have evenly sized blocks send to us
+                    for (size_t block = 0; block < FULL_BLOCKS; ++block) {
+                        auto result_h = host_ptr<PipedPixelsArray>(result);
+                        PipedPixelsArray sum = ProducerPipeToModule<0>::read();
+                        PipedPixelsArray sumsq = sum;
+                        // Calculate the squared
 #pragma unroll
-                    for (int i = 0; i < std::tuple_size<PipedPixelsArray>::value; ++i) {
-                        sumsq[i] = sumsq[i] * sumsq[i];
+                        for (int i = 0; i < std::tuple_size<PipedPixelsArray>::value;
+                             ++i) {
+                            sumsq[i] = sumsq[i] * sumsq[i];
+                        }
+
+                        result_h[0] = sum;
+                        result_h[1] = sumsq;
+
+                        calculate_prefix_sum_inplace(sum);
+                        calculate_prefix_sum_inplace(sumsq);
+
+                        block_sums[block] = sum[BLOCK_SIZE - 1];
+                        result_h[2] = sum;
+                        result_h[3] = sumsq;
                     }
-
-                    result_h[0] = sum;
-                    result_h[1] = sumsq;
-
-                    calculate_prefix_sum_inplace(sum);
-                    calculate_prefix_sum_inplace(sumsq);
-
-                    size_t total = sum[BLOCK_SIZE - 1];
-
-                    result_h[2] = sum;
-                    result_h[3] = sumsq;
+                    totalblocksum[0] = block_sums;
                 }
-                // }
             });
         });
 
@@ -241,6 +248,8 @@ int main(int argc, char** argv) {
         fmt::print("Out:  {}\n\n", result[2]);
         fmt::print("In²:  {}\n", result[1]);
         fmt::print("Out²: {}\n", result[3]);
+
+        fmt::print("\nTotal block sum: {}\n", totalblocksum[0]);
     }
 
     free(result, Q);
