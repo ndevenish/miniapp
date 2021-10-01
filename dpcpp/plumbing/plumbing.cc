@@ -115,6 +115,18 @@ void calculate_prefix_sum_inplace(std::array<T, BLOCK_SIZE>& data) {
     data[BLOCK_SIZE - 1] = data[BLOCK_SIZE - 2] + last_element;
 }
 
+// /// Fallthrough for non-power-of-two arrays
+// template <typename T, size_t size>
+// void calculate_prefix_sum_inplace(std::array<T, size>& data) {
+//     constexpr size_t constexpr size_t largest_pow2 = clog2(size);
+//     calculate_prefix_sum_inplace
+
+//     // fmt::print("Closest power of two for consolidating block sums: {} ({})\n",
+//     //            fullw_pow2,
+//     //            cpow(2, fullw_pow2));
+//     // fmt::print("Remaining blocks: {}\n", FULL_BLOCKS - cpow(2, fullw_pow2));
+// }
+
 int main(int argc, char** argv) {
     auto start_time = std::chrono::high_resolution_clock::now();
     auto reader = H5Read(argc, argv);
@@ -156,8 +168,14 @@ int main(int argc, char** argv) {
       BLOCK_REMAINDER,
       FULL_BLOCKS);
 
+    constexpr size_t fullw_pow2 = clog2(FULL_BLOCKS);
+    fmt::print("Closest power of two for consolidating block sums: {} ({})\n",
+               fullw_pow2,
+               cpow(2, fullw_pow2));
+    fmt::print("Remaining blocks: {}\n", FULL_BLOCKS - cpow(2, fullw_pow2));
+
     std::array<uint16_t, FULL_BLOCKS>* totalblocksum =
-      malloc_host<std::array<uint16_t, FULL_BLOCKS>>(1, Q);
+      malloc_host<std::array<uint16_t, FULL_BLOCKS>>(slow, Q);
 
     fmt::print("Starting image loop:\n");
     for (int i = 0; i < reader.get_number_of_images(); ++i) {
@@ -209,17 +227,27 @@ int main(int argc, char** argv) {
                             sumsq[i] = sumsq[i] * sumsq[i];
                         }
 
-                        result_h[0] = sum;
-                        result_h[1] = sumsq;
+                        // result_h[0] = sum;
+                        // result_h[1] = sumsq;
 
                         calculate_prefix_sum_inplace(sum);
                         calculate_prefix_sum_inplace(sumsq);
 
                         block_sums[block] = sum[BLOCK_SIZE - 1];
-                        result_h[2] = sum;
-                        result_h[3] = sumsq;
+                        all_blocks[block] = sum;
+                        // result_h[2] = sum;
+                        // result_h[3] = sumsq;
                     }
-                    totalblocksum[0] = block_sums;
+                    // Now, calculate the prefix sum for block-of-sums
+                    // constexpr size_t largest_pow2 = clog2(FULL_BLOCKS);
+                    // constexpr size_t block_remainder =
+                    //   FULL_BLOCKS - cpow(2, largest_pow2);
+                    // calculate_prefix_sum_inplace(
+                    //   reinterpret_cast<std::array<uint16_t, cpow(2, largest_pow2)>&>(
+                    //     block_sums));
+
+                    // Feedback to host
+                    totalblocksum[y] = block_sums;
                 }
             });
         });
@@ -248,7 +276,10 @@ int main(int argc, char** argv) {
         fmt::print("In²:  {}\n", result[1]);
         fmt::print("Out²: {}\n", result[3]);
 
-        fmt::print("\nTotal block sum: {}\n", totalblocksum[0]);
+        fmt::print("\nTotal block sum:\n");
+        for (int i = slow - 5; i < slow; ++i) {
+            fmt::print("{}\n", totalblocksum[i]);
+        }
     }
 
     free(result, Q);
