@@ -133,9 +133,10 @@ int main(int argc, char** argv) {
         size_t host_sum = 0;
         size_t active_pixels = 0;
 
+        constexpr size_t REPEATS = 100;
         for (int i = 0; i < TOTAL_BLOCKS_UNALIGNED * BLOCK_SIZE; ++i) {
-            host_sum += image_data[i];
-            active_pixels += 1;
+            host_sum += image_data[i] * REPEATS;
+            active_pixels += REPEATS;
         }
         fmt::print("Starting Kernels\n");
         // auto t1 = std::chrono::high_resolution_clock::now();
@@ -146,18 +147,20 @@ int main(int argc, char** argv) {
                   reinterpret_cast<PipedPixelsArray*>(image_data));
                 size_t global_sum = 0;
                 size_t num_pixels = 0;
-                for (size_t block = 0; block < TOTAL_BLOCKS_UNALIGNED; ++block) {
-                    PipedPixelsArray data = hp[block];
+                for (size_t repeat = 0; repeat < 100; ++repeat) {
+                    for (size_t block = 0; block < TOTAL_BLOCKS_UNALIGNED; ++block) {
+                        PipedPixelsArray data = hp[block];
 
-                    size_t local_sum = 0;
-                    size_t num_local = 0;
+                        size_t local_sum = 0;
+                        size_t num_local = 0;
 #pragma unroll
-                    for (int i = 0; i < BLOCK_SIZE; ++i) {
-                        local_sum += data[i];
-                        num_local += 1;
+                        for (int i = 0; i < BLOCK_SIZE; ++i) {
+                            local_sum += data[i];
+                            num_local += 1;
+                        }
+                        global_sum += local_sum;
+                        num_pixels += num_local;
                     }
-                    global_sum += local_sum;
-                    num_pixels += num_local;
                 }
                 result[0] = global_sum;
                 result[1] = num_pixels;
