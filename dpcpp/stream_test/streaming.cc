@@ -147,7 +147,10 @@ int main(int argc, char** argv) {
                   reinterpret_cast<PipedPixelsArray*>(image_data));
                 size_t global_sum = 0;
                 size_t num_pixels = 0;
+
                 for (size_t repeat = 0; repeat < 100; ++repeat) {
+                    size_t mid_sum = 0;
+                    size_t mid_num = 0;
                     for (size_t block = 0; block < TOTAL_BLOCKS_UNALIGNED; ++block) {
                         PipedPixelsArray data = hp[block];
 
@@ -158,9 +161,11 @@ int main(int argc, char** argv) {
                             local_sum += data[i];
                             num_local += 1;
                         }
-                        global_sum += local_sum;
-                        num_pixels += num_local;
+                        mid_sum += local_sum;
+                        mid_num += num_local;
                     }
+                    global_sum += mid_sum;
+                    num_pixels += mid_num;
                 }
                 result[0] = global_sum;
                 result[1] = num_pixels;
