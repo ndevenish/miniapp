@@ -103,7 +103,7 @@ int main(int argc, char** argv) {
 
     // Mask data is the same for all images, so we copy it early
     uint16_t* image_data = malloc_host<uint16_t>(num_pixels, Q);
-    size_t* result = malloc_shared<size_t>(2, Q);
+    size_t* result = malloc_host<size_t>(2, Q);
     // Make sure we're allocated on a 512 bit alignment
     assert(image_data % 64 == 0);
     constexpr size_t BLOCK_SIZE = std::tuple_size<PipedPixelsArray>::value;
@@ -145,6 +145,8 @@ int main(int argc, char** argv) {
             h.single_task<class Producer>([=]() {
                 auto hp = host_ptr<PipedPixelsArray>(
                   reinterpret_cast<PipedPixelsArray*>(image_data));
+                auto result_p = host_ptr<size_t>(result);
+
                 size_t global_sum = 0;
                 size_t num_pixels = 0;
 
@@ -167,8 +169,8 @@ int main(int argc, char** argv) {
                     global_sum += mid_sum;
                     num_pixels += mid_num;
                 }
-                result[0] = global_sum;
-                result[1] = num_pixels;
+                result_p[0] = global_sum;
+                result_p[1] = num_pixels;
             });
         });
 
