@@ -16,9 +16,6 @@
 
 using namespace sycl;
 
-template <int id>
-class ToModulePipe;
-
 // From https://stackoverflow.com/a/10585543/1118662
 constexpr bool is_power_of_two(int x) {
     return x && ((x & (x - 1)) == 0);
@@ -34,18 +31,57 @@ constexpr size_t clog2(size_t n) {
     return result;
 }
 
+// Constexpr power calculation
 constexpr size_t cpow(size_t x, size_t power) {
     int ret = 1;
     for (int i = 0; i < power; ++i) {
         ret *= x;
     }
     return ret;
-    // return power == 0 ? 1 : x * pow(x, power - 1);
 }
+
+/// One-direction width of kernel. Total kernel span is (K_W * 2 + 1)
+constexpr int KERNEL_WIDTH = 3;
 
 // Width of this array determines how many pixels we read at once
 using PipedPixelsArray = std::array<H5Read::image_type, 16>;
-static_assert(is_power_of_two(std::tuple_size<PipedPixelsArray>::value));
+// A convenience assignment for size of a single block
+constexpr size_t BLOCK_SIZE = std::tuple_size<PipedPixelsArray>::value;
+static_assert(is_power_of_two(BLOCK_SIZE));
+
+// We need to buffer two blocks + kernel, because the pixels
+// on the beginning of the block depend on the tail of the
+// previous block, and the pixels at the end of the block
+// depend on the start of the next block.
+//
+// Let's make a rolling buffer of:
+//
+//      | <KERNEL_WIDTH> | Block 0 | Block 1 |
+//
+// We read a block into block 1 - at which point we are
+// ready to calculate all of the local-kernel sums for
+// block 0 e.g.:
+//
+//      | K-2 | K-1 | k-0 | B0_0 | B0_1 | B0_2 | B0_3
+//         └─────┴─────┴──────┼──────┴──────┴─────┘
+//                            +
+//                            │
+//                         | S_0 | S_1 | S_2 | S_3 | ...
+//
+// Once we've calculated the per-pixel kernel sum for a
+// single block, we can shift the entire array left by
+// BLOCK_SIZE + KERNEL_WIDTH pixels to read the next
+// block into the right of the buffer.
+//
+// Since we only need the raw pixel values of the
+// buffer+block, this process can be pipelined.
+using BufferedPipedPixelsArray =
+  std::array<PipedPixelsArray::value_type, BLOCK_SIZE * 2 + KERNEL_WIDTH>;
+// This two-block solution only works if kernel width < block size
+static_assert(KERNEL_WIDTH < BLOCK_SIZE);
+
+template <int id>
+class ToModulePipe;
 
 template <int id>
 using ProducerPipeToModule = INTEL::pipe<class ToModulePipe<id>, PipedPixelsArray, 5>;
@@ -55,12 +91,14 @@ class Module;
 
 class Producer;
 
+/// Return the profiling event time, in milliseconds, for an event
 double event_ms(const sycl::event& e) {
     return 1e-6
            * (e.get_profiling_info<info::event_profiling::command_end>()
               - e.get_profiling_info<info::event_profiling::command_start>());
 }
 
+/// Calculate the GigaBytes per second given bytes, time
 double GBps(size_t bytes, double ms) {
     return (static_cast<double>(bytes) / 1e9) / (ms / 1000.0);
 }
@@ -115,6 +153,19 @@ void calculate_prefix_sum_inplace(std::array<T, BLOCK_SIZE>& data) {
     data[BLOCK_SIZE - 1] = data[BLOCK_SIZE - 2] + last_element;
 }
 
+PipedPixelsArray sum_buffered_block_0(BufferedPipedPixelsArray& buffer) {
+    // Now we can calculate the sums for block 0
+    PipedPixelsArray sum{};
+#pragma unroll
+    for (int center = 0; center < BLOCK_SIZE; ++center) {
+#pragma unroll
+        for (int i = -KERNEL_WIDTH; i < KERNEL_WIDTH; ++i) {
+            sum[center] += buffer[KERNEL_WIDTH + center + i];
+        }
+    }
+    return sum;
+}
+
 // /// Fallthrough for non-power-of-two arrays
 // template <typename T, size_t size>
 // void calculate_prefix_sum_inplace(std::array<T, size>& data) {
@@ -138,9 +189,11 @@ int main(int argc, char** argv) {
     const size_t num_pixels = reader.get_image_slow() * reader.get_image_fast();
 
     // Mask data is the same for all images, so we copy it early
-    uint8_t* mask_data = malloc_device<uint8_t>(num_pixels, Q);
-    uint16_t* image_data = malloc_host<uint16_t>(num_pixels, Q);
-    PipedPixelsArray* result = malloc_host<PipedPixelsArray>(4, Q);
+    auto mask_data = device_ptr<uint8_t>(malloc_device<uint8_t>(num_pixels, Q));
+    auto image_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
+
+    // PipedPixelsArray* result = malloc_host<PipedPixelsArray>(4, Q);
+    PipedPixelsArray* result = malloc_host<PipedPixelsArray>(2, Q);
 
     assert(image_data % 64 == 0);
     fmt::print("Uploading mask data to accelerator.... ");
@@ -152,7 +205,6 @@ int main(int argc, char** argv) {
                event_GBps(e_mask_upload, num_pixels));
 
     // Module/detector compile-time calculations
-    constexpr size_t BLOCK_SIZE = std::tuple_size<PipedPixelsArray>::value;
     constexpr size_t BLOCK_SIZE_BITS = clog2(BLOCK_SIZE);
     constexpr size_t BLOCK_REMAINDER = E2XE_16M_FAST % BLOCK_SIZE;
     constexpr size_t FULL_BLOCKS = (E2XE_16M_FAST - BLOCK_REMAINDER) / BLOCK_SIZE;
@@ -177,6 +229,8 @@ int main(int argc, char** argv) {
     std::array<uint16_t, FULL_BLOCKS>* totalblocksum =
       malloc_host<std::array<uint16_t, FULL_BLOCKS>>(slow, Q);
 
+    uint16_t* destination_data = malloc_device<uint16_t>(num_pixels, Q);
+
     fmt::print("Starting image loop:\n");
     for (int i = 0; i < reader.get_number_of_images(); ++i) {
         fmt::print("\nReading Image {}\n", i);
@@ -200,7 +254,8 @@ int main(int argc, char** argv) {
                 for (size_t y = 0; y < slow; ++y) {
                     for (size_t block = 0; block < FULL_BLOCKS; ++block) {
                         auto image_data_h = host_ptr<PipedPixelsArray>(
-                          reinterpret_cast<PipedPixelsArray*>(image_data + y * fast));
+                          reinterpret_cast<PipedPixelsArray*>(image_data.get()
+                                                              + y * fast));
                         ProducerPipeToModule<0>::write(image_data_h[block]);
                     }
                 }
@@ -210,46 +265,48 @@ int main(int argc, char** argv) {
         // Launch a module kernel for every module
         event e_module = Q.submit([&](handler& h) {
             h.single_task<class Module<0>>([=](){
+                auto result_h = host_ptr<PipedPixelsArray>(result);
+                auto destination_data_h = device_ptr<uint16_t>(destination_data);
+
                 size_t sum_pixels = 0;
 
                 for (size_t y = 0; y < slow; ++y) {
-                    std::array<PipedPixelsArray, FULL_BLOCKS> all_blocks = {};
-                    std::array<uint16_t, FULL_BLOCKS> block_sums = {};
-                    // We have evenly sized blocks send to us
-                    for (size_t block = 0; block < FULL_BLOCKS; ++block) {
-                        auto result_h = host_ptr<PipedPixelsArray>(result);
-                        PipedPixelsArray sum = ProducerPipeToModule<0>::read();
-                        PipedPixelsArray sumsq = sum;
-                        // Calculate the squared
+                    // The per-pixel buffer array to accumulate the blocks
+                    BufferedPipedPixelsArray interim_pixels{};
+
+                    // Have a "block" view of this pixel buffer for easy access
+                    auto* interim_blocks = reinterpret_cast<PipedPixelsArray*>(
+                      &interim_pixels[KERNEL_WIDTH]);
+
+                    // Read the first block into initial position in the array
+                    interim_blocks[0] = ProducerPipeToModule<0>::read();
+
+                    for (size_t block = 0; block < FULL_BLOCKS - 1; ++block) {
+                        // Read this into the right of the array...
+                        interim_blocks[1] = ProducerPipeToModule<0>::read();
+
+                        // Now we can calculate the sums for block 0
+                        PipedPixelsArray sum = sum_buffered_block_0(interim_pixels);
+
+                        // Copy this block of data to the global store
+                        // ... we will want to make this per-row at some point
+                        *reinterpret_cast<PipedPixelsArray*>(
+                          &destination_data_h[y * fast + block * BLOCK_SIZE]) = sum;
+                        // for (int i = 0; i < BLOCK_SIZE; ++i) {
+                        //     destination_data[y * fast + block * BLOCK_SIZE + i] =
+                        //       sum[i];
+                        // }
+
+                        // Now shift everything to the left
 #pragma unroll
-                        for (int i = 0; i < std::tuple_size<PipedPixelsArray>::value;
-                             ++i) {
-                            sumsq[i] = sumsq[i] * sumsq[i];
+                        for (int i = 0; i < KERNEL_WIDTH + BLOCK_SIZE; ++i) {
+                            interim_pixels[i] = interim_pixels[BLOCK_SIZE + i];
                         }
-
-                        // result_h[0] = sum;
-                        // result_h[1] = sumsq;
-
-                        calculate_prefix_sum_inplace(sum);
-                        calculate_prefix_sum_inplace(sumsq);
-
-                        block_sums[block] = sum[BLOCK_SIZE - 1];
-                        all_blocks[block] = sum;
-                        // result_h[2] = sum;
-                        // result_h[3] = sumsq;
                     }
-                    // Now, calculate the prefix sum for block-of-sums
-                    // constexpr size_t largest_pow2 = clog2(FULL_BLOCKS);
-                    // constexpr size_t block_remainder =
-                    //   FULL_BLOCKS - cpow(2, largest_pow2);
-                    // calculate_prefix_sum_inplace(
-                    //   reinterpret_cast<std::array<uint16_t, cpow(2, largest_pow2)>&>(
-                    //     block_sums));
-
-                    // Feedback to host
-                    totalblocksum[y] = block_sums;
+                    // Now, we have one last block - read zero into block 1
+                    // interim_blocks[1] = {};
                 }
-            });
+                });
         });
 
         Q.wait();
@@ -271,15 +328,15 @@ int main(int argc, char** argv) {
         // auto device_sum = result[0];
         // auto color = fg(host_sum == device_sum ? fmt::color::green :
         // fmt::color::red); fmt::print(color, "     Sum = {} / {}\n", device_sum, host_sum);
-        fmt::print("In:   {}\n", result[0]);
-        fmt::print("Out:  {}\n\n", result[2]);
-        fmt::print("In²:  {}\n", result[1]);
-        fmt::print("Out²: {}\n", result[3]);
+        fmt::print("Out:   {}\n", result[0]);
+        fmt::print("Out2:  {}\n\n", result[1]);
+        // fmt::print("In²:  {}\n", result[1]);
+        // fmt::print("Out²: {}\n", result[3]);
 
-        fmt::print("\nTotal block sum:\n");
-        for (int i = slow - 5; i < slow; ++i) {
-            fmt::print("{}\n", totalblocksum[i]);
-        }
+        // fmt::print("\nTotal block sum:\n");
+        // for (int i = slow - 5; i < slow; ++i) {
+        //     fmt::print("{}\n", totalblocksum[i]);
+        // }
     }
 
     free(result, Q);
