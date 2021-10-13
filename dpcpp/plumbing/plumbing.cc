@@ -42,12 +42,26 @@ constexpr size_t cpow(size_t x, size_t power) {
 
 /// One-direction width of kernel. Total kernel span is (K_W * 2 + 1)
 constexpr int KERNEL_WIDTH = 3;
+/// One-direction height of kernel. Total kernel span is (K_W * 2 + 1)
+constexpr int KERNEL_HEIGHT = 3;
+
+constexpr int FULL_KERNEL_HEIGHT = KERNEL_HEIGHT * 2 + 1;
 
 // Width of this array determines how many pixels we read at once
 using PipedPixelsArray = std::array<H5Read::image_type, 16>;
 // A convenience assignment for size of a single block
 constexpr size_t BLOCK_SIZE = std::tuple_size<PipedPixelsArray>::value;
 static_assert(is_power_of_two(BLOCK_SIZE));
+
+// Convenience sum for PipedPixelsArray
+auto operator+(const PipedPixelsArray& l, const PipedPixelsArray& r)
+  -> PipedPixelsArray {
+    PipedPixelsArray sum;
+    for (int i = 0; i < BLOCK_SIZE; ++i) {
+        sum[i] = l[i] + r[i];
+    }
+    return sum;
+}
 
 // We need to buffer two blocks + kernel, because the pixels
 // on the beginning of the block depend on the tail of the
@@ -159,7 +173,7 @@ PipedPixelsArray sum_buffered_block_0(BufferedPipedPixelsArray& buffer) {
 #pragma unroll
     for (int center = 0; center < BLOCK_SIZE; ++center) {
 #pragma unroll
-        for (int i = -KERNEL_WIDTH; i < KERNEL_WIDTH; ++i) {
+        for (int i = -KERNEL_WIDTH; i <= KERNEL_WIDTH; ++i) {
             sum[center] += buffer[KERNEL_WIDTH + center + i];
         }
     }
@@ -208,6 +222,11 @@ int main(int argc, char** argv) {
     constexpr size_t BLOCK_SIZE_BITS = clog2(BLOCK_SIZE);
     constexpr size_t BLOCK_REMAINDER = E2XE_16M_FAST % BLOCK_SIZE;
     constexpr size_t FULL_BLOCKS = (E2XE_16M_FAST - BLOCK_REMAINDER) / BLOCK_SIZE;
+
+    // // Number of full blocks to cover all pixels in a module, including the edge
+    // constexpr size_t BLOCKS_PER_MODULE =
+    //   (E2XE_MOD_FAST / BLOCK_SIZE) + (E2XE_MOD_FAST % BLOCK_SIZE == 0 ? 0 : 1);
+
     // constexpr size_t TOTAL_BLOCKS_UNALIGNED =
     //   (E2XE_16M_FAST * E2XE_16M_SLOW) / BLOCK_SIZE;
     static_assert(is_power_of_two(BLOCK_SIZE));
@@ -270,6 +289,10 @@ int main(int argc, char** argv) {
 
                 size_t sum_pixels = 0;
 
+                // Make a buffer for full rows so we can store them as we go
+                auto rows = std::array<std::array<PipedPixelsArray, FULL_BLOCKS>,
+                                       FULL_KERNEL_HEIGHT>{};
+
                 for (size_t y = 0; y < slow; ++y) {
                     // The per-pixel buffer array to accumulate the blocks
                     BufferedPipedPixelsArray interim_pixels{};
@@ -288,22 +311,39 @@ int main(int argc, char** argv) {
                         // Now we can calculate the sums for block 0
                         PipedPixelsArray sum = sum_buffered_block_0(interim_pixels);
 
-                        // Copy this block of data to the global store
-                        // ... we will want to make this per-row at some point
-                        *reinterpret_cast<PipedPixelsArray*>(
-                          &destination_data_h[y * fast + block * BLOCK_SIZE]) = sum;
-                        // for (int i = 0; i < BLOCK_SIZE; ++i) {
-                        //     destination_data[y * fast + block * BLOCK_SIZE + i] =
-                        //       sum[i];
-                        // }
-
-                        // Now shift everything to the left
+                        // Now shift everything in the row buffer to the left
+                        // to make room for the next pipe read
 #pragma unroll
                         for (int i = 0; i < KERNEL_WIDTH + BLOCK_SIZE; ++i) {
                             interim_pixels[i] = interim_pixels[BLOCK_SIZE + i];
                         }
+
+                        // Now we can insert this into the row accumulation store and
+                        // do per-row calculations
+
+                        // Calculate the new row - this is the integral sum
+                        // of the previous FULL_KERNEL_HEIGHT rows, which
+                        // we calculate by keeping a running total and
+                        // subtracting the oldest row
+                        PipedPixelsArray new_row;
+                        for (int i = 0; i < BLOCK_SIZE; ++i) {
+                            new_row[i] = sum[i] + rows[0][block][i]
+                                         - rows[FULL_KERNEL_HEIGHT - 1][block][i];
+                        }
+                        // Shift all rows down to accomodate this new block
+                        for (int i = 1; i < FULL_KERNEL_HEIGHT; ++i) {
+                            rows[i][block] = rows[i - 1][block];
+                        }
+                        rows[0][block] = new_row;
+                        // The new row - now stored in row 0 - is the "kernel sum"
+                        // for the row (y - KERNEL_HEIGHT).
+                        if (y >= KERNEL_HEIGHT) {
+                            *reinterpret_cast<PipedPixelsArray*>(
+                              destination_data_h[(y - KERNEL_HEIGHT) * fast
+                                                 + block * BLOCK_SIZE]) = new_row;
+                        }
                     }
-                    // Now, we have one last block - read zero into block 1
+                    // Now, we have one last block - read zero into block 1 and sum it
                     // interim_blocks[1] = {};
                 }
                 });
@@ -325,11 +365,26 @@ int main(int argc, char** argv) {
                    ms_all,
                    GBps(num_pixels * sizeof(uint16_t), ms_all));
 
-        // auto device_sum = result[0];
-        // auto color = fg(host_sum == device_sum ? fmt::color::green :
-        // fmt::color::red); fmt::print(color, "     Sum = {} / {}\n", device_sum, host_sum);
-        fmt::print("Out:   {}\n", result[0]);
-        fmt::print("Out2:  {}\n\n", result[1]);
+        // Copy the device destination buffer
+
+        // Print a section of the image and "destination" arrays
+        auto host_sum_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
+        auto e_dest_download = Q.submit([&](handler& h) {
+            h.memcpy(host_sum_data, destination_data, num_pixels * sizeof(uint16_t));
+        });
+        Q.wait();
+
+        fmt::print("Data: ");
+        for (int i = 0; i < fast; ++i) {
+            fmt::print("{:3d}  ", image_data[i]);
+        }
+        fmt::print("\nSum:  ");
+        for (int i = 0; i < fast; ++i) {
+            fmt::print("{:3d}  ", host_sum_data[i]);
+        }
+        fmt::print("\n");
+        // fmt::print("Out:   {}\n", result[0]);
+        // fmt::print("Out2:  {}\n\n", result[1]);
         // fmt::print("In²:  {}\n", result[1]);
         // fmt::print("Out²: {}\n", result[3]);
 
