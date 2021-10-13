@@ -337,7 +337,7 @@ int main(int argc, char** argv) {
                         auto prev_row = rows[0][0][block];
                         auto oldest_row = rows[0][FULL_KERNEL_HEIGHT - 1][block];
 
-#pragma unroll
+                        // #pragma unroll
                         for (int i = 0; i < BLOCK_SIZE; ++i) {
                             new_row[i] = sum[i] + prev_row[i] - oldest_row[i];
                         }
