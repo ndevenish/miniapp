@@ -94,6 +94,9 @@ using BufferedPipedPixelsArray =
 // This two-block solution only works if kernel width < block size
 static_assert(KERNEL_WIDTH < BLOCK_SIZE);
 
+template <int blocks>
+using ModuleRowStore = std::array<std::array<PipedPixelsArray, blocks>, KERNEL_HEIGHT>;
+
 template <int id>
 class ToModulePipe;
 
@@ -250,6 +253,10 @@ int main(int argc, char** argv) {
 
     uint16_t* destination_data = malloc_device<uint16_t>(num_pixels, Q);
 
+    auto* rows_ptr = malloc_device<ModuleRowStore<FULL_BLOCKS>>(1, Q);
+    // auto  rows = malloc_device<
+    //                 //                        FULL_KERNEL_HEIGHT>{};
+
     fmt::print("Starting image loop:\n");
     for (int i = 0; i < reader.get_number_of_images(); ++i) {
         fmt::print("\nReading Image {}\n", i);
@@ -285,13 +292,14 @@ int main(int argc, char** argv) {
         event e_module = Q.submit([&](handler& h) {
             h.single_task<class Module<0>>([=](){
                 auto result_h = host_ptr<PipedPixelsArray>(result);
-                auto destination_data_h = device_ptr<uint16_t>(destination_data);
+                auto destination_data_d = device_ptr<uint16_t>(destination_data);
 
                 size_t sum_pixels = 0;
 
                 // Make a buffer for full rows so we can store them as we go
-                auto rows = std::array<std::array<PipedPixelsArray, FULL_BLOCKS>,
-                                       FULL_KERNEL_HEIGHT>{};
+                // auto rows = std::array<std::array<PipedPixelsArray, FULL_BLOCKS>,
+                //                        FULL_KERNEL_HEIGHT>{};
+                auto rows = device_ptr<ModuleRowStore<FULL_BLOCKS>>(rows_ptr);
 
                 for (size_t y = 0; y < slow; ++y) {
                     // The per-pixel buffer array to accumulate the blocks
@@ -326,23 +334,40 @@ int main(int argc, char** argv) {
                         // we calculate by keeping a running total and
                         // subtracting the oldest row
                         PipedPixelsArray new_row;
+                        auto prev_row = rows[0][0][block];
+                        auto oldest_row = rows[0][FULL_KERNEL_HEIGHT - 1][block];
+
+#pragma unroll
                         for (int i = 0; i < BLOCK_SIZE; ++i) {
-                            new_row[i] = sum[i] + rows[0][block][i]
-                                         - rows[FULL_KERNEL_HEIGHT - 1][block][i];
+                            new_row[i] = sum[i] + prev_row[i] - oldest_row[i];
                         }
-                        // Shift all rows down to accomodate this new block
-                        for (int i = 1; i < FULL_KERNEL_HEIGHT; ++i) {
-                            rows[i][block] = rows[i - 1][block];
-                        }
-                        rows[0][block] = new_row;
+
+                        // #pragma unroll
+                        //                         for (int i = 0; i < BLOCK_SIZE; ++i) {
+                        //                             new_row[i] = sum[i] + rows[0][block][i]
+                        //                                          - rows[FULL_KERNEL_HEIGHT - 1][block][i];
+                        //                         }
+                        // #pragma unroll
+                        // // Shift all rows down to accomodate this new block
+                        // for (int i = 1; i < FULL_KERNEL_HEIGHT; ++i) {
+                        //     rows[i][block] = rows[i - 1][block];
+                        // }
+                        // rows[0][block] = new_row;
                         // The new row - now stored in row 0 - is the "kernel sum"
                         // for the row (y - KERNEL_HEIGHT).
-                        if (y >= KERNEL_HEIGHT) {
-                            *reinterpret_cast<PipedPixelsArray*>(
-                              destination_data_h[(y - KERNEL_HEIGHT) * fast
-                                                 + block * BLOCK_SIZE]) = new_row;
-                        }
+                        // copy into the destination block
+                        // if (y >= KERNEL_HEIGHT) {
+                        // for (int i = 0; i < BLOCK_SIZE; ++i) {
+                        //     int row_y = y - KERNEL_HEIGHT;
+                        //     row_y = row_y < 0 ? 0 : row_y;
+                        //     size_t offset = row_y * fast + block * BLOCK_SIZE;
+                        //     destination_data_d[offset + i] = new_row[i];
+                        // }
+
+                        *reinterpret_cast<PipedPixelsArray*>(
+                          &destination_data_d[y * fast + block * BLOCK_SIZE]) = new_row;
                     }
+                    // }
                     // Now, we have one last block - read zero into block 1 and sum it
                     // interim_blocks[1] = {};
                 }
