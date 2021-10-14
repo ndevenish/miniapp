@@ -337,22 +337,19 @@ int main(int argc, char** argv) {
                         auto prev_row = rows[0][0][block];
                         auto oldest_row = rows[0][FULL_KERNEL_HEIGHT - 1][block];
 
+                        // Unrolling this causes II to raise to ~800
                         // #pragma unroll
                         for (int i = 0; i < BLOCK_SIZE; ++i) {
                             new_row[i] = sum[i] + prev_row[i] - oldest_row[i];
                         }
 
                         // #pragma unroll
-                        //                         for (int i = 0; i < BLOCK_SIZE; ++i) {
-                        //                             new_row[i] = sum[i] + rows[0][block][i]
-                        //                                          - rows[FULL_KERNEL_HEIGHT - 1][block][i];
-                        //                         }
-                        // #pragma unroll
-                        // // Shift all rows down to accomodate this new block
-                        // for (int i = 1; i < FULL_KERNEL_HEIGHT; ++i) {
-                        //     rows[i][block] = rows[i - 1][block];
-                        // }
-                        // rows[0][block] = new_row;
+                        // Shift all rows down to accomodate this new block
+
+                        for (int i = 1; i < FULL_KERNEL_HEIGHT; ++i) {
+                            rows[0][i][block] = rows[0][i - 1][block];
+                        }
+                        rows[0][0][block] = new_row;
                         // The new row - now stored in row 0 - is the "kernel sum"
                         // for the row (y - KERNEL_HEIGHT).
                         // copy into the destination block
