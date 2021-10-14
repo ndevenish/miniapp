@@ -355,9 +355,8 @@ int main(int argc, char** argv) {
                         if (y >= KERNEL_HEIGHT) {
                             size_t offset =
                               (y - KERNEL_HEIGHT) * fast + block * BLOCK_SIZE;
-                            for (int i = 0; i < BLOCK_SIZE; ++i) {
-                                destination_data_d[offset + i] = new_row[i];
-                            }
+                            *reinterpret_cast<PipedPixelsArray*>(
+                              &destination_data_d[offset]) = new_row;
                         }
 
                         *reinterpret_cast<PipedPixelsArray*>(
