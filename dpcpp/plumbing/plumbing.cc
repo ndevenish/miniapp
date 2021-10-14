@@ -336,7 +336,6 @@ int main(int argc, char** argv) {
                         PipedPixelsArray new_row;
                         auto prev_row = rows[0][0][block];
                         auto oldest_row = rows[0][FULL_KERNEL_HEIGHT - 1][block];
-
                         // Unrolling this causes II to raise to ~800
                         // #pragma unroll
                         for (int i = 0; i < BLOCK_SIZE; ++i) {
@@ -349,16 +348,17 @@ int main(int argc, char** argv) {
                             rows[0][i][block] = rows[0][i - 1][block];
                         }
                         rows[0][0][block] = new_row;
+
                         // The new row - now stored in row 0 - is the "kernel sum"
                         // for the row (y - KERNEL_HEIGHT).
                         // copy into the destination block
-                        // if (y >= KERNEL_HEIGHT) {
-                        // for (int i = 0; i < BLOCK_SIZE; ++i) {
-                        //     int row_y = y - KERNEL_HEIGHT;
-                        //     row_y = row_y < 0 ? 0 : row_y;
-                        //     size_t offset = row_y * fast + block * BLOCK_SIZE;
-                        //     destination_data_d[offset + i] = new_row[i];
-                        // }
+                        if (y >= KERNEL_HEIGHT) {
+                            size_t offset =
+                              (y - KERNEL_HEIGHT) * fast + block * BLOCK_SIZE;
+                            for (int i = 0; i < BLOCK_SIZE; ++i) {
+                                destination_data_d[offset + i] = new_row[i];
+                            }
+                        }
 
                         *reinterpret_cast<PipedPixelsArray*>(
                           &destination_data_d[y * fast + block * BLOCK_SIZE]) = new_row;
