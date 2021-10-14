@@ -343,9 +343,8 @@ int main(int argc, char** argv) {
                             new_row[i] = sum[i] + prev_row[i] - oldest_row[i];
                         }
 
-                        // #pragma unroll
+#pragma unroll
                         // Shift all rows down to accomodate this new block
-
                         for (int i = 1; i < FULL_KERNEL_HEIGHT; ++i) {
                             rows[0][i][block] = rows[0][i - 1][block];
                         }
