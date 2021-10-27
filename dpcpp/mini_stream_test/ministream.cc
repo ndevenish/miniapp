@@ -63,7 +63,7 @@ int main(int argc, char** argv) {
 #else
     INTEL::fpga_selector device_selector;
 #endif
-    queue Q(device_selector);
+    queue Q(device_selector, property::queue::enable_profiling{});
     printf("Using Device: %s%s%s\n",
            BOLD,
            Q.get_device().get_info<info::device::name>().c_str(),
@@ -146,8 +146,8 @@ int main(int argc, char** argv) {
         printf(" ... Cross-check time: %.2f ms\n", ms_chrono);
 
         printf(" ... produced in %.2f ms (%.3g GBps)\n",
-               ms_chrono,
-               GBps(active_pixels * sizeof(uint16_t), ms_chrono));
+               event_ms(e_producer),
+               event_GBps(e_producer, active_pixels * sizeof(uint16_t)));
 
         auto device_sum = result[0];
         auto color = host_sum == device_sum ? G : R;
