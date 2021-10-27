@@ -2,8 +2,8 @@
 #include <CL/sycl/INTEL/fpga_extensions.hpp>
 #include <array>
 #include <cassert>
+#include <chrono>
 #include <cstdio>
-
 using namespace sycl;
 
 constexpr auto R = "\033[31m";
@@ -99,7 +99,7 @@ int main(int argc, char** argv) {
             active_pixels += REPEATS;
         }
         printf("Starting Kernel\n");
-
+        auto t1 = std::chrono::high_resolution_clock::now();
         event e_producer = Q.submit([&](handler& h) {
             h.single_task<class Producer>([=]() {
                 auto hp = host_ptr<PipedPixelsArray>(
@@ -138,6 +138,12 @@ int main(int argc, char** argv) {
         });
 
         Q.wait();
+        // Get a second opinion of kernel time
+        auto t2 = std::chrono::high_resolution_clock::now();
+        double ms_chrono =
+          std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1).count()
+          * 1000;
+        printf(" ... Cross-check time: %.2f ms\n", ms_chrono);
 
         printf(" ... produced in %.2f ms (%.3g GBps)\n",
                event_ms(e_producer),
