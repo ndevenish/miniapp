@@ -19,7 +19,8 @@ constexpr size_t E2XE_16M_FAST = 4148;
 // This is a single block of pixels read every tick
 // 32 = 512 bit
 // 16 = 256 bit
-using PipedPixelsArray = std::array<uint16_t, 8>;
+//  8 = 128 bit
+using PipedPixelsArray = std::array<uint16_t, 16>;
 
 class Producer;
 
