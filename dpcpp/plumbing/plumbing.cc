@@ -21,25 +21,6 @@ constexpr bool is_power_of_two(int x) {
     return x && ((x & (x - 1)) == 0);
 }
 
-/// constexpr flooring log2
-constexpr size_t clog2(size_t n) {
-    size_t result = 0;
-    while (n >= 2) {
-        result += 1;
-        n = n / 2;
-    }
-    return result;
-}
-
-// Constexpr power calculation
-constexpr size_t cpow(size_t x, size_t power) {
-    int ret = 1;
-    for (int i = 0; i < power; ++i) {
-        ret *= x;
-    }
-    return ret;
-}
-
 /// One-direction width of kernel. Total kernel span is (K_W * 2 + 1)
 constexpr int KERNEL_WIDTH = 3;
 /// One-direction height of kernel. Total kernel span is (K_W * 2 + 1)
@@ -124,50 +105,6 @@ double GBps(size_t bytes, double ms) {
 double event_GBps(const sycl::event& e, size_t bytes) {
     const double ms = event_ms(e);
     return GBps(bytes, ms);
-}
-
-/// Calculate the prefix sum of a 2^N sized array
-template <typename T, size_t BLOCK_SIZE>
-void calculate_prefix_sum_inplace(std::array<T, BLOCK_SIZE>& data) {
-    constexpr size_t BLOCK_SIZE_BITS = clog2(BLOCK_SIZE);
-    static_assert(is_power_of_two(BLOCK_SIZE));
-
-    // We need to store the last element to convert to inclusive
-    auto last_element = data[BLOCK_SIZE - 1];
-
-    // Parallel prefix scan - upsweep a binary tree
-    // After this, every 1,2,4,8,... node has the correct
-    // sum of the two nodes below it
-#pragma unroll
-    for (int d = 0; d < BLOCK_SIZE_BITS; ++d) {
-#pragma unroll
-        for (int k = 0; k < BLOCK_SIZE; k += cpow(2, d + 1)) {
-            data[k + cpow(2, d + 1) - 1] =
-              data[k + cpow(2, d) - 1] + data[k + cpow(2, d + 1) - 1];
-        }
-    }
-
-    // Parallel prefix downsweep the binary tree
-    // After this, entire block has the correct prefix sum
-    data[BLOCK_SIZE - 1] = 0;
-#pragma unroll
-    for (int d = BLOCK_SIZE_BITS - 1; d >= 0; --d) {
-#pragma unroll
-        for (int k = 0; k < BLOCK_SIZE; k += cpow(2, d + 1)) {
-            // Save the left node value
-            auto t = data[k + cpow(2, d) - 1];
-            // Left node becomes parent
-            data[k + cpow(2, d) - 1] = data[k + cpow(2, d + 1) - 1];
-            // Right node becomes root + previous left value
-            data[k + cpow(2, d + 1) - 1] += t;
-        }
-    }
-// This calculated an exclusive sum. We want inclusive, so shift+add
-#pragma unroll
-    for (int i = 1; i < BLOCK_SIZE; ++i) {
-        data[i - 1] = data[i];
-    }
-    data[BLOCK_SIZE - 1] = data[BLOCK_SIZE - 2] + last_element;
 }
 
 PipedPixelsArray sum_buffered_block_0(BufferedPipedPixelsArray& buffer) {

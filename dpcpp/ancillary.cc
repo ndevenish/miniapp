@@ -1,5 +1,24 @@
 /* Ancilliary code removed from other places. The Code graveyard. */
 
+/// constexpr flooring log2
+constexpr size_t clog2(size_t n) {
+    size_t result = 0;
+    while (n >= 2) {
+        result += 1;
+        n = n / 2;
+    }
+    return result;
+}
+
+// Constexpr power calculation
+constexpr size_t cpow(size_t x, size_t power) {
+    int ret = 1;
+    for (int i = 0; i < power; ++i) {
+        ret *= x;
+    }
+    return ret;
+}
+
 /// Calculate the prefix sum of a 2^N sized array
 template <typename T, size_t BLOCK_SIZE>
 void calculate_prefix_sum_inplace(std::array<T, BLOCK_SIZE>& data) {
