@@ -120,36 +120,29 @@ PipedPixelsArray sum_buffered_block_0(BufferedPipedPixelsArray& buffer) {
     return sum;
 }
 
-// /// Fallthrough for non-power-of-two arrays
-// template <typename T, size_t size>
-// void calculate_prefix_sum_inplace(std::array<T, size>& data) {
-//     constexpr size_t constexpr size_t largest_pow2 = clog2(size);
-//     calculate_prefix_sum_inplace
-
-//     // fmt::print("Closest power of two for consolidating block sums: {} ({})\n",
-//     //            fullw_pow2,
-//     //            cpow(2, fullw_pow2));
-//     // fmt::print("Remaining blocks: {}\n", FULL_BLOCKS - cpow(2, fullw_pow2));
-// }
-
 int main(int argc, char** argv) {
     auto start_time = std::chrono::high_resolution_clock::now();
     auto reader = H5Read(argc, argv);
 
     auto Q = initialize_queue();
 
+    fmt::print("Running with {}{}-bit{} wide blocks\n", BOLD, BLOCK_SIZE * 16, NC);
+
     auto slow = reader.get_image_slow();
     auto fast = reader.get_image_fast();
     const size_t num_pixels = reader.get_image_slow() * reader.get_image_fast();
 
-    // Mask data is the same for all images, so we copy it early
+    // Mask data is the same for all images, so we copy it to device early
     auto mask_data = device_ptr<uint8_t>(malloc_device<uint8_t>(num_pixels, Q));
+    // Declare the image data that will be remotely accessed
     auto image_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
+    assert(image_data % 64 == 0);
 
+    // Result data - this is accessed remotely but only at the end, to
+    // return the results.
     // PipedPixelsArray* result = malloc_host<PipedPixelsArray>(4, Q);
     PipedPixelsArray* result = malloc_host<PipedPixelsArray>(2, Q);
 
-    assert(image_data % 64 == 0);
     fmt::print("Uploading mask data to accelerator.... ");
     auto e_mask_upload = Q.submit(
       [&](handler& h) { h.memcpy(mask_data, reader.get_mask().data(), num_pixels); });
@@ -159,31 +152,19 @@ int main(int argc, char** argv) {
                event_GBps(e_mask_upload, num_pixels));
 
     // Module/detector compile-time calculations
-    constexpr size_t BLOCK_SIZE_BITS = clog2(BLOCK_SIZE);
+    /// The number of pixels left over when we divide the image into blocks of BLOCK_SIZE
     constexpr size_t BLOCK_REMAINDER = E2XE_16M_FAST % BLOCK_SIZE;
+    // The number of full blocks that we can fit on an image
     constexpr size_t FULL_BLOCKS = (E2XE_16M_FAST - BLOCK_REMAINDER) / BLOCK_SIZE;
 
-    // // Number of full blocks to cover all pixels in a module, including the edge
-    // constexpr size_t BLOCKS_PER_MODULE =
-    //   (E2XE_MOD_FAST / BLOCK_SIZE) + (E2XE_MOD_FAST % BLOCK_SIZE == 0 ? 0 : 1);
-
-    // constexpr size_t TOTAL_BLOCKS_UNALIGNED =
-    //   (E2XE_16M_FAST * E2XE_16M_SLOW) / BLOCK_SIZE;
-    static_assert(is_power_of_two(BLOCK_SIZE));
     fmt::print(
-      "Block data:\n           SIZE: {} px per block\n           BITS: {} bits to "
-      "store \n      REMAINDER: "
-      "{} px unprocessed per row\n    FULL_BLOCKS: {} blocks across image width\n",
+      "Block data:\n"
+      "         SIZE: {} px per block\n"
+      "    REMAINDER: {} px unprocessed per row\n"
+      "  FULL_BLOCKS: {} blocks across image width\n",
       BLOCK_SIZE,
-      BLOCK_SIZE_BITS,
       BLOCK_REMAINDER,
       FULL_BLOCKS);
-
-    constexpr size_t fullw_pow2 = clog2(FULL_BLOCKS);
-    fmt::print("Closest power of two for consolidating block sums: {} ({})\n",
-               fullw_pow2,
-               cpow(2, fullw_pow2));
-    fmt::print("Remaining blocks: {}\n", FULL_BLOCKS - cpow(2, fullw_pow2));
 
     std::array<uint16_t, FULL_BLOCKS>* totalblocksum =
       malloc_host<std::array<uint16_t, FULL_BLOCKS>>(slow, Q);
@@ -199,6 +180,7 @@ int main(int argc, char** argv) {
         fmt::print("\nReading Image {}\n", i);
         reader.get_image_into(i, image_data);
 
+        // Precalculate host-side the answers we expect, so we can validate
         fmt::print("Calculating host sum\n");
         // Now we are using blocks and discarding excess, do that here
         size_t host_sum = 0;
