@@ -23,7 +23,7 @@ constexpr bool is_power_of_two(int x) {
 
 /// One-direction width of kernel. Total kernel span is (K_W * 2 + 1)
 constexpr int KERNEL_WIDTH = 3;
-/// One-direction height of kernel. Total kernel span is (K_W * 2 + 1)
+/// One-direction height of kernel. Total kernel span is (K_H * 2 + 1)
 constexpr int KERNEL_HEIGHT = 3;
 
 constexpr int FULL_KERNEL_HEIGHT = KERNEL_HEIGHT * 2 + 1;
