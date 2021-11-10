@@ -43,6 +43,14 @@ auto operator+(const PipedPixelsArray& l, const PipedPixelsArray& r)
     }
     return sum;
 }
+auto operator-(const PipedPixelsArray& l, const PipedPixelsArray& r)
+  -> PipedPixelsArray {
+    PipedPixelsArray sum;
+    for (int i = 0; i < BLOCK_SIZE; ++i) {
+        sum[i] = l[i] - r[i];
+    }
+    return sum;
+}
 
 // We need to buffer two blocks + kernel, because the pixels
 // on the beginning of the block depend on the tail of the
@@ -76,7 +84,8 @@ using BufferedPipedPixelsArray =
 static_assert(KERNEL_WIDTH < BLOCK_SIZE);
 
 template <int blocks>
-using ModuleRowStore = std::array<std::array<PipedPixelsArray, blocks>, KERNEL_HEIGHT>;
+using ModuleRowStore =
+  std::array<std::array<PipedPixelsArray, blocks>, FULL_KERNEL_HEIGHT>;
 
 template <int id>
 class ToModulePipe;
@@ -118,6 +127,27 @@ PipedPixelsArray sum_buffered_block_0(BufferedPipedPixelsArray& buffer) {
         }
     }
     return sum;
+}
+
+// Draw a subset of the pixel values for a 2D image array
+void draw_image_data(const uint16_t* data,
+                     size_t fast,
+                     size_t slow,
+                     size_t width,
+                     size_t height,
+                     size_t data_width,
+                     size_t data_height) {
+    for (int y = slow; y < slow + height; ++y) {
+        if (y == slow) {
+            fmt::print("y = {:2d} │", y);
+        } else {
+            fmt::print("    {:2d} │", y);
+        }
+        for (int i = fast; i < fast + width; ++i) {
+            fmt::print("{:3d}  ", data[i + data_width * y]);
+        }
+        fmt::print("│\n");
+    }
 }
 
 int main(int argc, char** argv) {
@@ -171,7 +201,7 @@ int main(int argc, char** argv) {
 
     uint16_t* destination_data = malloc_device<uint16_t>(num_pixels, Q);
 
-    auto* rows_ptr = malloc_device<ModuleRowStore<FULL_BLOCKS>>(1, Q);
+    // auto* rows_ptr = malloc_device<ModuleRowStore<FULL_BLOCKS>>(1, Q);
     // auto  rows = malloc_device<
     //                 //                        FULL_KERNEL_HEIGHT>{};
 
@@ -218,7 +248,8 @@ int main(int argc, char** argv) {
                 // Make a buffer for full rows so we can store them as we go
                 // auto rows = std::array<std::array<PipedPixelsArray, FULL_BLOCKS>,
                 //                        FULL_KERNEL_HEIGHT>{};
-                auto rows = device_ptr<ModuleRowStore<FULL_BLOCKS>>(rows_ptr);
+                // auto rows = device_ptr<ModuleRowStore<FULL_BLOCKS>>(rows_ptr);
+                ModuleRowStore<FULL_BLOCKS> rows{};
 
                 for (size_t y = 0; y < slow; ++y) {
                     // The per-pixel buffer array to accumulate the blocks
@@ -248,42 +279,26 @@ int main(int argc, char** argv) {
                         // Now we can insert this into the row accumulation store and
                         // do per-row calculations
 
-                        // Calculate the new row - this is the integral sum
-                        // of the previous FULL_KERNEL_HEIGHT rows, which
-                        // we calculate by keeping a running total and
-                        // subtracting the oldest row
-                        PipedPixelsArray new_row;
-                        auto prev_row = rows[0][0][block];
-                        auto oldest_row = rows[0][FULL_KERNEL_HEIGHT - 1][block];
-                        // Unrolling this causes II to raise to ~800
-                        // #pragma unroll
-                        for (int i = 0; i < BLOCK_SIZE; ++i) {
-                            new_row[i] = sum[i] + prev_row[i] - oldest_row[i];
-                        }
+                        // Calculate the previously written row index, and get the row
+                        int prev_row_store = (y - 1) % FULL_KERNEL_HEIGHT;
+                        auto prev_row = rows[prev_row_store][block];
+                        // And the oldest row index and row (which we will replace)
+                        int swap_row_store = y % FULL_KERNEL_HEIGHT;
+                        auto oldest_row = rows[swap_row_store][block];
 
-#pragma unroll
-                        // Shift all rows down to accomodate this new block
-                        for (int i = 1; i < FULL_KERNEL_HEIGHT; ++i) {
-                            rows[0][i][block] = rows[0][i - 1][block];
-                        }
-                        rows[0][0][block] = new_row;
+                        // Write the new running total over the oldest data
+                        PipedPixelsArray new_row = sum + prev_row;
+                        rows[swap_row_store][block] = new_row;
+                        // Now, calculate the kernel sum for each of these
+                        auto kernel_sum = new_row - oldest_row;
 
-                        // The new row - now stored in row 0 - is the "kernel sum"
-                        // for the row (y - KERNEL_HEIGHT).
-                        // copy into the destination block
+                        // Write this into the output data block
                         if (y >= KERNEL_HEIGHT) {
-                            size_t offset =
-                              (y - KERNEL_HEIGHT) * fast + block * BLOCK_SIZE;
                             *reinterpret_cast<PipedPixelsArray*>(
-                              &destination_data_d[offset]) = new_row;
+                              &destination_data_d[(y - KERNEL_HEIGHT) * fast
+                                                  + block * BLOCK_SIZE]) = kernel_sum;
                         }
-
-                        *reinterpret_cast<PipedPixelsArray*>(
-                          &destination_data_d[y * fast + block * BLOCK_SIZE]) = new_row;
                     }
-                    // }
-                    // Now, we have one last block - read zero into block 1 and sum it
-                    // interim_blocks[1] = {};
                 }
                 });
         });
@@ -304,8 +319,7 @@ int main(int argc, char** argv) {
                    ms_all,
                    GBps(num_pixels * sizeof(uint16_t), ms_all));
 
-        // Copy the device destination buffer
-
+        // Copy the device destination buffer back
         // Print a section of the image and "destination" arrays
         auto host_sum_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
         auto e_dest_download = Q.submit([&](handler& h) {
@@ -313,24 +327,11 @@ int main(int argc, char** argv) {
         });
         Q.wait();
 
-        fmt::print("Data: ");
-        for (int i = 0; i < fast; ++i) {
-            fmt::print("{:3d}  ", image_data[i]);
-        }
-        fmt::print("\nSum:  ");
-        for (int i = 0; i < fast; ++i) {
-            fmt::print("{:3d}  ", host_sum_data[i]);
-        }
-        fmt::print("\n");
-        // fmt::print("Out:   {}\n", result[0]);
-        // fmt::print("Out2:  {}\n\n", result[1]);
-        // fmt::print("In²:  {}\n", result[1]);
-        // fmt::print("Out²: {}\n", result[3]);
+        fmt::print("Data:\n");
+        draw_image_data(image_data.get(), 0, 0, 16, 16, fast, slow);
 
-        // fmt::print("\nTotal block sum:\n");
-        // for (int i = slow - 5; i < slow; ++i) {
-        //     fmt::print("{}\n", totalblocksum[i]);
-        // }
+        fmt::print("\nSum:\n");
+        draw_image_data(host_sum_data.get(), 0, 0, 16, 16, fast, slow);
     }
 
     free(result, Q);
