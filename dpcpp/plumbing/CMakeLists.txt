@@ -21,3 +21,4 @@ include_directories(../common/include)
 fpga_add_executable(plumbing plumbing.cc
     LINK_LIBRARIES h5read fmt::fmt-header-only
 )
+target_link_options(plumbing_report.a PRIVATE -Xsdont-error-if-large-area-est)
