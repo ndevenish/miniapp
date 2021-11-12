@@ -249,7 +249,7 @@ int main(int argc, char** argv) {
                 // auto rows = std::array<std::array<PipedPixelsArray, FULL_BLOCKS>,
                 //                        FULL_KERNEL_HEIGHT>{};
                 // auto rows = device_ptr<ModuleRowStore<FULL_BLOCKS>>(rows_ptr);
-                ModuleRowStore<FULL_BLOCKS> rows{};
+                [[intel::fpga_memory("BLOCK_RAM")]] ModuleRowStore<FULL_BLOCKS> rows{};
 
                 for (size_t y = 0; y < slow; ++y) {
                     // The per-pixel buffer array to accumulate the blocks
