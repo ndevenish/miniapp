@@ -246,10 +246,16 @@ int main(int argc, char** argv) {
                 size_t sum_pixels = 0;
 
                 // Make a buffer for full rows so we can store them as we go
-                // auto rows = std::array<std::array<PipedPixelsArray, FULL_BLOCKS>,
-                //                        FULL_KERNEL_HEIGHT>{};
-                // auto rows = device_ptr<ModuleRowStore<FULL_BLOCKS>>(rows_ptr);
-                [[intel::fpga_memory("BLOCK_RAM")]] ModuleRowStore<FULL_BLOCKS> rows{};
+                ModuleRowStore<FULL_BLOCKS> rows;
+                // Initialise this to zeros
+                for (int zr = 0; zr < FULL_KERNEL_HEIGHT; ++zr) {
+                    for (int zb = 0; zb < FULL_BLOCKS; ++zb) {
+#pragma unroll
+                        for (int zp = 0; zp < BLOCK_SIZE; ++zp) {
+                            rows[zr][zb][zp] = 0;
+                        }
+                    }
+                }
 
                 for (size_t y = 0; y < slow; ++y) {
                     // The per-pixel buffer array to accumulate the blocks
