@@ -14,11 +14,9 @@ include(AlwaysColourCompilation)
 find_package(FPGA REQUIRED)
 
 add_subdirectory(../../h5read h5read)
-add_subdirectory(../../dependencies/fmt fmt)
-# add_subdirectory(../common common)
 include_directories(../common/include)
 
 fpga_add_executable(plumbing plumbing.cc
-    LINK_LIBRARIES h5read fmt::fmt-header-only
+    LINK_LIBRARIES h5read
 )
 target_link_options(plumbing_report.a PRIVATE -Xsdont-error-if-large-area-est)

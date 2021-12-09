@@ -3,6 +3,7 @@
 
 #include <CL/sycl.hpp>
 #include <CL/sycl/INTEL/fpga_extensions.hpp>
+#include <cstdio>
 
 constexpr auto R = "\033[31m";
 constexpr auto G = "\033[32m";
@@ -32,11 +33,13 @@ sycl::queue initialize_queue() {
                               : Q.get_device().is_gpu()         ? "GPU"
                               : Q.get_device().is_accelerator() ? "FPGA"
                                                                 : "Unknown";
-    fmt::print("Using {0}{2}{1} Device: {0}{3}{1}\n\n",
-               BOLD,
-               NC,
-               device_kind,
-               Q.get_device().get_info<sycl::info::device::name>());
+    printf("Using %s%s%s Device: %s%s%s\n\n",
+           BOLD,
+           device_kind.c_str(),
+           NC,
+           BOLD,
+           Q.get_device().get_info<sycl::info::device::name>().c_str(),
+           NC);
     return Q;
 }
 
