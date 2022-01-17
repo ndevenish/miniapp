@@ -330,6 +330,7 @@ int main(int argc, char** argv) {
         auto e_dest_download = Q.submit([&](handler& h) {
             h.memcpy(host_sum_data, destination_data, num_pixels * sizeof(uint16_t));
         });
+        e_dest_download.wait();
         Q.wait();
 
         printf("Data:\n");
@@ -337,6 +338,7 @@ int main(int argc, char** argv) {
 
         printf("\nSum:\n");
         draw_image_data(host_sum_data.get(), 0, 0, 16, 16, fast, slow);
+        free(host_sum_data, Q);
     }
 
     free(result, Q);
