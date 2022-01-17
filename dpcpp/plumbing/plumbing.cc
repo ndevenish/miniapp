@@ -126,7 +126,9 @@ PipedPixelsArray sum_buffered_block_0(BufferedPipedPixelsArray& buffer) {
     return sum;
 }
 
-// Draw a subset of the pixel values for a 2D image array
+/// Draw a subset of the pixel values for a 2D image array
+/// fast, slow, width, height - describe the bounding box to draw
+/// data_width, data_height - describe the full data array size
 void draw_image_data(const uint16_t* data,
                      size_t fast,
                      size_t slow,
