@@ -14,7 +14,7 @@ include(AlwaysColourCompilation)
 
 if(NOT DEFINED FPGA_BOARD)
     # Boards are defined as package:board
-    # Packages from: "aoc -list-boards" and "aoc -list-board-packages"
+    # Packages from: "aoc -list-boards" and "aoc -list-board-packages"
     set(FPGA_BOARD "intel_s10sx_pac:pac_s10_usm" CACHE STRING "The package:board combination to pass to aoc")
     message(STATUS "FPGA_BOARD not specified, using default")
 endif()
@@ -23,11 +23,11 @@ message(STATUS "Configuring for FPGA board: ${FPGA_BOARD}")
 
 ########################################################################
 ########################################################################
-# This block is a compressed version of FindFPGA.cmake to make this standalone
+# This block is a compressed version of FindFPGA.cmake to make this standalone
 
-# Although - if we have it, the archive-complete-fpga-build feature means
+# Although - if we have it, the archive-complete-fpga-build feature means
 # we can be sure that we don't accidentally delete the fpga artifact.
-# Check for it, and make a nullopt function if not present.
+# Check for it, and make a nullopt function if not present.
 include(ArchiveTarget OPTIONAL)
 if(NOT COMMAND archive_target)
     function(archive_target)
@@ -57,7 +57,7 @@ function(fpga_add_executable name)
     add_executable(${name}_report.a ${_addexec_UNPARSED_ARGUMENTS})
     target_link_libraries(${name}_report.a FPGA::FPGA ${NAME} ${_addexec_LINK_LIBRARIES})
     target_link_options(${name}_report.a PRIVATE "-fsycl-link=early")
-    # By default, don't make the report, unless requested
+    # By default, don't make the report, unless requested
     set_target_properties(${name}_report.a PROPERTIES EXCLUDE_FROM_ALL yes)
     add_dependencies(fpga.report ${name}_report.a)
 
@@ -68,7 +68,7 @@ function(fpga_add_executable name)
     add_dependencies(fpga ${name}.fpga)
     archive_target(${name}.fpga)
 endfunction()
-# End of inline FPGA convenience
+# End of inline FPGA convenience
 ########################################################################
 ########################################################################
 

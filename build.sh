@@ -4,7 +4,7 @@ set -e
 
 ENV_VERSION=2
 
-# Takes a path to the dials build path first
+# Takes a path to the dials build path first
 if [[ -z $1 && ! -f .dials_build ]]; then
     echo "Usage: build.sh [/path/to/dials/build]"
     echo "    Path to DIALS build required first time."
