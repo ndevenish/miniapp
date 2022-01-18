@@ -171,7 +171,8 @@ int main(int argc, char** argv) {
     auto mask_data = device_ptr<uint8_t>(malloc_device<uint8_t>(num_pixels, Q));
     // Declare the image data that will be remotely accessed
     auto image_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
-    assert(image_data % 64 == 0);
+    // Absolutely make sure that this is properly aligned
+    assert((uintptr_t)image_data.get() % 64 == 0);
 
     // Result data - this is accessed remotely but only at the end, to
     // return the results.
@@ -189,7 +190,7 @@ int main(int argc, char** argv) {
     // Module/detector compile-time calculations
     /// The number of pixels left over when we divide the image into blocks of BLOCK_SIZE
     constexpr size_t BLOCK_REMAINDER = E2XE_16M_FAST % BLOCK_SIZE;
-    // The number of full blocks that we can fit on an image
+    // The number of full blocks that we can fit across an image
     constexpr size_t FULL_BLOCKS = (E2XE_16M_FAST - BLOCK_REMAINDER) / BLOCK_SIZE;
 
     printf(
@@ -201,7 +202,7 @@ int main(int argc, char** argv) {
       BLOCK_REMAINDER,
       FULL_BLOCKS);
 
-    uint16_t* totalblocksum = malloc_host<uint16_t>(FULL_BLOCKS * slow, Q);
+    // uint16_t* totalblocksum = malloc_host<uint16_t>(FULL_BLOCKS * slow, Q);
 
     uint16_t* destination_data = malloc_device<uint16_t>(num_pixels, Q);
 
