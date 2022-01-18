@@ -33,6 +33,9 @@ class PipedPixelsArray {
 
     value_type data[BLOCK_SIZE];
 
+    const value_type& operator[](size_t index) const {
+        return this->data[index];
+    }
     value_type& operator[](size_t index) {
         return this->data[index];
     }
@@ -56,6 +59,23 @@ auto operator-(const PipedPixelsArray& l, const PipedPixelsArray& r)
         sum.data[i] = l.data[i] - r.data[i];
     }
     return sum;
+}
+
+// inline const stream &operator<<(const stream &Out, const bool &RHS) {
+//   Out << (RHS ? "true" : "false");
+//   return Out;
+// }
+
+const sycl::stream& operator<<(const sycl::stream& os, const PipedPixelsArray& obj) {
+    os << "[ ";
+    for (int i = 0; i < BLOCK_SIZE; ++i) {
+        if (i > 0) {
+            os << ", ";
+        }
+        os << setw(2) << obj[i];
+    }
+    os << " ]";
+    return os;
 }
 
 // We need to buffer two blocks + kernel, because the pixels
@@ -88,6 +108,27 @@ using BufferedPipedPixelsArray =
   PipedPixelsArray::value_type[BLOCK_SIZE * 2 + KERNEL_WIDTH];
 // This two-block solution only works if kernel width < block size
 static_assert(KERNEL_WIDTH < BLOCK_SIZE);
+
+const sycl::stream& operator<<(const sycl::stream& os,
+                               const BufferedPipedPixelsArray& obj) {
+    os << "[ ";
+    for (int i = 0; i < KERNEL_WIDTH; ++i) {
+        if (i != 0) os << ", ";
+        os << setw(2) << obj[i];
+    }
+    os << " | ";
+    for (int i = KERNEL_WIDTH; i < BLOCK_SIZE + KERNEL_WIDTH; ++i) {
+        if (i != KERNEL_WIDTH) os << ", ";
+        os << setw(2) << obj[i];
+    }
+    os << " | ";
+    for (int i = KERNEL_WIDTH + BLOCK_SIZE; i < BLOCK_SIZE * 2 + KERNEL_WIDTH; ++i) {
+        if (i != KERNEL_WIDTH + BLOCK_SIZE) os << ", ";
+        os << setw(2) << obj[i];
+    }
+    os << " ]";
+    return os;
+}
 
 template <int blocks>
 using ModuleRowStore = PipedPixelsArray[blocks][FULL_KERNEL_HEIGHT];
@@ -247,6 +288,7 @@ int main(int argc, char** argv) {
 
         // Launch a module kernel for every module
         event e_module = Q.submit([&](handler& h) {
+            auto out = sycl::stream(1024, 768, h);
             h.single_task<class Module<0>>([=](){
                 auto result_h = host_ptr<PipedPixelsArray>(result);
                 auto destination_data_d = device_ptr<uint16_t>(destination_data);
@@ -266,6 +308,7 @@ int main(int argc, char** argv) {
                 }
 
                 for (size_t y = 0; y < slow; ++y) {
+                    out << "y = " << y << "/" << setw(4) << slow << "\n";
                     // The per-pixel buffer array to accumulate the blocks
                     BufferedPipedPixelsArray interim_pixels{};
 
@@ -279,9 +322,12 @@ int main(int argc, char** argv) {
                     for (size_t block = 0; block < FULL_BLOCKS - 1; ++block) {
                         // Read this into the right of the array...
                         interim_blocks[1] = ProducerPipeToModule<0>::read();
-
+                        out << "y,b = " << setw(2) << y << ", " << setw(2) << block
+                            << "  " << interim_pixels << "\n";
                         // Now we can calculate the sums for block 0
                         PipedPixelsArray sum = sum_buffered_block_0(&interim_pixels);
+                        //    "y = 0, block = 0; "
+                        out << "    summed:                " << sum << "\n";
 
                         // Now shift everything in the row buffer to the left
                         // to make room for the next pipe read
@@ -300,11 +346,23 @@ int main(int argc, char** argv) {
                         int swap_row_store = y % FULL_KERNEL_HEIGHT;
                         auto oldest_row = rows[swap_row_store][block];
 
+                        if (block == 0) {
+                            out << "Previous row: #" << prev_row_store << " "
+                                << prev_row << "\n";
+                            out << "Swap row:     #" << swap_row_store << " "
+                                << oldest_row << "\n";
+                        }
+
                         // Write the new running total over the oldest data
                         PipedPixelsArray new_row = sum + prev_row;
                         rows[swap_row_store][block] = new_row;
                         // Now, calculate the kernel sum for each of these
                         auto kernel_sum = new_row - oldest_row;
+                        if (block == 0) {
+                            //    "Swap row:     #  "
+                            out << "New row:          " << new_row << "\n";
+                            out << "Kernel sum:       " << kernel_sum << "\n";
+                        }
 
                         // Write this into the output data block
                         if (y >= KERNEL_HEIGHT) {
