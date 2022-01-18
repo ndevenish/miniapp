@@ -257,40 +257,40 @@ int main(int argc, char** argv) {
     //                 //                        FULL_KERNEL_HEIGHT>{};
 
     printf("Starting image loop:\n");
-    // for (int i = 0; i < reader.get_number_of_images(); ++i) {
-    int i = 1;
-    printf("\nReading Image %d\n", i);
-    reader.get_image_into(i, image_data);
+    for (int i = 0; i < reader.get_number_of_images(); ++i) {
+        printf("\nReading Image %d\n", i);
+        reader.get_image_into(i, image_data);
 
-    // Precalculate host-side the answers we expect, so we can validate
-    printf("Calculating host sum\n");
-    // Now we are using blocks and discarding excess, do that here
-    size_t host_sum = 0;
-    for (int i = 0; i < FULL_BLOCKS * BLOCK_SIZE; ++i) {
-        host_sum += image_data[i];
-    }
-    printf("Starting Kernels\n");
-    auto t1 = std::chrono::high_resolution_clock::now();
+        // Precalculate host-side the answers we expect, so we can validate
+        printf("Calculating host sum\n");
+        // Now we are using blocks and discarding excess, do that here
+        size_t host_sum = 0;
+        for (int i = 0; i < FULL_BLOCKS * BLOCK_SIZE; ++i) {
+            host_sum += image_data[i];
+        }
+        printf("Starting Kernels\n");
+        auto t1 = std::chrono::high_resolution_clock::now();
 
-    event e_producer = Q.submit([&](handler& h) {
-        h.single_task<class Producer>([=]() {
-            // For now, send every pixel into one pipe
-            // We are using blocks based on the pipe width - this is
-            // likely not an exact divisor of the fast width, so for
-            // now just ignore the excess pixels
-            for (size_t y = 0; y < slow; ++y) {
-                for (size_t block = 0; block < FULL_BLOCKS; ++block) {
-                    auto image_data_h = host_ptr<PipedPixelsArray>(
-                      reinterpret_cast<PipedPixelsArray*>(image_data.get() + y * fast));
-                    ProducerPipeToModule<0>::write(image_data_h[block]);
+        event e_producer = Q.submit([&](handler& h) {
+            h.single_task<class Producer>([=]() {
+                // For now, send every pixel into one pipe
+                // We are using blocks based on the pipe width - this is
+                // likely not an exact divisor of the fast width, so for
+                // now just ignore the excess pixels
+                for (size_t y = 0; y < slow; ++y) {
+                    for (size_t block = 0; block < FULL_BLOCKS; ++block) {
+                        auto image_data_h = host_ptr<PipedPixelsArray>(
+                          reinterpret_cast<PipedPixelsArray*>(image_data.get()
+                                                              + y * fast));
+                        ProducerPipeToModule<0>::write(image_data_h[block]);
+                    }
                 }
-            }
+            });
         });
-    });
 
-    // Launch a module kernel for every module
-    event e_module = Q.submit([&](handler& h) {
-        auto out = sycl::stream(10e6, 65535, h);
+        // Launch a module kernel for every module
+        event e_module = Q.submit([&](handler& h) {
+            // auto out = sycl::stream(10e6, 65535, h);
             h.single_task<class Module<0>>([=](){
                 auto result_h = host_ptr<PipedPixelsArray>(result);
                 auto destination_data_d = device_ptr<uint16_t>(destination_data);
@@ -311,7 +311,7 @@ int main(int argc, char** argv) {
 
                 for (size_t y = 0; y < slow; ++y) {
                     (*row_count) += 1;
-                    out << "y = " << y << "/" << setw(4) << slow << "\n";
+                    // out << "y = " << y << "/" << setw(4) << slow << "\n";
                     // The per-pixel buffer array to accumulate the blocks
                     BufferedPipedPixelsArray interim_pixels{};
 
@@ -325,18 +325,18 @@ int main(int argc, char** argv) {
                     for (size_t block = 0; block < FULL_BLOCKS - 1; ++block) {
                         // Read this into the right of the array...
                         interim_blocks[1] = ProducerPipeToModule<0>::read();
-                        if (block == 0) {
-                            out << "y,b = " << setw(2) << y << ", " << setw(2) << block
-                                << "  " << interim_pixels << "\n";
-                        }
+                        // if (block == 0) {
+                        //     out << "y,b = " << setw(2) << y << ", " << setw(2) << block
+                        //         << "  " << interim_pixels << "\n";
+                        // }
                         // Now we can calculate the sums for block 0
                         PipedPixelsArray sum = sum_buffered_block_0(&interim_pixels);
-                        if (block == 0) {
-                            //    "y = 0, block = 0; "
-                            out << "    summed:                " << sum << "\n";
-                        }
-                    // Now shift everything in the row buffer to the left
-                    // to make room for the next pipe read
+                        // if (block == 0) {
+                        //     //    "y = 0, block = 0; "
+                        //     out << "    summed:                " << sum << "\n";
+                        // }
+                        // Now shift everything in the row buffer to the left
+                        // to make room for the next pipe read
 #pragma unroll
                         for (int i = 0; i < KERNEL_WIDTH + BLOCK_SIZE; ++i) {
                             interim_pixels[i] = interim_pixels[BLOCK_SIZE + i];
@@ -356,38 +356,38 @@ int main(int argc, char** argv) {
                         // Write the new running total over the oldest data
                         PipedPixelsArray new_row = sum + prev_row;
                         rows[swap_row_store][block] = new_row;
-                        if (block <= 1) {
-                            // out << "Wrote " << new_row << " into "
-                            //     << rows[swap_row_store][block] << endl;
-                            out << "Wrote to "
-                                << ((uintptr_t)&rows[swap_row_store][block])
-                                     - ((uintptr_t)rows)
-                                << endl;
-                        }
+                        // if (block <= 1) {
+                        //     // out << "Wrote " << new_row << " into "
+                        //     //     << rows[swap_row_store][block] << endl;
+                        //     out << "Wrote to "
+                        //         << ((uintptr_t)&rows[swap_row_store][block])
+                        //              - ((uintptr_t)rows)
+                        //         << endl;
+                        // }
                         // Now, calculate the kernel sum for each of these
                         auto kernel_sum = new_row - oldest_row;
 
-                        if (block <= 1) {
-                            //    "    summed:                "
-                            out << "y = " << y << ", block = " << block << endl;
-                            out << "                         + " << prev_row
-                                << " (Previous row = " << prev_row_store << ")\n";
-                            out << "                         = " << new_row
-                                << " (New Row)\n";
-                            out << "                         - " << oldest_row
-                                << " (Oldest Row = " << swap_row_store << ")\n";
-                            out << "                         = " << kernel_sum
-                                << " (Kernel Sum)\n";
+                        // if (block <= 1) {
+                        //     //    "    summed:                "
+                        //     out << "y = " << y << ", block = " << block << endl;
+                        //     out << "                         + " << prev_row
+                        //         << " (Previous row = " << prev_row_store << ")\n";
+                        //     out << "                         = " << new_row
+                        //         << " (New Row)\n";
+                        //     out << "                         - " << oldest_row
+                        //         << " (Oldest Row = " << swap_row_store << ")\n";
+                        //     out << "                         = " << kernel_sum
+                        //         << " (Kernel Sum)\n";
 
-                            // Dump the contents
-                            for (int sr = 0; sr < FULL_KERNEL_HEIGHT; ++sr) {
-                                out << sr << " = " << rows[sr][0] << " " << rows[sr][1]
-                                    << ((uintptr_t)&rows[sr][0]) - (uintptr_t)rows
-                                    << ", "
-                                    << ((uintptr_t)&rows[sr][1]) - (uintptr_t)rows
-                                    << "\n";
-                            }
-                        }
+                        //     // Dump the contents
+                        //     for (int sr = 0; sr < FULL_KERNEL_HEIGHT; ++sr) {
+                        //         out << sr << " = " << rows[sr][0] << " " << rows[sr][1]
+                        //             << ((uintptr_t)&rows[sr][0]) - (uintptr_t)rows
+                        //             << ", "
+                        //             << ((uintptr_t)&rows[sr][1]) - (uintptr_t)rows
+                        //             << "\n";
+                        //     }
+                        // }
 
                         // if (block == 0) {
                         //     //    "Swap row:     #  "
@@ -403,39 +403,40 @@ int main(int argc, char** argv) {
                     }
                 }
                 });
-    });
+        });
 
-    Q.wait();
-    auto t2 = std::chrono::high_resolution_clock::now();
-    double ms_all =
-      std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1).count() * 1000;
+        Q.wait();
+        auto t2 = std::chrono::high_resolution_clock::now();
+        double ms_all =
+          std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1).count()
+          * 1000;
 
-    printf(" ... produced in %.2f ms (%.3g GBps)\n",
-           event_ms(e_producer),
-           event_GBps(e_producer, num_pixels * sizeof(uint16_t) / 2));
-    printf(" ... consumed in %.2f ms (%.3g GBps)\n",
-           event_ms(e_module),
-           event_GBps(e_module, num_pixels * sizeof(uint16_t) / 2));
-    printf(" ... Total consumed + piped in host time %.2f ms (%.3g GBps)\n",
-           ms_all,
-           GBps(num_pixels * sizeof(uint16_t), ms_all));
+        printf(" ... produced in %.2f ms (%.3g GBps)\n",
+               event_ms(e_producer),
+               event_GBps(e_producer, num_pixels * sizeof(uint16_t) / 2));
+        printf(" ... consumed in %.2f ms (%.3g GBps)\n",
+               event_ms(e_module),
+               event_GBps(e_module, num_pixels * sizeof(uint16_t) / 2));
+        printf(" ... Total consumed + piped in host time %.2f ms (%.3g GBps)\n",
+               ms_all,
+               GBps(num_pixels * sizeof(uint16_t), ms_all));
 
-    // Copy the device destination buffer back
-    // Print a section of the image and "destination" arrays
-    auto host_sum_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
-    auto e_dest_download = Q.submit([&](handler& h) {
-        h.memcpy(host_sum_data, destination_data, num_pixels * sizeof(uint16_t));
-    });
-    e_dest_download.wait();
-    Q.wait();
+        // Copy the device destination buffer back
+        // Print a section of the image and "destination" arrays
+        auto host_sum_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
+        auto e_dest_download = Q.submit([&](handler& h) {
+            h.memcpy(host_sum_data, destination_data, num_pixels * sizeof(uint16_t));
+        });
+        e_dest_download.wait();
+        Q.wait();
 
-    printf("Data:\n");
-    draw_image_data(image_data.get(), 0, 0, 16, 16, fast, slow);
+        printf("Data:\n");
+        draw_image_data(image_data.get(), 0, 0, 16, 16, fast, slow);
 
-    printf("\nSum:\n");
-    draw_image_data(host_sum_data.get(), 0, 0, 16, 16, fast, slow);
-    free(host_sum_data, Q);
-    // }
+        printf("\nSum:\n");
+        draw_image_data(host_sum_data.get(), 0, 0, 16, 16, fast, slow);
+        free(host_sum_data, Q);
+    }
 
     free(result, Q);
     free(image_data, Q);
