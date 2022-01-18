@@ -2,7 +2,6 @@
 #include <CL/sycl.hpp>
 #include <CL/sycl/INTEL/fpga_extensions.hpp>
 #include <algorithm>
-#include <array>
 #include <cassert>
 #include <chrono>
 #include <cstdlib>
@@ -25,10 +24,18 @@ constexpr int KERNEL_HEIGHT = 3;
 
 constexpr int FULL_KERNEL_HEIGHT = KERNEL_HEIGHT * 2 + 1;
 
+// How many pixels we use at once
+constexpr size_t BLOCK_SIZE = 16;
 // Width of this array determines how many pixels we read at once
-using PipedPixelsArray = std::array<H5Read::image_type, 16>;
+class PipedPixelsArray {
+  public:
+    typedef H5Read::image_type value_type;
+    value_type data[BLOCK_SIZE];
+    value_type& operator[](size_t index) {
+        return this->data[index];
+    }
+};
 // A convenience assignment for size of a single block
-constexpr size_t BLOCK_SIZE = std::tuple_size<PipedPixelsArray>::value;
 static_assert(is_power_of_two(BLOCK_SIZE));
 
 // Convenience sum for PipedPixelsArray
@@ -36,7 +43,7 @@ auto operator+(const PipedPixelsArray& l, const PipedPixelsArray& r)
   -> PipedPixelsArray {
     PipedPixelsArray sum;
     for (int i = 0; i < BLOCK_SIZE; ++i) {
-        sum[i] = l[i] + r[i];
+        sum.data[i] = l.data[i] + r.data[i];
     }
     return sum;
 }
@@ -44,7 +51,7 @@ auto operator-(const PipedPixelsArray& l, const PipedPixelsArray& r)
   -> PipedPixelsArray {
     PipedPixelsArray sum;
     for (int i = 0; i < BLOCK_SIZE; ++i) {
-        sum[i] = l[i] - r[i];
+        sum.data[i] = l.data[i] - r.data[i];
     }
     return sum;
 }
@@ -76,13 +83,12 @@ auto operator-(const PipedPixelsArray& l, const PipedPixelsArray& r)
 // Since we only need the raw pixel values of the
 // buffer+block, this process can be pipelined.
 using BufferedPipedPixelsArray =
-  std::array<PipedPixelsArray::value_type, BLOCK_SIZE * 2 + KERNEL_WIDTH>;
+  PipedPixelsArray::value_type[BLOCK_SIZE * 2 + KERNEL_WIDTH];
 // This two-block solution only works if kernel width < block size
 static_assert(KERNEL_WIDTH < BLOCK_SIZE);
 
 template <int blocks>
-using ModuleRowStore =
-  std::array<std::array<PipedPixelsArray, blocks>, FULL_KERNEL_HEIGHT>;
+using ModuleRowStore = PipedPixelsArray[blocks][FULL_KERNEL_HEIGHT];
 
 template <int id>
 class ToModulePipe;
@@ -195,8 +201,7 @@ int main(int argc, char** argv) {
       BLOCK_REMAINDER,
       FULL_BLOCKS);
 
-    std::array<uint16_t, FULL_BLOCKS>* totalblocksum =
-      malloc_host<std::array<uint16_t, FULL_BLOCKS>>(slow, Q);
+    uint16_t* totalblocksum = malloc_host<uint16_t>(FULL_BLOCKS * slow, Q);
 
     uint16_t* destination_data = malloc_device<uint16_t>(num_pixels, Q);
 
