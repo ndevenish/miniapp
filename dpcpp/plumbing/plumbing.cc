@@ -13,8 +13,8 @@
 using namespace sycl;
 
 // From https://stackoverflow.com/a/10585543/1118662
-constexpr bool is_power_of_two(int x) {
-    return x && ((x & (x - 1)) == 0);
+constexpr bool is_power_of_two(unsigned int x) {
+    return x != 0 && ((x & (x - 1)) == 0);
 }
 
 /// One-direction width of kernel. Total kernel span is (K_W * 2 + 1)
@@ -30,7 +30,9 @@ constexpr size_t BLOCK_SIZE = 16;
 class PipedPixelsArray {
   public:
     typedef H5Read::image_type value_type;
+
     value_type data[BLOCK_SIZE];
+
     value_type& operator[](size_t index) {
         return this->data[index];
     }
@@ -104,8 +106,9 @@ class Producer;
 /// Return the profiling event time, in milliseconds, for an event
 double event_ms(const sycl::event& e) {
     return 1e-6
-           * (e.get_profiling_info<info::event_profiling::command_end>()
-              - e.get_profiling_info<info::event_profiling::command_start>());
+           * static_cast<double>(
+             e.get_profiling_info<info::event_profiling::command_end>()
+             - e.get_profiling_info<info::event_profiling::command_start>());
 }
 
 /// Calculate the GigaBytes per second given bytes, time
@@ -119,14 +122,14 @@ double event_GBps(const sycl::event& e, size_t bytes) {
     return GBps(bytes, ms);
 }
 
-PipedPixelsArray sum_buffered_block_0(BufferedPipedPixelsArray& buffer) {
+PipedPixelsArray sum_buffered_block_0(BufferedPipedPixelsArray* buffer) {
     // Now we can calculate the sums for block 0
     PipedPixelsArray sum{};
 #pragma unroll
     for (int center = 0; center < BLOCK_SIZE; ++center) {
 #pragma unroll
         for (int i = -KERNEL_WIDTH; i <= KERNEL_WIDTH; ++i) {
-            sum[center] += buffer[KERNEL_WIDTH + center + i];
+            sum[center] += (*buffer)[KERNEL_WIDTH + center + i];
         }
     }
     return sum;
@@ -142,7 +145,7 @@ void draw_image_data(const uint16_t* data,
                      size_t height,
                      size_t data_width,
                      size_t data_height) {
-    for (int y = slow; y < slow + height; ++y) {
+    for (int y = slow; y < min(slow + height, data_height); ++y) {
         if (y == slow) {
             printf("y = %2d │", y);
         } else {
@@ -172,12 +175,12 @@ int main(int argc, char** argv) {
     // Declare the image data that will be remotely accessed
     auto image_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
     // Absolutely make sure that this is properly aligned
-    assert((uintptr_t)image_data.get() % 64 == 0);
+    assert(reinterpret_cast<uintptr_t>(image_data.get()) % 64 == 0);
 
     // Result data - this is accessed remotely but only at the end, to
     // return the results.
     // PipedPixelsArray* result = malloc_host<PipedPixelsArray>(4, Q);
-    PipedPixelsArray* result = malloc_host<PipedPixelsArray>(2, Q);
+    auto* result = malloc_host<PipedPixelsArray>(2, Q);
 
     printf("Uploading mask data to accelerator.... ");
     auto e_mask_upload = Q.submit(
@@ -204,7 +207,7 @@ int main(int argc, char** argv) {
 
     // uint16_t* totalblocksum = malloc_host<uint16_t>(FULL_BLOCKS * slow, Q);
 
-    uint16_t* destination_data = malloc_device<uint16_t>(num_pixels, Q);
+    auto* destination_data = malloc_device<uint16_t>(num_pixels, Q);
 
     // auto* rows_ptr = malloc_device<ModuleRowStore<FULL_BLOCKS>>(1, Q);
     // auto  rows = malloc_device<
@@ -278,7 +281,7 @@ int main(int argc, char** argv) {
                         interim_blocks[1] = ProducerPipeToModule<0>::read();
 
                         // Now we can calculate the sums for block 0
-                        PipedPixelsArray sum = sum_buffered_block_0(interim_pixels);
+                        PipedPixelsArray sum = sum_buffered_block_0(&interim_pixels);
 
                         // Now shift everything in the row buffer to the left
                         // to make room for the next pipe read
