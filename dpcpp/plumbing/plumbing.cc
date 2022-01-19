@@ -424,6 +424,11 @@ int main(int argc, char** argv) {
 
         // Copy the device destination buffer back
         auto host_sum_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
+        // Fill this with sample data so we can tell if anything is happening
+        for (size_t i = 0; i < num_pixels; ++i) {
+            host_sum_data[i] = 42;
+        }
+
         auto e_dest_download = Q.submit([&](handler& h) {
             h.memcpy(host_sum_data, destination_data, num_pixels * sizeof(uint16_t));
         });
