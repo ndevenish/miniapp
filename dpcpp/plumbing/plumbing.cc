@@ -251,8 +251,11 @@ int main(int argc, char** argv) {
     // uint16_t* totalblocksum = malloc_host<uint16_t>(FULL_BLOCKS * slow, Q);
 
     // auto* destination_data_host = malloc_device<uint16_t>(num_pixels, Q);
-    auto* destination_data = malloc_device<uint16_t>(num_pixels, Q);
-
+    auto* destination_data = malloc_host<uint16_t>(num_pixels, Q);
+    // Fill this with sample data so we can tell if anything is happening
+    for (size_t i = 0; i < num_pixels; ++i) {
+        destination_data[i] = 42;
+    }
     // auto* rows_ptr = malloc_device<ModuleRowStore<FULL_BLOCKS>>(1, Q);
     // auto  rows = malloc_device<
     //                 //                        FULL_KERNEL_HEIGHT>{};
@@ -293,8 +296,8 @@ int main(int argc, char** argv) {
         event e_module = Q.submit([&](handler& h) {
             // auto out = sycl::stream(10e6, 65535, h);
             h.single_task<class Module<0>>([=](){
-                auto result_h = host_ptr<PipedPixelsArray>(result);
-                auto destination_data_d = device_ptr<uint16_t>(destination_data);
+                // auto result_h = host_ptr<PipedPixelsArray>(result);
+                auto destination_data_h = host_ptr<uint16_t>(destination_data);
 
                 size_t sum_pixels = 0;
 
@@ -311,8 +314,6 @@ int main(int argc, char** argv) {
                 }
 
                 for (size_t y = 0; y < slow; ++y) {
-                    (*row_count) += 1;
-                    // out << "y = " << y << "/" << setw(4) << slow << "\n";
                     // The per-pixel buffer array to accumulate the blocks
                     BufferedPipedPixelsArray interim_pixels{};
 
@@ -326,16 +327,10 @@ int main(int argc, char** argv) {
                     for (size_t block = 0; block < FULL_BLOCKS - 1; ++block) {
                         // Read this into the right of the array...
                         interim_blocks[1] = ProducerPipeToModule<0>::read();
-                        // if (block == 0) {
-                        //     out << "y,b = " << setw(2) << y << ", " << setw(2) << block
-                        //         << "  " << interim_pixels << "\n";
-                        // }
+
                         // Now we can calculate the sums for block 0
                         PipedPixelsArray sum = sum_buffered_block_0(&interim_pixels);
-                        // if (block == 0) {
-                        //     //    "y = 0, block = 0; "
-                        //     out << "    summed:                " << sum << "\n";
-                        // }
+
                         // Now shift everything in the row buffer to the left
                         // to make room for the next pipe read
 #pragma unroll
@@ -357,48 +352,14 @@ int main(int argc, char** argv) {
                         // Write the new running total over the oldest data
                         PipedPixelsArray new_row = sum + prev_row;
                         rows[swap_row_store][block] = new_row;
-                        // if (block <= 1) {
-                        //     // out << "Wrote " << new_row << " into "
-                        //     //     << rows[swap_row_store][block] << endl;
-                        //     out << "Wrote to "
-                        //         << ((uintptr_t)&rows[swap_row_store][block])
-                        //              - ((uintptr_t)rows)
-                        //         << endl;
-                        // }
+
                         // Now, calculate the kernel sum for each of these
                         auto kernel_sum = new_row - oldest_row;
-
-                        // if (block <= 1) {
-                        //     //    "    summed:                "
-                        //     out << "y = " << y << ", block = " << block << endl;
-                        //     out << "                         + " << prev_row
-                        //         << " (Previous row = " << prev_row_store << ")\n";
-                        //     out << "                         = " << new_row
-                        //         << " (New Row)\n";
-                        //     out << "                         - " << oldest_row
-                        //         << " (Oldest Row = " << swap_row_store << ")\n";
-                        //     out << "                         = " << kernel_sum
-                        //         << " (Kernel Sum)\n";
-
-                        //     // Dump the contents
-                        //     for (int sr = 0; sr < FULL_KERNEL_HEIGHT; ++sr) {
-                        //         out << sr << " = " << rows[sr][0] << " " << rows[sr][1]
-                        //             << ((uintptr_t)&rows[sr][0]) - (uintptr_t)rows
-                        //             << ", "
-                        //             << ((uintptr_t)&rows[sr][1]) - (uintptr_t)rows
-                        //             << "\n";
-                        //     }
-                        // }
-
-                        // if (block == 0) {
-                        //     //    "Swap row:     #  "
-                        //     out << "New row:          = " << new_row << "\n";
-                        // }
 
                         // Write this into the output data block
                         if (y >= KERNEL_HEIGHT) {
                             *reinterpret_cast<PipedPixelsArray*>(
-                              &destination_data_d[(y - KERNEL_HEIGHT) * fast
+                              &destination_data_h[(y - KERNEL_HEIGHT) * fast
                                                   + block * BLOCK_SIZE]) = kernel_sum;
                         }
                     }
@@ -423,16 +384,12 @@ int main(int argc, char** argv) {
                GBps(num_pixels * sizeof(uint16_t), ms_all));
 
         // Copy the device destination buffer back
-        auto host_sum_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
-        // Fill this with sample data so we can tell if anything is happening
-        for (size_t i = 0; i < num_pixels; ++i) {
-            host_sum_data[i] = 42;
-        }
+        // auto host_sum_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
 
-        auto e_dest_download = Q.submit([&](handler& h) {
-            h.memcpy(host_sum_data, destination_data, num_pixels * sizeof(uint16_t));
-        });
-        e_dest_download.wait();
+        // auto e_dest_download = Q.submit([&](handler& h) {
+        //     h.memcpy(host_sum_data, destination_data, num_pixels * sizeof(uint16_t));
+        // });
+        // e_dest_download.wait();
         Q.wait();
 
         // Print a section of the image and "destination" arrays
@@ -440,8 +397,8 @@ int main(int argc, char** argv) {
         draw_image_data(image_data.get(), 0, 0, 16, 16, fast, slow);
 
         printf("\nSum:\n");
-        draw_image_data(host_sum_data.get(), 0, 0, 16, 16, fast, slow);
-        free(host_sum_data, Q);
+        draw_image_data(destination_data, 0, 0, 16, 16, fast, slow);
+        // free(host_sum_data, Q);
     }
 
     free(result, Q);
