@@ -250,12 +250,13 @@ int main(int argc, char** argv) {
 
     // uint16_t* totalblocksum = malloc_host<uint16_t>(FULL_BLOCKS * slow, Q);
 
+    // auto* destination_data_host = malloc_device<uint16_t>(num_pixels, Q);
     auto* destination_data = malloc_device<uint16_t>(num_pixels, Q);
 
     // auto* rows_ptr = malloc_device<ModuleRowStore<FULL_BLOCKS>>(1, Q);
     // auto  rows = malloc_device<
     //                 //                        FULL_KERNEL_HEIGHT>{};
-
+    Q.wait();
     printf("Starting image loop:\n");
     for (int i = 0; i < reader.get_number_of_images(); ++i) {
         printf("\nReading Image %d\n", i);
@@ -422,7 +423,6 @@ int main(int argc, char** argv) {
                GBps(num_pixels * sizeof(uint16_t), ms_all));
 
         // Copy the device destination buffer back
-        // Print a section of the image and "destination" arrays
         auto host_sum_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
         auto e_dest_download = Q.submit([&](handler& h) {
             h.memcpy(host_sum_data, destination_data, num_pixels * sizeof(uint16_t));
@@ -430,6 +430,7 @@ int main(int argc, char** argv) {
         e_dest_download.wait();
         Q.wait();
 
+        // Print a section of the image and "destination" arrays
         printf("Data:\n");
         draw_image_data(image_data.get(), 0, 0, 16, 16, fast, slow);
 
