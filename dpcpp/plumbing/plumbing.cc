@@ -408,9 +408,16 @@ int main(int argc, char** argv) {
 #endif
                         // Write this into the output data block
                         if (y >= KERNEL_HEIGHT) {
-                            *reinterpret_cast<PipedPixelsArray*>(
-                              &destination_data_h[(y - KERNEL_HEIGHT) * fast
-                                                  + block * BLOCK_SIZE]) = kernel_sum;
+                            // Write a really simple loop.
+                            size_t offset =
+                              (y - KERNEL_HEIGHT) * fast + block * BLOCK_SIZE;
+#pragma unroll
+                            for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+                                destination_data_h[offset + i] = kernel_sum[i];
+                            }
+                            // *reinterpret_cast<PipedPixelsArray*>(
+                            //   &destination_data_h[(y - KERNEL_HEIGHT) * fast
+                            //                       + block * BLOCK_SIZE]) = kernel_sum;
                         }
                     }
                 }
