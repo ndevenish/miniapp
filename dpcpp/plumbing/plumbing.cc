@@ -224,6 +224,7 @@ int main(int argc, char** argv) {
     // Result data - this is accessed remotely but only at the end, to
     // return the results.
     uintptr_t* result_dest = malloc_host<uintptr_t>(BLOCK_SIZE + 1, Q);
+    uint16_t* result_mini = malloc_host<uint16_t>(BLOCK_SIZE, Q);
 
     auto* result = malloc_host<PipedPixelsArray>(2, Q);
 
@@ -420,6 +421,7 @@ int main(int argc, char** argv) {
                                     result_dest[BLOCK_SIZE] =
                                       (uintptr_t)destination_data_h.get();
                                     result_dest[i] = (uintptr_t)(offset + i);
+                                    result_mini[i] = kernel_sum[i];
                                 }
                             }
                             // *reinterpret_cast<PipedPixelsArray*>(
@@ -452,6 +454,18 @@ int main(int argc, char** argv) {
                (uintptr_t)destination_data);
         for (int i = 0; i < BLOCK_SIZE; ++i) {
             printf(" %" PRIxPTR, result_dest[i]);
+        }
+        printf("\nData:\n");
+        for (int i = 0; i < BLOCK_SIZE; ++i) {
+            printf(" %" PRIu16, result_mini[i]);
+        }
+        printf("\nData on host:");
+        //   &destination_data_h[(y - KERNEL_HEIGHT) * fast
+        //                       + block * BLOCK_SIZE]) = kernel_sum;
+        size_t offset = (5 - KERNEL_HEIGHT) * fast;
+        printf("%" PRIxPTR ", %" PRIxPTR "\n", offset, (uintptr_t)destination_data);
+        for (int i = 0; i < BLOCK_SIZE; ++i) {
+            printf(" %" PRIu16, destination_data[offset + i]);
         }
         printf("\n");
         // Copy the device destination buffer back
