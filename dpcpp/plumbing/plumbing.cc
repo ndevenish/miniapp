@@ -294,7 +294,9 @@ int main(int argc, char** argv) {
 
         // Launch a module kernel for every module
         event e_module = Q.submit([&](handler& h) {
-            // auto out = sycl::stream(10e6, 65535, h);
+#ifdef FPGA_EMULATOR
+            auto out = sycl::stream(10e6, 65535, h);
+#endif
             h.single_task<class Module<0>>([=](){
                 // auto result_h = host_ptr<PipedPixelsArray>(result);
                 auto destination_data_h = host_ptr<uint16_t>(destination_data);
@@ -327,9 +329,20 @@ int main(int argc, char** argv) {
                     for (size_t block = 0; block < FULL_BLOCKS - 1; ++block) {
                         // Read this into the right of the array...
                         interim_blocks[1] = ProducerPipeToModule<0>::read();
+#ifdef FPGA_EMULATOR
+                        if (block == 0) {
+                            out << "y,b = " << setw(2) << y << ", " << setw(2) << block
+                                << "  " << interim_pixels << "\n";
+                        }
+#endif
 
                         // Now we can calculate the sums for block 0
                         PipedPixelsArray sum = sum_buffered_block_0(&interim_pixels);
+#ifdef FPGA_EMULATOR
+                        if (block == 0) {
+                            out << "    summed:                " << sum << "\n";
+                        }
+#endif
 
                         // Now shift everything in the row buffer to the left
                         // to make room for the next pipe read
@@ -351,11 +364,48 @@ int main(int argc, char** argv) {
 
                         // Write the new running total over the oldest data
                         PipedPixelsArray new_row = sum + prev_row;
+#ifdef FPGA_EMULATOR
+                        if (block <= 1) {
+                            // out << "Wrote " << new_row << " into "
+                            //     << rows[swap_row_store][block] << endl;
+                            out << "Wrote to "
+                                << ((uintptr_t)&rows[swap_row_store][block])
+                                     - ((uintptr_t)rows)
+                                << endl;
+                        }
+#endif
                         rows[swap_row_store][block] = new_row;
 
                         // Now, calculate the kernel sum for each of these
                         auto kernel_sum = new_row - oldest_row;
 
+#ifdef FPGA_EMULATOR
+                        if (block <= 1) {
+                            //    "    summed:                "
+                            out << "y = " << y << ", block = " << block << endl;
+                            out << "                         + " << prev_row
+                                << " (Previous row = " << prev_row_store << ")\n";
+                            out << "                         = " << new_row
+                                << " (New Row)\n";
+                            out << "                         - " << oldest_row
+                                << " (Oldest Row = " << swap_row_store << ")\n";
+                            out << "                         = " << kernel_sum
+                                << " (Kernel Sum)\n";
+                            //
+                            // Dump the contents
+                            for (int sr = 0; sr < FULL_KERNEL_HEIGHT; ++sr) {
+                                out << sr << " = " << rows[sr][0] << " " << rows[sr][1]
+                                    << ((uintptr_t)&rows[sr][0]) - (uintptr_t)rows
+                                    << ", "
+                                    << ((uintptr_t)&rows[sr][1]) - (uintptr_t)rows
+                                    << "\n";
+                            }
+                        }
+                        //
+                        if (block == 0) {
+                            out << "New row:          = " << new_row << "\n";
+                        }
+#endif
                         // Write this into the output data block
                         if (y >= KERNEL_HEIGHT) {
                             *reinterpret_cast<PipedPixelsArray*>(
