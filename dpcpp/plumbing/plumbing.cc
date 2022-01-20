@@ -1,4 +1,6 @@
 
+#include <inttypes.h>
+
 #include <CL/sycl.hpp>
 #include <CL/sycl/INTEL/fpga_extensions.hpp>
 #include <algorithm>
@@ -9,7 +11,6 @@
 #include "common.hpp"
 #include "eiger2xe.h"
 #include "h5read.h"
-
 using namespace sycl;
 
 // From https://stackoverflow.com/a/10585543/1118662
@@ -222,7 +223,8 @@ int main(int argc, char** argv) {
     *row_count = 0;
     // Result data - this is accessed remotely but only at the end, to
     // return the results.
-    // PipedPixelsArray* result = malloc_host<PipedPixelsArray>(4, Q);
+    uintptr_t* result_dest = malloc_host<uintptr_t>(BLOCK_SIZE + 1, Q);
+
     auto* result = malloc_host<PipedPixelsArray>(2, Q);
 
     printf("Uploading mask data to accelerator.... ");
@@ -414,6 +416,11 @@ int main(int argc, char** argv) {
 #pragma unroll
                             for (size_t i = 0; i < BLOCK_SIZE; ++i) {
                                 destination_data_h[offset + i] = kernel_sum[i];
+                                if (y == 5 && block == 0) {
+                                    result_dest[BLOCK_SIZE] =
+                                      (uintptr_t)destination_data_h.get();
+                                    result_dest[i] = (uintptr_t)(offset + i);
+                                }
                             }
                             // *reinterpret_cast<PipedPixelsArray*>(
                             //   &destination_data_h[(y - KERNEL_HEIGHT) * fast
@@ -440,6 +447,13 @@ int main(int argc, char** argv) {
                ms_all,
                GBps(num_pixels * sizeof(uint16_t), ms_all));
 
+        printf("Data store instructs to %" PRIxPTR " ==? %" PRIxPTR "\n",
+               result_dest[BLOCK_SIZE],
+               (uintptr_t)destination_data);
+        for (int i = 0; i < BLOCK_SIZE; ++i) {
+            printf(" %" PRIxPTR, result_dest[i]);
+        }
+        printf("\n");
         // Copy the device destination buffer back
         // auto host_sum_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
 
@@ -459,6 +473,7 @@ int main(int argc, char** argv) {
     }
 
     free(result, Q);
+    free(result_dest, Q);
     free(image_data, Q);
     free(mask_data, Q);
     auto end_time = std::chrono::high_resolution_clock::now();
