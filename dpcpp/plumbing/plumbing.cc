@@ -2,11 +2,11 @@
 #include <inttypes.h>
 
 #include <CL/sycl.hpp>
-#include <CL/sycl/INTEL/fpga_extensions.hpp>
 #include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <cstdlib>
+#include <sycl/ext/intel/fpga_extensions.hpp>
 
 #include "common.hpp"
 #include "eiger2xe.h"
@@ -138,7 +138,8 @@ template <int id>
 class ToModulePipe;
 
 template <int id>
-using ProducerPipeToModule = INTEL::pipe<class ToModulePipe<id>, PipedPixelsArray, 5>;
+using ProducerPipeToModule =
+  ext::intel::pipe<class ToModulePipe<id>, PipedPixelsArray, 5>;
 
 template <int Index>
 class Module;

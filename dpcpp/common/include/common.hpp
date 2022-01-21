@@ -2,8 +2,8 @@
 #define _DPCPP_COMMON_H
 
 #include <CL/sycl.hpp>
-#include <CL/sycl/INTEL/fpga_extensions.hpp>
 #include <cstdio>
+#include <sycl/ext/intel/fpga_extensions.hpp>
 
 constexpr auto R = "\033[31m";
 constexpr auto G = "\033[32m";
@@ -19,9 +19,9 @@ sycl::queue initialize_queue() {
 //  - the FPGA emulator device (CPU emulation of the FPGA)
 //  - the FPGA device (a real FPGA)
 #if defined(FPGA_EMULATOR)
-    sycl::INTEL::fpga_emulator_selector device_selector;
+    sycl::ext::intel::fpga_emulator_selector device_selector;
 #else
-    sycl::INTEL::fpga_selector device_selector;
+    sycl::ext::intel::fpga_selector device_selector;
 #endif
     sycl::queue Q(device_selector, sycl::property::queue::enable_profiling{});
 #else
