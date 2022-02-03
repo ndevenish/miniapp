@@ -48,7 +48,7 @@ if command -v mamba > /dev/null || load_module mamba >/dev/null 2>&1; then
     module load mamba
 fi
 
-packages=(boost-cpp benchmark gtest cmake hdf5 hdf5-external-filter-plugins)
+packages=(boost-cpp benchmark gtest cmake hdf5 hdf5-external-filter-plugins compilers)
 
 if [[ ! -d ENV ]]; then
     "$conda" create -c conda-forge -yp ENV "${packages[@]}"
