@@ -8,13 +8,12 @@ include(AlwaysColourCompilation)
 
 include(CheckIncludeFileCXX)
 
-set(HDF5_FIND_QUIETLY Yes)
-find_package(HDF5 REQUIRED)
+# set(HDF5_FIND_QUIETLY Yes)
+# find_package(HDF5 REQUIRED)
 
 add_library(h5read src/h5read.c src/h5read.cc)
 
 target_include_directories(h5read PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include )
-target_link_libraries(h5read PUBLIC hdf5::hdf5)
 
 # Check if we have the C++20 span header. Otherwise, use the backport
 check_include_file_cxx(span HAS_CXX20_SPAN)

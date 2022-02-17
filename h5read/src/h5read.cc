@@ -1,6 +1,7 @@
 #include <h5read.h>
 
 #include <cassert>
+#include <cstdio>
 #include <iostream>
 
 using namespace std;
@@ -16,6 +17,9 @@ H5Read::H5Read() {
 }
 
 H5Read::H5Read(const std::string &filename) {
+    fprintf(stderr,
+            "Error: H5 capabilities have been removed. Only sample data supported.");
+    exit(1);
     auto obj = h5read_open(filename.c_str());
     if (obj == nullptr) throw std::runtime_error("Could not open Nexus file");
     _handle = std::shared_ptr<h5read_handle>(obj, h5read_freeer);
