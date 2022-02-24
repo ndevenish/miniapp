@@ -2,11 +2,17 @@
 #include <inttypes.h>
 
 #include <CL/sycl.hpp>
-#include <CL/sycl/INTEL/fpga_extensions.hpp>
 #include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <cstdlib>
+#if __INTEL_LLVM_COMPILER < 20220000
+#include <CL/sycl/INTEL/fpga_extensions.hpp>
+#define SYCL_INTEL sycl::INTEL
+#else
+#include <sycl/ext/intel/fpga_extensions.hpp>
+#define SYCL_INTEL sycl::ext::intel
+#endif
 
 #include "common.hpp"
 #include "eiger2xe.h"
@@ -138,7 +144,8 @@ template <int id>
 class ToModulePipe;
 
 template <int id>
-using ProducerPipeToModule = INTEL::pipe<class ToModulePipe<id>, PipedPixelsArray, 5>;
+using ProducerPipeToModule =
+  SYCL_INTEL::pipe<class ToModulePipe<id>, PipedPixelsArray, 5>;
 
 template <int Index>
 class Module;
