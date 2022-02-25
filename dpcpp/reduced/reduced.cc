@@ -17,6 +17,27 @@
 #define SYCL_INTEL sycl::ext::intel
 #endif
 
+// For embedding emulator-only diagnostics
+#if defined(FPGA_EMULATOR)
+#define EMULATOR_ONLY(x) x
+#else
+#define EMULATOR_ONLY(x)
+#endif
+using namespace sycl;
+
+// Convenient aliases for coloured output
+constexpr auto R = "\033[31m";
+constexpr auto G = "\033[32m";
+constexpr auto Y = "\033[33m";
+constexpr auto B = "\033[34m";
+constexpr auto GRAY = "\033[37m";
+constexpr auto BOLD = "\033[1m";
+constexpr auto NC = "\033[0m";
+
+////////////////////////////////////////////////////////////////////////
+/// The data type of individual image data pixels
+using image_data_t = uint16_t;
+
 ////////////////////////////////////////////////////////////////////////
 // Defining geometry for the detector images
 
@@ -36,21 +57,9 @@ constexpr size_t E2XE_MOD_SLOW = 512;
 constexpr size_t E2XE_GAP_FAST = 12;
 /// Number of Y pixels between modules
 constexpr size_t E2XE_GAP_SLOW = 38;
-/// The data type of individual image data pixels
 
-using image_data_t = uint16_t;
-
-constexpr auto R = "\033[31m";
-constexpr auto G = "\033[32m";
-constexpr auto Y = "\033[33m";
-constexpr auto B = "\033[34m";
-constexpr auto GRAY = "\033[37m";
-constexpr auto BOLD = "\033[1m";
-constexpr auto NC = "\033[0m";
-
-using namespace sycl;
-
-/// Generate a sample image from number
+////////////////////////////////////////////////////////////////////////
+/// Generate a set of sample images
 constexpr size_t NUM_SAMPLE_IMAGES = 4;
 void generate_sample_image(size_t n, image_data_t* data) {
     assert(n >= 0 && n <= NUM_SAMPLE_IMAGES);
@@ -113,21 +122,25 @@ void generate_sample_image(size_t n, image_data_t* data) {
     }
 }
 
+// For static asserting the block layouts
 // From https://stackoverflow.com/a/10585543/1118662
 constexpr bool is_power_of_two(unsigned int x) {
     return x != 0 && ((x & (x - 1)) == 0);
 }
 
-/// One-direction width of kernel. Total kernel span is (K_W * 2 + 1)
+/// One-direction (half-)width of kernel. Total kernel span is (K_W * 2 + 1)
 constexpr int KERNEL_WIDTH = 3;
-/// One-direction height of kernel. Total kernel span is (K_H * 2 + 1)
+/// One-direction (half-)height of kernel. Total kernel span is (K_H * 2 + 1)
 constexpr int KERNEL_HEIGHT = 3;
-
 constexpr int FULL_KERNEL_HEIGHT = KERNEL_HEIGHT * 2 + 1;
 
 // How many pixels we use at once
 constexpr size_t BLOCK_SIZE = 16;
-// Width of this array determines how many pixels we read at once
+static_assert(is_power_of_two(BLOCK_SIZE));
+
+// Width of this array determines how many pixels we read at once.
+// This used to be std::array to have block assignments, but was
+// advised to use a struct instead.
 class PipedPixelsArray {
   public:
     using value_type = image_data_t;
@@ -141,10 +154,8 @@ class PipedPixelsArray {
         return this->data[index];
     }
 };
-// A convenience assignment for size of a single block
-static_assert(is_power_of_two(BLOCK_SIZE));
 
-// Convenience sum for PipedPixelsArray
+// Summing two blocks of data together
 auto operator+(const PipedPixelsArray& l, const PipedPixelsArray& r)
   -> PipedPixelsArray {
     PipedPixelsArray sum;
@@ -153,6 +164,7 @@ auto operator+(const PipedPixelsArray& l, const PipedPixelsArray& r)
     }
     return sum;
 }
+// Subtracting two blocks of data
 auto operator-(const PipedPixelsArray& l, const PipedPixelsArray& r)
   -> PipedPixelsArray {
     PipedPixelsArray sum;
@@ -161,12 +173,7 @@ auto operator-(const PipedPixelsArray& l, const PipedPixelsArray& r)
     }
     return sum;
 }
-
-// inline const stream &operator<<(const stream &Out, const bool &RHS) {
-//   Out << (RHS ? "true" : "false");
-//   return Out;
-// }
-
+// Convenience; printing a block of data
 const sycl::stream& operator<<(const sycl::stream& os, const PipedPixelsArray& obj) {
     os << "[ ";
     for (int i = 0; i < BLOCK_SIZE; ++i) {
@@ -179,18 +186,20 @@ const sycl::stream& operator<<(const sycl::stream& os, const PipedPixelsArray& o
     return os;
 }
 
-// We need to buffer two blocks + kernel, because the pixels
-// on the beginning of the block depend on the tail of the
-// previous block, and the pixels at the end of the block
-// depend on the start of the next block.
+// Algorithm is: for every pixel in a row, calculate the (self-inclusive) sum
+// of all pixels within KERNEL_WIDTH of that pixel to the left and right.
+//
+// Thus, when scanning along the rows we need to buffer two blocks + kernel,
+// because the pixels on the beginning of the block depend on the tail of the
+// previous block, and the pixels at the end of the block depend on the start
+// of the next block.
 //
 // Let's make a rolling buffer of:
 //
 //      | <KERNEL_WIDTH> | Block 0 | Block 1 |
 //
-// We read a block into block 1 - at which point we are
-// ready to calculate all of the local-kernel sums for
-// block 0 e.g.:
+// We read a block into block 1 - at which point we are ready to calculate all
+// of the local-kernel sums for every pixel in block 0 e.g.:
 //
 //      | K-2 | K-1 | k-0 | B0_0 | B0_1 | B0_2 | B0_3
 //         └─────┴─────┴──────┼──────┴──────┴─────┘
@@ -198,18 +207,32 @@ const sycl::stream& operator<<(const sycl::stream& os, const PipedPixelsArray& o
 //                            │
 //                         | S_0 | S_1 | S_2 | S_3 | ...
 //
-// Once we've calculated the per-pixel kernel sum for a
-// single block, we can shift the entire array left by
-// BLOCK_SIZE + KERNEL_WIDTH pixels to read the next
-// block into the right of the buffer.
+// Once we've calculated the per-pixel kernel sum for a single block, we can
+// shift the entire array left by BLOCK_SIZE + KERNEL_WIDTH pixels to read the
+// next block into the right of the buffer.
 //
-// Since we only need the raw pixel values of the
-// buffer+block, this process can be pipelined.
+// Since we only need the raw pixel values of the buffer+block, this process
+// can be pipelined.
 using BufferedPipedPixelsArray =
   PipedPixelsArray::value_type[BLOCK_SIZE * 2 + KERNEL_WIDTH];
 // This two-block solution only works if kernel width < block size
 static_assert(KERNEL_WIDTH < BLOCK_SIZE);
 
+/// Calculate the kernel-width sum for every pixel in block 0
+PipedPixelsArray sum_buffered_block_0(BufferedPipedPixelsArray* buffer) {
+    // Now we can calculate the sums for block 0
+    PipedPixelsArray sum{};
+#pragma unroll
+    for (int center = 0; center < BLOCK_SIZE; ++center) {
+#pragma unroll
+        for (int i = -KERNEL_WIDTH; i <= KERNEL_WIDTH; ++i) {
+            sum[center] += (*buffer)[KERNEL_WIDTH + center + i];
+        }
+    }
+    return sum;
+}
+
+// Convenience method for printing out a BufferedPipedPixelsArray
 const sycl::stream& operator<<(const sycl::stream& os,
                                const BufferedPipedPixelsArray& obj) {
     os << "[ ";
@@ -231,9 +254,11 @@ const sycl::stream& operator<<(const sycl::stream& os,
     return os;
 }
 
+/// Storing a whole row of data
 template <int blocks>
 using ModuleRowStore = PipedPixelsArray[FULL_KERNEL_HEIGHT][blocks];
 
+/// Pipe between modules
 template <int id>
 class ToModulePipe;
 
@@ -246,7 +271,7 @@ class Module;
 
 class Producer;
 
-/// Return the profiling event time, in milliseconds, for an event
+/// Convenience: Return the profiling event time, in milliseconds, for an event
 double event_ms(const sycl::event& e) {
     return 1e-6
            * static_cast<double>(
@@ -265,20 +290,7 @@ double event_GBps(const sycl::event& e, size_t bytes) {
     return GBps(bytes, ms);
 }
 
-PipedPixelsArray sum_buffered_block_0(BufferedPipedPixelsArray* buffer) {
-    // Now we can calculate the sums for block 0
-    PipedPixelsArray sum{};
-#pragma unroll
-    for (int center = 0; center < BLOCK_SIZE; ++center) {
-#pragma unroll
-        for (int i = -KERNEL_WIDTH; i <= KERNEL_WIDTH; ++i) {
-            sum[center] += (*buffer)[KERNEL_WIDTH + center + i];
-        }
-    }
-    return sum;
-}
-
-/// Draw a subset of the pixel values for a 2D image array
+/// Ascii-draw a subset of the pixel values for a 2D image array
 /// fast, slow, width, height - describe the bounding box to draw
 /// data_width, data_height - describe the full data array size
 void draw_image_data(const uint16_t* data,
@@ -304,9 +316,6 @@ void draw_image_data(const uint16_t* data,
 int main(int argc, char** argv) {
     auto start_time = std::chrono::high_resolution_clock::now();
 
-// Select either:
-//  - the FPGA emulator device (CPU emulation of the FPGA)
-//  - the FPGA device (a real FPGA)
 #if defined(FPGA_EMULATOR)
     SYCL_INTEL::fpga_emulator_selector device_selector;
 #else
@@ -320,8 +329,6 @@ int main(int argc, char** argv) {
     auto fast = E2XE_16M_SLOW;
     const size_t num_pixels = slow * fast;
 
-    // Mask data is the same for all images, so we copy it to device early
-    auto mask_data = device_ptr<uint8_t>(malloc_device<uint8_t>(num_pixels, Q));
     // Declare the image data that will be remotely accessed
     auto image_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
     // Absolutely make sure that this is properly aligned
@@ -330,21 +337,15 @@ int main(int argc, char** argv) {
     auto row_count = host_ptr<uint16_t>(malloc_host<uint16_t>(1, Q));
     *row_count = 0;
     // Result data - this is accessed remotely but only at the end, to
-    // return the results.
+    // stream the results back to the host.
     uintptr_t* result_dest = malloc_host<uintptr_t>(BLOCK_SIZE + 1, Q);
     uint16_t* result_mini = malloc_host<uint16_t>(BLOCK_SIZE, Q);
-
     auto* result = malloc_host<PipedPixelsArray>(2, Q);
 
-    // printf("Uploading mask data to accelerator.... ");
-    // auto e_mask_upload = Q.submit(
-    //   [&](handler& h) { h.memcpy(mask_data, reader.get_mask().data(), num_pixels); });
-    // Q.wait();
-    // printf("done in %.1f ms (%.2f GBps)\n",
-    //        event_ms(e_mask_upload),
-    //        event_GBps(e_mask_upload, num_pixels));
-
     // Module/detector compile-time calculations
+    // A full image width isn't exactly a multiple of BLOCK_SIZE.
+    // Ignore this for now, and don't calculate for the pixels on the right edge.
+    //
     /// The number of pixels left over when we divide the image into blocks of BLOCK_SIZE
     constexpr size_t BLOCK_REMAINDER = E2XE_16M_FAST % BLOCK_SIZE;
     // The number of full blocks that we can fit across an image
@@ -359,30 +360,29 @@ int main(int argc, char** argv) {
       BLOCK_REMAINDER,
       FULL_BLOCKS);
 
-    // uint16_t* totalblocksum = malloc_host<uint16_t>(FULL_BLOCKS * slow, Q);
-
-    // auto* destination_data_host = malloc_device<uint16_t>(num_pixels, Q);
+    // Make both host and device buffers - let's try explicit buffer transfers
     auto* destination_data = malloc_host<uint16_t>(num_pixels, Q);
-    // Fill this with sample data so we can tell if anything is happening
+    auto* destination_data_device = malloc_device<uint16_t>(num_pixels, Q);
+    Q.wait();
+    // Fill this with sample data so we can tell if it's actually overwritten
     for (size_t i = 0; i < num_pixels; ++i) {
         destination_data[i] = 42;
     }
-    // auto* rows_ptr = malloc_device<ModuleRowStore<FULL_BLOCKS>>(1, Q);
-    // auto  rows = malloc_device<
-    //                 //                        FULL_KERNEL_HEIGHT>{};
+    // Copy to accelerator
+    auto e_data_clear_upload = Q.submit([&](handler& h) {
+        h.memcpy(
+          destination_data_device, destination_data, num_pixels * sizeof(uint16_t));
+    });
     Q.wait();
+    printf("Copy of empty destination done in %.1f ms (%.2f GBps)\n",
+           event_ms(e_data_clear_upload),
+           event_GBps(e_data_clear_upload, num_pixels));
+
     printf("Starting image loop:\n");
     for (int i = 0; i < NUM_SAMPLE_IMAGES; ++i) {
         printf("\nReading Image %d\n", i);
         generate_sample_image(i, image_data);
 
-        // Precalculate host-side the answers we expect, so we can validate
-        printf("Calculating host sum\n");
-        // Now we are using blocks and discarding excess, do that here
-        size_t host_sum = 0;
-        for (int i = 0; i < FULL_BLOCKS * BLOCK_SIZE; ++i) {
-            host_sum += image_data[i];
-        }
         printf("Starting Kernels\n");
         auto t1 = std::chrono::high_resolution_clock::now();
 
@@ -405,16 +405,12 @@ int main(int argc, char** argv) {
 
         // Launch a module kernel for every module
         event e_module = Q.submit([&](handler& h) {
-#ifdef FPGA_EMULATOR
-            auto out = sycl::stream(10e6, 65535, h);
-#endif
             h.single_task<class Module<0>>([=](){
-                // auto result_h = host_ptr<PipedPixelsArray>(result);
-                auto destination_data_h = host_ptr<uint16_t>(destination_data);
+                auto destination_data_d = device_ptr<uint16_t>(destination_data_device);
 
                 size_t sum_pixels = 0;
 
-                // Make a buffer for full rows so we can store them as we go
+                // Make a buffer for full rows to process intermediate results
                 ModuleRowStore<FULL_BLOCKS> rows;
                 // Initialise this to zeros
                 for (int zr = 0; zr < FULL_KERNEL_HEIGHT; ++zr) {
@@ -454,7 +450,7 @@ int main(int argc, char** argv) {
                         // Now we can insert this into the row accumulation store and
                         // do per-row calculations
 
-                        // Calculate the previously written row index, and get the row
+                        // Calculate the previously written row index, and read the block
                         int prev_row_index =
                           (y + FULL_KERNEL_HEIGHT - 1) % FULL_KERNEL_HEIGHT;
                         auto prev_row = rows[prev_row_index][block];
@@ -464,7 +460,6 @@ int main(int argc, char** argv) {
 
                         // Write the new running total over the oldest data
                         PipedPixelsArray new_row = sum + prev_row;
-
                         rows[oldest_row_index][block] = new_row;
 
                         // Now, calculate the kernel sum for each of these
@@ -472,19 +467,14 @@ int main(int argc, char** argv) {
 
                         // Write this into the output data block
                         if (y >= KERNEL_HEIGHT) {
-                            // Write a really simple loop.
+                            // Write a really simple loop. to see if this is the problem
                             size_t offset =
                               (y - KERNEL_HEIGHT) * fast + block * BLOCK_SIZE;
 #pragma unroll
                             for (size_t i = 0; i < BLOCK_SIZE; ++i) {
-                                destination_data_h[offset + i] = kernel_sum[i];
-                                if (y == 5 && block == 0) {
-                                    result_dest[BLOCK_SIZE] =
-                                      (uintptr_t)destination_data_h.get();
-                                    result_dest[i] = (uintptr_t)(offset + i);
-                                    result_mini[i] = kernel_sum[i];
-                                }
+                                destination_data_d[offset + i] = kernel_sum[i];
                             }
+                            // Previous approach was as an assignment;
                             // *reinterpret_cast<PipedPixelsArray*>(
                             //   &destination_data_h[(y - KERNEL_HEIGHT) * fast
                             //                       + block * BLOCK_SIZE]) = kernel_sum;
@@ -495,11 +485,23 @@ int main(int argc, char** argv) {
         });
 
         Q.wait();
+
+        // Download device data
+        // Copy to accelerator
+        auto e_processed_data_download = Q.submit([&](handler& h) {
+            h.memcpy(
+              destination_data, destination_data_device, num_pixels * sizeof(uint16_t));
+        });
+        Q.wait();
+        printf("Copy back of processed data in %.1f ms (%.2f GBps)\n",
+               event_ms(e_processed_data_download),
+               event_GBps(e_processed_data_download, num_pixels));
+
+        // Print out a load of diagnostics about how fast this was
         auto t2 = std::chrono::high_resolution_clock::now();
         double ms_all =
           std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1).count()
           * 1000;
-
         printf(" ... produced in %.2f ms (%.3g GBps)\n",
                event_ms(e_producer),
                event_GBps(e_producer, num_pixels * sizeof(uint16_t) / 2));
@@ -550,7 +552,7 @@ int main(int argc, char** argv) {
     free(result, Q);
     free(result_dest, Q);
     free(image_data, Q);
-    free(mask_data, Q);
+    free(destination_data_device, Q);
     auto end_time = std::chrono::high_resolution_clock::now();
 
     printf(
