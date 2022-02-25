@@ -471,17 +471,6 @@ int main(int argc, char** argv) {
 
         Q.wait();
 
-        // Download device data
-        // Copy to accelerator
-        auto e_processed_data_download = Q.submit([&](handler& h) {
-            h.memcpy(
-              destination_data, destination_data_device, num_pixels * sizeof(uint16_t));
-        });
-        Q.wait();
-        printf("Copy back of processed data in %.1f ms (%.2f GBps)\n",
-               event_ms(e_processed_data_download),
-               event_GBps(e_processed_data_download, num_pixels));
-
         // Print out a load of diagnostics about how fast this was
         auto t2 = std::chrono::high_resolution_clock::now();
         double ms_all =
@@ -497,32 +486,16 @@ int main(int argc, char** argv) {
                ms_all,
                GBps(num_pixels * sizeof(uint16_t), ms_all));
 
-        printf("Data store instructs to %" PRIxPTR " ==? %" PRIxPTR "\n",
-               result_dest[BLOCK_SIZE],
-               (uintptr_t)destination_data);
-        for (int i = 0; i < BLOCK_SIZE; ++i) {
-            printf(" %" PRIxPTR, result_dest[i]);
-        }
-        printf("\nData:\n");
-        for (int i = 0; i < BLOCK_SIZE; ++i) {
-            printf(" %" PRIu16, result_mini[i]);
-        }
-        printf("\nData on host:");
-        //   &destination_data_h[(y - KERNEL_HEIGHT) * fast
-        //                       + block * BLOCK_SIZE]) = kernel_sum;
-        size_t offset = (5 - KERNEL_HEIGHT) * fast;
-        printf("%" PRIxPTR ", %" PRIxPTR "\n", offset, (uintptr_t)destination_data);
-        for (int i = 0; i < BLOCK_SIZE; ++i) {
-            printf(" %" PRIu16, destination_data[offset + i]);
-        }
-        printf("\n");
         // Copy the device destination buffer back
-        // auto host_sum_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
+        auto e_processed_data_download = Q.submit([&](handler& h) {
+            h.memcpy(
+              destination_data, destination_data_device, num_pixels * sizeof(uint16_t));
+        });
+        e_processed_data_download.wait();
+        printf("Copy back of processed data in %.1f ms (%.2f GBps)\n",
+               event_ms(e_processed_data_download),
+               event_GBps(e_processed_data_download, num_pixels));
 
-        // auto e_dest_download = Q.submit([&](handler& h) {
-        //     h.memcpy(host_sum_data, destination_data, num_pixels * sizeof(uint16_t));
-        // });
-        // e_dest_download.wait();
         Q.wait();
 
         // Print a section of the image and "destination" arrays
