@@ -48,14 +48,14 @@ if command -v mamba > /dev/null || load_module mamba >/dev/null 2>&1; then
     module load mamba
 fi
 
-packages=(boost-cpp benchmark gtest cmake hdf5 hdf5-external-filter-plugins)
+packages=(boost-cpp benchmark gtest cmake hdf5 hdf5-external-filter-plugins compilers)
 
 if [[ ! -d ENV ]]; then
-    "$conda" create -yp ENV "${packages[@]}"
+    "$conda" create -c conda-forge -yp ENV "${packages[@]}"
     echo "$ENV_VERSION" > ENV/.miniapp_version
 elif [[ $INSTALL_ENV == "yes" ]]; then
     conda activate ENV/
-    "$conda" install -y "${packages[@]}"
+    "$conda" install -c conda-forge -y "${packages[@]}"
     echo "$ENV_VERSION" > ENV/.miniapp_version
 fi
 
