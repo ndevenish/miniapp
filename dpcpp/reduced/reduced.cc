@@ -17,22 +17,7 @@
 #define SYCL_INTEL sycl::ext::intel
 #endif
 
-// For embedding emulator-only diagnostics
-#if defined(FPGA_EMULATOR)
-#define EMULATOR_ONLY(x) x
-#else
-#define EMULATOR_ONLY(x)
-#endif
 using namespace sycl;
-
-// Convenient aliases for coloured output
-constexpr auto R = "\033[31m";
-constexpr auto G = "\033[32m";
-constexpr auto Y = "\033[33m";
-constexpr auto B = "\033[34m";
-constexpr auto GRAY = "\033[37m";
-constexpr auto BOLD = "\033[1m";
-constexpr auto NC = "\033[0m";
 
 ////////////////////////////////////////////////////////////////////////
 /// The data type of individual image data pixels
@@ -323,7 +308,7 @@ int main(int argc, char** argv) {
 #endif
     sycl::queue Q(device_selector, sycl::property::queue::enable_profiling{});
 
-    printf("Running with %s%zu-bit%s wide blocks\n", BOLD, BLOCK_SIZE * 16, NC);
+    printf("Running with \033[1m%zu-bit\033[0m wide blocks\n", BLOCK_SIZE * 16);
 
     auto slow = E2XE_16M_SLOW;
     auto fast = E2XE_16M_SLOW;
