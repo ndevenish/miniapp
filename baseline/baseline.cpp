@@ -87,12 +87,11 @@ class DispersionThreshold {
         std::size_t xsize = src.accessor()[0]; // 1028/4148 = FAST
 
         // Create the summed area table
-        for (std::size_t j = 0, k = 0; j < ysize; ++j) { // j=[0,1027]
+        for (std::size_t j = 0, k = 0; j < ysize; ++j) {
             int m = 0;
             T x = 0;
             T y = 0;
-            for (std::size_t i = 0; i < xsize; ++i, ++k) { // i=[0,512]
-                // (k = j * xsize + i = j * 512 +i)
+            for (std::size_t i = 0; i < xsize; ++i, ++k) {
                 int mm = (mask[k] && src[k] < BIG) ? 1 : 0;
                 m += mm;
                 x += mm * src[k];
@@ -314,22 +313,13 @@ class DispersionThreshold {
                            af::ref<bool, af::c_grid<2>> dst) {
         double t0 = omp_get_wtime();
         // Get the size of the image
-        std::size_t ysize = src.accessor()[1]; //4148
-        std::size_t xsize = src.accessor()[0]; //4362 I HAVE SWAPPED THESE
+        // I HAVE SWAPPED THESE TO MATCH THE DATA INDICES
+        std::size_t ysize = src.accessor()[1];
+        std::size_t xsize = src.accessor()[0];
 
         // The kernel size
         int kxsize = kernel_size_[1];
         int kysize = kernel_size_[0];
-
-
-        // FILE* file = fopen("/dls/science/users/zzg91958/DIALS/miniapp/condition_counts.txt", "a");
-        // size_t mask_count=0;
-        // size_t min_count_count=0;
-        // size_t x0_count = 0;
-        // size_t thresh_count = 0;
-        // size_t ac_count = 0;
-        // size_t bd_count = 0;
-        // size_t overall_count = 0;
 
         // Calculate the local mean at every point
         for (std::size_t j = 0, k = 0; j < ysize; ++j) {
@@ -370,30 +360,17 @@ class DispersionThreshold {
                 x += d11.x;
                 y += d11.y;
 
-                // if (k==206100 || k==7675340) {
-                //     printf("k=%d here:%g left:%g right:%g up:%g down:%g\n", k, src[k], src[k-1], src[k+1], src[k-xsize], src[k+xsize]);
-                // }
-
                 // Compute the thresholds
                 dst[k] = false;
-                // if (mask[k]) mask_count ++;
-                // if (m >= min_count_) min_count_count ++;
-                // if (x>=0) x0_count ++;
-                // if (src[k] > threshold_) thresh_count ++;
-                if (mask[k] && m >= min_count_ && x >= 0 && src[k] > threshold_) { // count how many times each of these are satisfied?
+                if (mask[k] && m >= min_count_ && x >= 0 && src[k] > threshold_) {
                     double a = m * y - x * x - x * (m - 1);
                     double b = m * src[k] - x;
                     double c = x * nsig_b_ * std::sqrt(2 * (m - 1));
                     double d = nsig_s_ * std::sqrt(x * m);
-                    // if (a > c) ac_count ++;
-                    // if (b > d) bd_count ++;
-                    // if (a > c && b > d) overall_count ++;
-                    dst[k] = a > c && b > d; // count these also?
+                    dst[k] = a > c && b > d;
                 }
             }
         }
-        // fprintf(file, "%d %d %d %d %d %d %d \n", mask_count, min_count_count, x0_count, thresh_count, ac_count, bd_count, overall_count);
-        // fclose(file);
         return omp_get_wtime() - t0;
     }
 
@@ -499,7 +476,7 @@ class DispersionThreshold {
 
         // Compute the image threshold
         double thresh_time;
-        thresh_time = compute_threshold(table, src, mask, dst);
+        thresh_time = compute_threshold2(table, src, mask, dst);
 
         //printf("%g %g ", sat_time, thresh_time);
     }
@@ -1099,45 +1076,22 @@ uint32_t spotfinder_standard_dispersion(void *context, image_t *image) {
     }
 
     ctx->threshold(ctx->src_converted, mask);
-    // FILE *file = fopen("/dls/science/users/zzg91958/DIALS/miniapp/image_dst.txt", "a");
     // Let's count the number of destination pixels for now
     uint32_t pixel_count = 0;
     for (int i = 0; i < (ctx->size[0] * ctx->size[1]); ++i) {
         pixel_count += ctx->dst[i];
-        // fprintf(file, "%d\n", ctx->dst[i]);
     }
-    // fclose(file);
-
-    // FILE* file = fopen("/dls/science/users/zzg91958/DIALS/miniapp/image_dst_1.txt", "a");
-    // for (size_t n=0; n<32; n++) {
-    //     size_t i_fast = n % 4;
-    //     size_t i_slow = n / 4;
-    //     size_t r_0 = i_slow * (512 + 38) * 4148;
-    //     for (size_t k=0; k<1028*512; k++) {
-    //         size_t offset = r_0 + (k / 1028) * 4148 + i_fast *(1028+12);
-    //         size_t idx = offset + k%1028;
-    //         fprintf(file, "%d\n", ctx->dst[idx]);
-    //     }
-    // }
-    // fclose(file);
     return pixel_count;
 }
 
-uint32_t spotfinder_standard_dispersion_modules(void *context, image_modules_t *image_modules, size_t index) {//}, image_t* image) {
+uint32_t spotfinder_standard_dispersion_modules(void *context, image_modules_t *image_modules, size_t index) {
     auto ctx = reinterpret_cast<_spotfind_context<image_t_type, double> *>(context);
 
     size_t offset = index * ctx->size[0] * ctx->size[1];
 
-    // uint8_t *mask_tmp = (uint8_t*) std::malloc(sizeof(uint8_t) * ctx->size[0] * ctx->size[1]);
-    // std::memcpy(mask_tmp, &(image_modules->mask[offset]), sizeof mask_tmp);
-    // std::copy(image_modules->mask+offset, image_modules->mask+offset+ctx->size[0]*ctx->size[1], mask_tmp);
-
     // mask needs to convert uint8_t to bool
     auto mask = af::const_ref<bool, af::c_grid<2>>(
       reinterpret_cast<bool *>(&(image_modules->mask[offset])), af::c_grid<2>(ctx->size[0], ctx->size[1])); 
-    
-    // auto mask = af::const_ref<bool, af::c_grid<2>>(
-    //   reinterpret_cast<bool *>(mask_tmp), af::c_grid<2>(ctx->size[0], ctx->size[1])); 
 
     // Convert all items from the source image to double
     for (int i = 0; i < (ctx->size[0] * ctx->size[1]); ++i) {
@@ -1146,35 +1100,11 @@ uint32_t spotfinder_standard_dispersion_modules(void *context, image_modules_t *
 
     ctx->threshold(ctx->src_converted, mask);
 
-    // size_t true_count = 0, true_count2 = 0, true_count3 = 0;
-
-    // size_t i_fast = index % 4;
-    // size_t i_slow = index / 4;
-    // size_t r_0 = i_slow * (image_modules->slow + 38) * image->fast;
-    // for (size_t k=0; k<image_modules->fast*image_modules->slow; k++) {
-    //     size_t offset = r_0 + (k / image_modules->fast) * image->fast + i_fast *(image_modules->fast+12);
-    //     size_t idx = offset + k%image_modules->fast;
-    //     if (mask[k] != image->mask[idx]) {
-    //         printf("Mask disagreement at %d %d\n", index*(image_modules->fast*image_modules->slow)+k, idx);
-    //     }
-    //     if (mask[k]) true_count ++;
-    //     if (image_modules->mask[index*ctx->size[0]*ctx->size[1]+k]) true_count2 ++;
-    //     if (image->mask[idx]) true_count3 ++;
-    // }
-
-    // FILE *file = fopen("/dls/science/users/zzg91958/DIALS/miniapp/module_dst.txt", "a");
-
     // Let's count the number of destination pixels for now
     uint32_t pixel_count = 0;
     for (int i = 0; i < (ctx->size[0] * ctx->size[1]); ++i) {
         pixel_count += ctx->dst[i];
-        // fprintf(file, "%d\n", ctx->dst[i]);
-        // if (mask[i]) true_count ++;
-        // if (image_modules->mask[offset+i]) true_count2 ++;
     }
-    // fclose(file);
-    // printf("%u %u %u\n", true_count, true_count2, true_count3);
-    // free(mask_tmp);
     return pixel_count;
 }
 

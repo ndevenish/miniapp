@@ -54,34 +54,52 @@ int main(int argc, char **argv) {
     int both_results[n_images];
     int mini_f_results[n_images];
 
+    
+    double load_time = 0;
+    double compute_time = 0;
+
     double t0 = omp_get_wtime();
 
 // Parallelism over images
-#pragma omp parallel for default(none) private(image, temp) shared(n_images, obj, spotfinders, full_results)
+#pragma omp parallel for default(none) private(image, temp) shared(n_images, obj, spotfinders, full_results) reduction(+:load_time, compute_time)
     for (size_t j=0; j<n_images; j++) {
+        double lt0 = omp_get_wtime();
         image = h5read_get_image(obj, j);
+        double lt1 = omp_get_wtime();
         temp = spotfinder_standard_dispersion(spotfinders[omp_get_thread_num()], image);
+        load_time += (lt1-lt0);
+        compute_time += omp_get_wtime()-lt1;
+        printf("%g %g \n", load_time, compute_time);
         h5read_free_image(image);
         full_results[j] = temp;
         //printf("On thread %d, image%d count:%d\n", omp_get_thread_num(), j, temp);
     }
+    
+    printf("Image: load:%g compute:%g\n", load_time, compute_time);
 
     double t1 = omp_get_wtime();
 
 // Parallelism over modules
     uint32_t strong_pixels_from_modules=0;
     size_t n;
+    load_time = 0;
+    compute_time = 0;
     for (size_t j=0; j<n_images; j++) {
+        double lt0 = omp_get_wtime();
         modules = h5read_get_image_modules(obj, j);
+        double lt1 = omp_get_wtime();
         strong_pixels_from_modules = 0;
 #pragma omp parallel for default(none) shared(n_images, modules, mini_spotfinders, n_modules, mini_results) reduction(+:strong_pixels_from_modules)
         for (n=0; n<n_modules; n++) {
             strong_pixels_from_modules += spotfinder_standard_dispersion_modules(mini_spotfinders[omp_get_thread_num()], modules, n);
         }
+        load_time += lt1-lt0;
+        compute_time += omp_get_wtime() - lt1;
         h5read_free_image_modules(modules);
         mini_results[j] = strong_pixels_from_modules;
         //printf("New total for image %d: %d\n", j, strong_pixels_from_modules);
     }
+    printf("Modules: load:%g compute:%g\n", load_time, compute_time);
 
     double t2 = omp_get_wtime();
 
@@ -140,51 +158,8 @@ int main(int argc, char **argv) {
     }
 
     void *mini_spotfinder = spotfinder_create(modules->fast, modules->slow);
-    temp=0;
+    temp = 0;
     image = h5read_get_image(obj, 0);
-
-    // for (size_t j=0; j<3; j++) {
-    //     modules = h5read_get_image_modules(obj, j);
-    //     strong_pixels_from_modules = 0;
-    //     for (n=0; n<n_modules; n++) {
-    //         temp = spotfinder_standard_dispersion_modules(mini_spotfinder, modules, n); //, image);
-    //         strong_pixels_from_modules += temp;
-    //         printf("%d: %d Total: %d \n", n, temp, strong_pixels_from_modules);
-    //     }
-    //     printf("\nImage %d: modules give %d strong pixels\n\n", j, strong_pixels_from_modules);
-    // }
-    // void* less_mini_spotfinder = spotfinder_create(4*modules->fast, 8*modules->slow);
-    // uint32_t new_answer = spotfinder_standard_dispersion_modules(less_mini_spotfinder, modules, 0, image);
-    // printf("Big module gives: %d\n", new_answer);
-    // spotfinder_free(less_mini_spotfinder);
-    // FILE * ifile;
-    // FILE *mfile;
-    // size_t j = 0;
-    // image = h5read_get_image(obj, j);
-    // modules = h5read_get_image_modules(obj, j);
-    // ifile = fopen("/dls/science/users/zzg91958/DIALS/miniapp/image0.txt", "w");
-    // for (n=0; n<image->fast*image->slow; n++) {
-    //     fprintf(ifile, "%d\n", image->data[n]);
-    // }
-    // fclose(ifile);
-    // mfile = fopen("/dls/science/users/zzg91958/DIALS/miniapp/image0_m.txt", "w");
-    // for (n=0; n<32*modules->fast*modules->slow; n++) {
-    //     fprintf(mfile, "%d\n", modules->data[n]);
-    // }
-    // fclose(mfile);
-    // FILE* ifile2 = fopen("/dls/science/users/zzg91958/DIALS/miniapp/image0_1.txt", "w");
-    // for (n=0; n<modules->modules; n++) {
-    //     size_t i_fast = n % 4;
-    //     size_t i_slow = n / 4;
-    //     size_t r_0 = i_slow * (modules->slow + 38) * image->fast;
-    //     for (size_t k=0; k<modules->fast*modules->slow; k++) {
-    //         size_t offset = r_0 + (k / modules->fast) * image->fast + i_fast *(modules->fast+12);
-    //         size_t idx = offset + k%modules->fast;
-    //         fprintf(ifile2, "%d\n", image->data[idx]);
-    //     }
-    // }
-    // fclose(ifile2);
-
 
     uint16_t image_slow = 0, image_fast = 0;
     void *spotfinder = NULL;
