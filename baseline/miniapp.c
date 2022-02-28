@@ -133,10 +133,34 @@ int main(int argc, char **argv) {
 
     double t5 = omp_get_wtime();
 
-    printf("Over images: %g/%g, over modules: %g/%g, over both: %g\n", t5-t4, t1-t0, t2-t1, t4-t3, t3-t2);
+    printf(
+      "\nTime to run with parallel over:\n\
+Images with modules: %4.0f ms/image\n\
+Images:              %4.0f ms/image\n\
+Modules:             %4.0f ms/image\n\
+Modules (float):     %4.0f ms/image\n\
+Both:                %4.0f ms/image\n",
+      (t5 - t4) / n_images * 1000,
+      (t1 - t0) / n_images * 1000,
+      (t2 - t1) / n_images * 1000,
+      (t4 - t3) / n_images * 1000,
+      (t3 - t2) / n_images * 1000);
 
-    for (size_t j=0; j<5; j++) {
-        printf("images:%d modules:%d/%d both:%d\n", full_results[j], mini_results[j], mini_f_results[j], both_results[j]);
+    printf("\nStrong pixels count results:\n");
+    printf("Img# Images Modules (float)  Both\n");
+    for (size_t j = 0; j < 5; j++) {
+        char *col = "\033[1;31m";
+        if (full_results[j] == mini_results[j] && full_results[j] == both_results[j]) {
+            col = "\033[32m";
+        }
+        printf("%s%4d %6d %7d \033[0m%6d%s %5d\n\033[0m",
+               col,
+               j,
+               full_results[j],
+               mini_results[j],
+               mini_f_results[j],
+               col,
+               both_results[j]);
     }
 
     void *mini_spotfinder = spotfinder_create(modules->fast, modules->slow);
