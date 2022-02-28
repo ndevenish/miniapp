@@ -276,7 +276,7 @@ int main(int argc, char **argv) {
         spotfinder_free(spotfinders[j]);
     }
 
-    h5read_free_image_modules(modules);
+    // h5read_free_image_modules(modules);
     spotfinder_free(mini_spotfinder);
     spotfinder_free(spotfinder);
     h5read_free(obj);
