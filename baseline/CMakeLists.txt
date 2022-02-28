@@ -24,16 +24,20 @@ find_package(OpenMP)
 add_subdirectory(../h5read h5read)
 
 add_library(baseline SHARED baseline.cpp )
-if(OpenMP_CXX_FOUND)
-    message("Found OpenMP")
-    target_link_libraries(baseline PUBLIC Dials::Dials benchmark::benchmark h5read OpenMP::OpenMP_CXX)
-else()
-    message("Didn't find OpenMP")
-    target_link_libraries(baseline PUBLIC Dials::Dials benchmark::benchmark h5read)
-endif()
+target_link_libraries(baseline PUBLIC
+    Dials::Dials
+    benchmark::benchmark
+    h5read
+    $<TARGET_NAME_IF_EXISTS:OpenMP::OpenMP_CXX>
+)
 
 add_executable(bm bm.cpp)
 target_link_libraries(bm baseline)
 
 add_executable(miniapp miniapp.c)
-target_link_libraries(miniapp PUBLIC hdf5::hdf5 baseline h5read OpenMP::OpenMP_C)
+target_link_libraries(miniapp PUBLIC
+    hdf5::hdf5
+    baseline
+    h5read
+    $<TARGET_NAME_IF_EXISTS:OpenMP::OpenMP_C>
+)
