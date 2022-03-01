@@ -54,10 +54,8 @@ int main(int argc, char **argv) {
     int both_results[n_images];
     int mini_f_results[n_images];
 
-    
     double load_time = 0;
     double compute_time = 0;
-
     double t0 = omp_get_wtime();
 
 // Parallelism over images
@@ -69,13 +67,11 @@ int main(int argc, char **argv) {
         temp = spotfinder_standard_dispersion(spotfinders[omp_get_thread_num()], image);
         load_time += (lt1-lt0);
         compute_time += omp_get_wtime()-lt1;
-        printf("%g %g \n", load_time, compute_time);
         h5read_free_image(image);
         full_results[j] = temp;
-        //printf("On thread %d, image%d count:%d\n", omp_get_thread_num(), j, temp);
     }
     
-    printf("Image: load:%g compute:%g\n", load_time, compute_time);
+    printf("Image: load:%g compute:%g\n", load_time/omp_get_max_threads(), compute_time/omp_get_max_threads());
 
     double t1 = omp_get_wtime();
 
@@ -151,20 +147,44 @@ int main(int argc, char **argv) {
 
     double t5 = omp_get_wtime();
 
-    printf("Over images: %g/%g, over modules: %g/%g, over both: %g\n", t5-t4, t1-t0, t2-t1, t4-t3, t3-t2);
-
-    for (size_t j=0; j<5; j++) {
-        printf("images:%d modules:%d/%d both:%d\n", full_results[j], mini_results[j], mini_f_results[j], both_results[j]);
+    for (size_t j=0; j<omp_get_max_threads(); j++) {
+        h5read_free_image(image_sample[j]);
     }
 
-    void *mini_spotfinder = spotfinder_create(modules->fast, modules->slow);
-    temp = 0;
-    image = h5read_get_image(obj, 0);
+    printf(
+      "\nTime to run with parallel over:\n\
+Images with modules: %4.0f ms/image\n\
+Images:              %4.0f ms/image\n\
+Modules:             %4.0f ms/image\n\
+Modules (float):     %4.0f ms/image\n\
+Both:                %4.0f ms/image\n",
+      (t5 - t4) / n_images * 1000,
+      (t1 - t0) / n_images * 1000,
+      (t2 - t1) / n_images * 1000,
+      (t4 - t3) / n_images * 1000,
+      (t3 - t2) / n_images * 1000);
+
+    printf("\nStrong pixels count results:\n");
+    printf("Img# Images Modules (float)  Both\n");
+    for (size_t j = 0; j < 5; j++) {
+        char *col = "\033[1;31m";
+        if (full_results[j] == mini_results[j] && full_results[j] == both_results[j]) {
+            col = "\033[32m";
+        }
+        printf("%s%4d %6d %7d \033[0m%6d%s %5d\n\033[0m",
+               col,
+               j,
+               full_results[j],
+               mini_results[j],
+               mini_f_results[j],
+               col,
+               both_results[j]);
+    }
 
     uint16_t image_slow = 0, image_fast = 0;
     void *spotfinder = NULL;
     size_t modules_true, image_true;
-    for (size_t j = 0; j < 0; j++) {
+    for (size_t j = 0; j < 1; j++) {
         image = h5read_get_image(obj, j);
         modules = h5read_get_image_modules(obj, j);
         modules_true=0;
@@ -252,7 +272,7 @@ int main(int argc, char **argv) {
     }
 
     h5read_free_image_modules(modules);
-    spotfinder_free(mini_spotfinder);
+    //spotfinder_free(mini_spotfinder);
     spotfinder_free(spotfinder);
     h5read_free(obj);
 
