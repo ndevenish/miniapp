@@ -78,56 +78,32 @@ int main(int argc, char **argv) {
     int mini_f_results[n_images];
     int both_results[n_images];
 
-    image_t* sample_images, image0;
-    // sample_images[2*omp_get_num_procs()];
-    // for (size_t j=0; j<2*omp_get_num_procs(); j++) {
-    //     sample_images[j] = h5read_get_image(obj, j);
-    // }
-    // image0 = h5read_get_image(obj,0);
-
-    double load_time = 0;
-    double compute_time = 0;
     double t0 = omp_get_wtime();
 
 // Parallelism over images
-#pragma omp parallel for default(none) private(image, temp) shared(n_images, obj, spotfinders, full_results, sample_images, image0) reduction(+:load_time, compute_time)
+#pragma omp parallel for default(none) private(image, temp) shared(n_images, obj, spotfinders, full_results)
     for (size_t j=0; j<n_images; j++) {
-        double lt0 = omp_get_wtime();
-        // int sample_index = j % (2*omp_get_num_procs());
-        // image = sample_images[sample_index];  //image0;//
         image = h5read_get_image(obj, j);
-        double lt1 = omp_get_wtime();
         temp = spotfinder_standard_dispersion(spotfinders[omp_get_thread_num()], image);
-        load_time += (lt1-lt0);
-        compute_time += omp_get_wtime()-lt1;
         h5read_free_image(image);
         full_results[j] = temp;
     }
-    
-    // printf("Image: load:%g compute:%g\n", load_time/omp_get_max_threads(), compute_time/omp_get_max_threads());
 
     double t1 = omp_get_wtime();
 
 // Parallelism over modules
     uint32_t strong_pixels_from_modules=0;
     size_t n;
-    load_time = 0;
-    compute_time = 0;
     for (size_t j=0; j<n_images; j++) {
-        double lt0 = omp_get_wtime();
         modules = h5read_get_image_modules(obj, j);
-        double lt1 = omp_get_wtime();
         strong_pixels_from_modules = 0;
 #pragma omp parallel for default(none) shared(n_images, modules, mini_spotfinders, n_modules, mini_results) reduction(+:strong_pixels_from_modules)
         for (n=0; n<n_modules; n++) {
             strong_pixels_from_modules += spotfinder_standard_dispersion_modules(mini_spotfinders[omp_get_thread_num()], modules, n);
         }
-        load_time += lt1-lt0;
-        compute_time += omp_get_wtime() - lt1;
         h5read_free_image_modules(modules);
         mini_results[j] = strong_pixels_from_modules;
     }
-    // printf("Modules: load:%g compute:%g\n", load_time, compute_time);
 
     double t2 = omp_get_wtime();
 
