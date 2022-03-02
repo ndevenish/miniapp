@@ -104,7 +104,7 @@ int main(int argc, char **argv) {
         full_results[j] = temp;
     }
     
-    printf("Image: load:%g compute:%g\n", load_time/omp_get_max_threads(), compute_time/omp_get_max_threads());
+    // printf("Image: load:%g compute:%g\n", load_time/omp_get_max_threads(), compute_time/omp_get_max_threads());
 
     double t1 = omp_get_wtime();
 
@@ -127,7 +127,7 @@ int main(int argc, char **argv) {
         h5read_free_image_modules(modules);
         mini_results[j] = strong_pixels_from_modules;
     }
-    printf("Modules: load:%g compute:%g\n", load_time, compute_time);
+    // printf("Modules: load:%g compute:%g\n", load_time, compute_time);
 
     double t2 = omp_get_wtime();
 

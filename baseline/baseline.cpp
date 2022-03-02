@@ -261,24 +261,12 @@ class DispersionThreshold {
                 double m = 0;
                 double x = 0;
                 double y = 0;
-                // if (i0 >= 0 && j0 >= 0) {
                 const Data<T> &d00 = table[k0 + i0];
                 const Data<T> &d10 = table[k1 + i0];
                 const Data<T> &d01 = table[k0 + i1];
                 m += d00.m - (d10.m + d01.m);
                 x += d00.x - (d10.x + d01.x);
                 y += d00.y - (d10.y + d01.y);
-                // } else if (i0 >= 0) {
-                //     const Data<T> &d10 = table[k1 + i0];
-                //     m -= d10.m;
-                //     x -= d10.x;
-                //     y -= d10.y;
-                // } else if (j0 >= 0) {
-                //     const Data<T> &d01 = table[k0 + i1];
-                //     m -= d01.m;
-                //     x -= d01.x;
-                //     y -= d01.y;
-                // }
                 const Data<T> &d11 = table[k1 + i1];
                 m += d11.m;
                 x += d11.x;
@@ -322,8 +310,10 @@ class DispersionThreshold {
         int kysize = kernel_size_[0];
 
         // Calculate the local mean at every point
-        for (std::size_t j = 0, k = 0; j < ysize; ++j) {
-            for (std::size_t i = 0; i < xsize; ++i, ++k) {
+//#pragma omp parallel for default(none) shared(mask, dst, min_count_, src, threshold_, nsig_b_, nsig_s_, table, xsize, ysize, kxsize, kysize) //private(k)
+        for (std::size_t j = 0; j < ysize; ++j) {
+            for (std::size_t i = 0; i < xsize; ++i) {
+                size_t k = j*xsize+i;
                 int i0 = i - kxsize - 1, i1 = i + kxsize;
                 int j0 = j - kysize - 1, j1 = j + kysize;
                 i1 = i1 < xsize ? i1 : xsize - 1;
@@ -364,9 +354,10 @@ class DispersionThreshold {
                 dst[k] = false;
                 if (mask[k] && m >= min_count_ && x >= 0 && src[k] > threshold_) {
                     double a = m * y - x * x - x * (m - 1);
-                    double b = m * src[k] - x;
+                    double tmp = m*src[k]-x;
+                    double b = m * src[k] - x; //((0<tmp)-(tmp<0))*(tmp*tmp);
                     double c = x * nsig_b_ * std::sqrt(2 * (m - 1));
-                    double d = nsig_s_ * std::sqrt(x * m);
+                    double d = nsig_s_ * std::sqrt(x * m);// m*x*nsig_s_*nsig_s_; 
                     dst[k] = a > c && b > d;
                 }
             }
@@ -476,7 +467,7 @@ class DispersionThreshold {
 
         // Compute the image threshold
         double thresh_time;
-        thresh_time = compute_threshold2(table, src, mask, dst);
+        thresh_time = compute_threshold(table, src, mask, dst);
 
         //printf("%g %g ", sat_time, thresh_time);
     }
