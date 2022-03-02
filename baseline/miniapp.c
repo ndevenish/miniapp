@@ -9,7 +9,30 @@
 #include "h5read.h"
 #include "eiger2xe.h"
 
+void time_image_loading(h5read_handle* obj, int n_images) {
+    image_modules_t* modules;
+    image_t* image;
+    double t0 = omp_get_wtime();
+    for (size_t j=0; j<n_images; j++) {
+        image = h5read_get_image(obj, j);
+        h5read_free_image(image);
+    }
+    double t1 = omp_get_wtime();
+    for (size_t j=0; j<n_images; j++) {
+        modules = h5read_get_image_modules(obj, j);
+        h5read_free_image_modules(modules);
+    }
+    double t2 = omp_get_wtime();
+    printf("For %d images:\n"
+            "Image load time:  %4.0fms/image\n"
+            "Module load time: %4.0fms/image\n",
+            n_images,
+            1000*(t1-t0)/n_images, 
+            1000*(t2-t1)/n_images);
+}
+
 int main(int argc, char **argv) {
+
     h5read_handle *obj = h5read_parse_standard_args(argc, argv);
     size_t n_images = h5read_get_number_of_images(obj);
     image_modules_t *modules = h5read_get_image_modules(obj, 0);
@@ -42,26 +65,36 @@ int main(int argc, char **argv) {
     int test_count = 0;
     image_t* image;
     int temp;
-    int intvar;
     if (argc > 2) {
-        n_images = (sscanf(argv[2], "%d", &intvar) == 1) ? intvar : n_images;
+        n_images = (sscanf(argv[2], "%d", &temp) == 1) ? temp : n_images;
     }
 
     printf("Finding spots in %d images\n", n_images);
 
+    time_image_loading(obj, n_images);
+
     int full_results[n_images];
     int mini_results[n_images];
-    int both_results[n_images];
     int mini_f_results[n_images];
+    int both_results[n_images];
+
+    image_t* sample_images, image0;
+    // sample_images[2*omp_get_num_procs()];
+    // for (size_t j=0; j<2*omp_get_num_procs(); j++) {
+    //     sample_images[j] = h5read_get_image(obj, j);
+    // }
+    // image0 = h5read_get_image(obj,0);
 
     double load_time = 0;
     double compute_time = 0;
     double t0 = omp_get_wtime();
 
 // Parallelism over images
-#pragma omp parallel for default(none) private(image, temp) shared(n_images, obj, spotfinders, full_results) reduction(+:load_time, compute_time)
+#pragma omp parallel for default(none) private(image, temp) shared(n_images, obj, spotfinders, full_results, sample_images, image0) reduction(+:load_time, compute_time)
     for (size_t j=0; j<n_images; j++) {
         double lt0 = omp_get_wtime();
+        // int sample_index = j % (2*omp_get_num_procs());
+        // image = sample_images[sample_index];  //image0;//
         image = h5read_get_image(obj, j);
         double lt1 = omp_get_wtime();
         temp = spotfinder_standard_dispersion(spotfinders[omp_get_thread_num()], image);
@@ -93,7 +126,6 @@ int main(int argc, char **argv) {
         compute_time += omp_get_wtime() - lt1;
         h5read_free_image_modules(modules);
         mini_results[j] = strong_pixels_from_modules;
-        //printf("New total for image %d: %d\n", j, strong_pixels_from_modules);
     }
     printf("Modules: load:%g compute:%g\n", load_time, compute_time);
 
@@ -147,9 +179,10 @@ int main(int argc, char **argv) {
 
     double t5 = omp_get_wtime();
 
-    for (size_t j=0; j<omp_get_max_threads(); j++) {
-        h5read_free_image(image_sample[j]);
-    }
+    // h5read_free_image(image0);
+    // for (size_t j=0; j<omp_get_max_threads(); j++) {
+    //     h5read_free_image(sample_images[j]);
+    // }
 
     printf(
       "\nTime to run with parallel over:\n\
