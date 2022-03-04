@@ -82,15 +82,34 @@ int main(int argc, char **argv) {
     int full_results_m[n_images];
 
     double over_images_time = time_parallelism_over_images(obj, n_images, spotfinders, full_results);
-
     double over_images_using_modules_time = time_parallelism_over_images_using_modules(obj, n_images, n_modules, mini_spotfinders, full_results_m);
-
+    printf("\n");
     double over_modules_time = time_parallelism_over_modules(obj, n_images, n_modules, mini_spotfinders, mini_results);
-
     double over_modules_using_floats_time = time_parallelism_over_modules_using_floats(obj, n_images, n_modules, mini_spotfinders, mini_f_results);
-
     double over_both_time = time_parallelism_over_both(obj, n_images, n_modules, mini_spotfinders, both_results);
 
+    void* new_spotfinder = spotfinder_create_new(image_fast_size, image_slow_size);
+    double new_t0 = omp_get_wtime();
+    uint32_t test_result;
+    int test_size = 1;
+    for (size_t j=0; j<test_size; j++) {
+        image_t* image0 = h5read_get_image(obj, 0);
+        test_result = spotfinder_standard_dispersion_modules_new(new_spotfinder, image0);
+        h5read_free_image(image0);
+    }
+    image_modules_t* test_modules;
+    for (size_t nn=0; nn<32; nn++) {
+        int actual_count =0, mask_count=0;
+        test_modules = h5read_get_image_modules(obj, 0);
+        for (size_t k=nn*1028*512; k<(nn+1)*1028*512; k++) {
+            if (test_modules->data[k]>0) actual_count ++;
+            if (test_modules->mask[k]) mask_count++;
+        }
+        printf("Actual n-z count for module%d: %d, mask:%d\n", nn, actual_count, mask_count);
+    }
+    h5read_free_image_modules(test_modules);
+    printf("New method gives %d for image0 in %3.0fms\n", test_result, 1000*(omp_get_wtime()-new_t0)/test_size);
+    spotfinder_free_new(new_spotfinder);
 
     for (size_t j=0; j<num_spotfinders; j++) {
         spotfinder_free(mini_spotfinders[j]);
