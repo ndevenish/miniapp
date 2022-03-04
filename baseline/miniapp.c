@@ -63,9 +63,17 @@ int main(int argc, char **argv) {
         n_images = (sscanf(argv[2], "%d", &temp) == 1) ? temp : n_images;
     }
 
+    char* output_name;
+    int write_output = 0;
+    if (argc > 3) {
+        write_output = 1;
+        output_name = argv[3];
+    }
+    if (write_output) printf("Output file: %s\n", output_name);
+
     printf("Finding spots in %d images\n", n_images);
 
-    time_image_loading(obj, n_images);
+    // time_image_loading(obj, n_images);
 
     int full_results[n_images];
     int mini_results[n_images];
@@ -74,16 +82,22 @@ int main(int argc, char **argv) {
     int full_results_m[n_images];
 
     double over_images_time = time_parallelism_over_images(obj, n_images, spotfinders, full_results);
+
     double over_images_using_modules_time = time_parallelism_over_images_using_modules(obj, n_images, n_modules, mini_spotfinders, full_results_m);
+
     double over_modules_time = time_parallelism_over_modules(obj, n_images, n_modules, mini_spotfinders, mini_results);
+
     double over_modules_using_floats_time = time_parallelism_over_modules_using_floats(obj, n_images, n_modules, mini_spotfinders, mini_f_results);
+
     double over_both_time = time_parallelism_over_both(obj, n_images, n_modules, mini_spotfinders, both_results);
+
 
     for (size_t j=0; j<num_spotfinders; j++) {
         spotfinder_free(mini_spotfinders[j]);
         spotfinder_free(mini_spotfinders_f[j]);
         spotfinder_free(spotfinders[j]);
     }
+    printf(".\n");
 
     h5read_free(obj);
 
@@ -120,6 +134,23 @@ int main(int argc, char **argv) {
                mini_f_results[j],
                col,
                both_results[j]);
+    }
+
+    if (write_output) {
+        FILE* fp = fopen(output_name, "a");
+        if (fp != NULL) {
+            fprintf(fp,
+            "%d %d, %4.0f %4.0f %4.0f %4.0f %4.0f\n",
+            n_images,
+            omp_get_max_threads(),
+            over_images_using_modules_time / n_images * 1000,
+            over_images_time / n_images * 1000,
+            over_modules_time / n_images * 1000,
+            over_modules_using_floats_time / n_images * 1000,
+            over_both_time / n_images * 1000
+            );
+        }
+        fclose(fp);
     }
 
     return 0;
