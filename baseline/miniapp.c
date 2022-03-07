@@ -90,25 +90,15 @@ int main(int argc, char **argv) {
 
     void* new_spotfinder = spotfinder_create_new(image_fast_size, image_slow_size);
     double new_t0 = omp_get_wtime();
-    uint32_t test_result;
-    int test_size = 1;
-    for (size_t j=0; j<test_size; j++) {
-        image_t* image0 = h5read_get_image(obj, 0);
-        test_result = spotfinder_standard_dispersion_modules_new(new_spotfinder, image0);
+    uint32_t noblit_result;
+    int noblit_results[n_images];
+    for (size_t j=0; j<n_images; j++) {
+        image_t* image0 = h5read_get_image(obj, j);
+        noblit_result = spotfinder_standard_dispersion_modules_new(new_spotfinder, image0);
+        noblit_results[j] = noblit_result;
         h5read_free_image(image0);
     }
-    image_modules_t* test_modules;
-    for (size_t nn=0; nn<32; nn++) {
-        int actual_count =0, mask_count=0;
-        test_modules = h5read_get_image_modules(obj, 0);
-        for (size_t k=nn*1028*512; k<(nn+1)*1028*512; k++) {
-            if (test_modules->data[k]>0) actual_count ++;
-            if (test_modules->mask[k]) mask_count++;
-        }
-        printf("Actual n-z count for module%d: %d, mask:%d\n", nn, actual_count, mask_count);
-    }
-    h5read_free_image_modules(test_modules);
-    printf("New method gives %d for image0 in %3.0fms\n", test_result, 1000*(omp_get_wtime()-new_t0)/test_size);
+    double noblit_time = omp_get_wtime()-new_t0;
     spotfinder_free_new(new_spotfinder);
 
     for (size_t j=0; j<num_spotfinders; j++) {
@@ -116,17 +106,18 @@ int main(int argc, char **argv) {
         spotfinder_free(mini_spotfinders_f[j]);
         spotfinder_free(spotfinders[j]);
     }
-    printf(".\n");
 
     h5read_free(obj);
 
     printf(
         "\nTime to run with parallel over:\n\
-        Images with modules: %4.0f ms/image\n\
-        Images:              %4.0f ms/image\n\
-        Modules:             %4.0f ms/image\n\
-        Modules (float):     %4.0f ms/image\n\
-        Both:                %4.0f ms/image\n",
+        Images with modules (no blit): %4.0f ms/image\n\
+        Images with modules:           %4.0f ms/image\n\
+        Images:                        %4.0f ms/image\n\
+        Modules:                       %4.0f ms/image\n\
+        Modules (float):               %4.0f ms/image\n\
+        Both:                          %4.0f ms/image\n",
+        noblit_time / n_images * 1000,
         over_images_using_modules_time / n_images * 1000,
         over_images_time / n_images * 1000,
         over_modules_time / n_images * 1000,
@@ -135,7 +126,7 @@ int main(int argc, char **argv) {
     );
 
     printf("\nStrong pixels count results:\n");
-    printf("Img# Images Modules (float)  Both\n");
+    printf("Img# Images Modules (float)  Both  No blit\n");
     for (size_t j = 0; j < 5; j++) {
         char *col = "\033[1;31m";
         if (omp_get_max_threads() % 2 == 0){
@@ -145,14 +136,15 @@ int main(int argc, char **argv) {
         } else if (full_results[j] == mini_results[j] && full_results[j] == full_results_m[j]) {
             col = "\033[32m";
         }
-        printf("%s%4d %6d %7d \033[0m%6d%s %5d\n\033[0m",
+        printf("%s%4d %6d %7d \033[0m%6d%s %5d \033[33m%6d\n\033[0m",
                col,
                j,
                full_results[j],
                mini_results[j],
                mini_f_results[j],
                col,
-               both_results[j]);
+               both_results[j],
+               noblit_results[j]);
     }
 
     if (write_output) {
