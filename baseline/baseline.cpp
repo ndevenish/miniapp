@@ -806,7 +806,7 @@ class DispersionThresholdModules {
         int n_modules = E2XE_16M_NSLOW * E2XE_16M_NFAST;
 
         for (size_t k=0; k<E2XE_16M_FAST*E2XE_16M_SLOW; ++k) dst[k] = false;
-
+    #pragma omp parallel for default(none) shared(n_modules, table, src, mask, dst) num_threads(omp_get_max_threads()/2)
         for (size_t n=0; n<n_modules; n++) {
             compute_module_sat(table, src, mask, n);
             compute_module_threshold(table, src, mask, dst, n);

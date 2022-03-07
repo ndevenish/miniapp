@@ -21,6 +21,8 @@ double time_parallelism_over_modules_using_floats(h5read_handle* obj, int n_imag
 
 double time_parallelism_over_both(h5read_handle* obj, int n_images, int n_modules, void** mini_spotfinders, int* both_results);
 
+double time_parallelism_over_both_noblit(h5read_handle* obj, int n_images, void** noblit_spotfinders, int* noblit_results);
+
 int old_main(h5read_handle* obj, int n_images);
 
 int module_to_image_index(int module_num, int module_idx);
@@ -35,7 +37,7 @@ int main(int argc, char **argv) {
     size_t image_slow_size = E2XE_16M_SLOW;
     size_t module_fast_size = E2XE_MOD_FAST;
     size_t module_slow_size = E2XE_MOD_SLOW;
-    size_t n_modules = E2XE_16M_NSLOW * E2XE_16M_NFAST; //modules->modules;
+    size_t n_modules = E2XE_16M_NSLOW * E2XE_16M_NFAST;
     printf("Num modules: %d\n", n_modules);
 
     int num_spotfinders;
@@ -51,10 +53,12 @@ int main(int argc, char **argv) {
     void* mini_spotfinders[num_spotfinders];
     void* mini_spotfinders_f[num_spotfinders];
     void* spotfinders[num_spotfinders];
+    void* noblit_spotfinders[num_spotfinders];
     for (size_t j=0; j<num_spotfinders; j++) {
         mini_spotfinders[j] = spotfinder_create(module_fast_size, module_slow_size);
         mini_spotfinders_f[j] = spotfinder_create_f(module_fast_size, module_slow_size);
         spotfinders[j] = spotfinder_create(image_fast_size, image_slow_size);
+        noblit_spotfinders[j] = spotfinder_create_new(image_fast_size, image_slow_size);
     }
     int test_count = 0;
     image_t* image;
@@ -80,31 +84,20 @@ int main(int argc, char **argv) {
     int mini_f_results[n_images];
     int both_results[n_images];
     int full_results_m[n_images];
+    int noblit_results[n_images];
 
     double over_images_time = time_parallelism_over_images(obj, n_images, spotfinders, full_results);
     double over_images_using_modules_time = time_parallelism_over_images_using_modules(obj, n_images, n_modules, mini_spotfinders, full_results_m);
-    printf("\n");
     double over_modules_time = time_parallelism_over_modules(obj, n_images, n_modules, mini_spotfinders, mini_results);
     double over_modules_using_floats_time = time_parallelism_over_modules_using_floats(obj, n_images, n_modules, mini_spotfinders, mini_f_results);
     double over_both_time = time_parallelism_over_both(obj, n_images, n_modules, mini_spotfinders, both_results);
-
-    void* new_spotfinder = spotfinder_create_new(image_fast_size, image_slow_size);
-    double new_t0 = omp_get_wtime();
-    uint32_t noblit_result;
-    int noblit_results[n_images];
-    for (size_t j=0; j<n_images; j++) {
-        image_t* image0 = h5read_get_image(obj, j);
-        noblit_result = spotfinder_standard_dispersion_modules_new(new_spotfinder, image0);
-        noblit_results[j] = noblit_result;
-        h5read_free_image(image0);
-    }
-    double noblit_time = omp_get_wtime()-new_t0;
-    spotfinder_free_new(new_spotfinder);
+    double noblit_time = time_parallelism_over_both_noblit(obj, n_images, noblit_spotfinders, noblit_results);
 
     for (size_t j=0; j<num_spotfinders; j++) {
         spotfinder_free(mini_spotfinders[j]);
-        spotfinder_free(mini_spotfinders_f[j]);
+        spotfinder_free_f(mini_spotfinders_f[j]);
         spotfinder_free(spotfinders[j]);
+        spotfinder_free_new(noblit_spotfinders[j]);
     }
 
     h5read_free(obj);
@@ -151,14 +144,15 @@ int main(int argc, char **argv) {
         FILE* fp = fopen(output_name, "a");
         if (fp != NULL) {
             fprintf(fp,
-            "%d %d, %4.0f %4.0f %4.0f %4.0f %4.0f\n",
+            "%d %d, %4.0f %4.0f %4.0f %4.0f %4.0f %4.0f\n",
             n_images,
             omp_get_max_threads(),
             over_images_using_modules_time / n_images * 1000,
             over_images_time / n_images * 1000,
             over_modules_time / n_images * 1000,
             over_modules_using_floats_time / n_images * 1000,
-            over_both_time / n_images * 1000
+            over_both_time / n_images * 1000,
+            noblit_time / n_images * 1000
             );
         }
         fclose(fp);
@@ -277,6 +271,27 @@ double time_parallelism_over_both(h5read_handle* obj, int n_images, int n_module
         for (size_t j=0; j<n_images; j++) both_results[j] = 0;
     }
     return omp_get_wtime() - t0;
+}
+
+double time_parallelism_over_both_noblit(h5read_handle* obj, int n_images, void** noblit_spotfinders, int* noblit_results) {
+    uint32_t noblit_result;
+    image_t* image;
+    double t0 = omp_get_wtime();
+    int outer_num = (omp_get_max_threads()>1) ? 2 : 1;
+    if (omp_get_max_threads() % 2 == 0) {
+        omp_set_nested(1); 
+        omp_set_max_active_levels(2);
+    }
+    #pragma omp parallel for default(none) private(noblit_result, image) shared(obj, noblit_spotfinders, noblit_results, n_images) num_threads(outer_num)
+    for (size_t j=0; j<n_images; j++) {
+        printf("%d", omp_get_thread_num());
+        image = h5read_get_image(obj, j);
+        noblit_result = spotfinder_standard_dispersion_modules_new(noblit_spotfinders[omp_get_thread_num()], image);
+        noblit_results[j] = noblit_result;
+        h5read_free_image(image);
+    }
+    printf("\n");
+    return omp_get_wtime()-t0;
 }
 
 int old_main(h5read_handle* obj, int n_images) {
