@@ -765,7 +765,7 @@ class DispersionThresholdModules {
                 if (mask[k]) mask_count ++;
 
                 // Compute the thresholds
-                dst[k] = false;
+                // dst[k] = false;
                 if (mask[k] && m >= min_count_ && x >= 0 && src[k] > threshold_) {
                     double a = m * y - x * x - x * (m - 1);
                     // double tmp = m*src[k]-x;
