@@ -15,9 +15,9 @@ double time_parallelism_over_images(h5read_handle *obj, int n_images, void** spo
 double time_parallelism_over_images_using_modules(h5read_handle *obj, int n_images, int n_modules, void** mini_spotfinders, int* full_results_m);
 double time_parallelism_over_modules(h5read_handle* obj, int n_images, int n_modules, void** mini_spotfinders, int* mini_results);
 double time_parallelism_over_modules_using_floats(h5read_handle* obj, int n_images, int n_modules, void** mini_spotfinders_f, int* mini_results_f);
-double time_parallelism_over_both(h5read_handle* obj, int n_images, int n_modules, void** mini_spotfinders, int* both_results);
+double time_parallelism_over_both(h5read_handle* obj, int n_images, int n_modules, void** mini_spotfinders, int* both_results, int n_outer);
 double time_parallelism_over_images_using_modules_noblit(h5read_handle *obj, int n_images, void** noblit_spotfinders, int* full_results_m_nb);
-double time_parallelism_over_both_noblit(h5read_handle* obj, int n_images, void** noblit_spotfinders, int* both_results_nb);
+double time_parallelism_over_both_noblit(h5read_handle* obj, int n_images, void** noblit_spotfinders, int* both_results_nb, int n_outer);
 
 int old_main(h5read_handle* obj, int n_images);
 
@@ -82,12 +82,12 @@ int main(int argc, char **argv) {
     int both_results_nb[n_images];
 
     double over_images_time = time_parallelism_over_images(obj, n_images, spotfinders, full_results);
-    double over_images_using_modules_time =time_parallelism_over_images_using_modules(obj, n_images, n_modules, mini_spotfinders, full_results_m);
-    double over_images_using_modules_noblit_time =time_parallelism_over_images_using_modules_noblit(obj, n_images, noblit_spotfinders, mini_results_nb);
-    double over_modules_time =time_parallelism_over_modules(obj, n_images, n_modules, mini_spotfinders, mini_results);
-    double over_modules_using_floats_time =time_parallelism_over_modules_using_floats(obj, n_images, n_modules, mini_spotfinders, mini_f_results);
-    double over_both_time =time_parallelism_over_both(obj, n_images, n_modules, mini_spotfinders, both_results);
-    double over_both_noblit_time =time_parallelism_over_both_noblit(obj, n_images, noblit_spotfinders, both_results_nb);
+    double over_images_using_modules_time = time_parallelism_over_images_using_modules(obj, n_images, n_modules, mini_spotfinders, full_results_m);
+    double over_images_using_modules_noblit_time = time_parallelism_over_images_using_modules_noblit(obj, n_images, noblit_spotfinders, mini_results_nb);
+    double over_modules_time = time_parallelism_over_modules(obj, n_images, n_modules, mini_spotfinders, mini_results);
+    double over_modules_using_floats_time = time_parallelism_over_modules_using_floats(obj, n_images, n_modules, mini_spotfinders, mini_f_results);
+    double over_both_time = time_parallelism_over_both(obj, n_images, n_modules, mini_spotfinders, both_results, 2);
+    double over_both_noblit_time = time_parallelism_over_both_noblit(obj, n_images, noblit_spotfinders, both_results_nb, 2);
 
     for (size_t j=0; j<num_spotfinders; j++) {
         spotfinder_free(mini_spotfinders[j]);
@@ -262,13 +262,13 @@ double time_parallelism_over_modules_using_floats(h5read_handle* obj, int n_imag
     return omp_get_wtime() - t0;
 }
 
-double time_parallelism_over_both(h5read_handle* obj, int n_images, int n_modules, void** mini_spotfinders, int* both_results) {
+double time_parallelism_over_both(h5read_handle* obj, int n_images, int n_modules, void** mini_spotfinders, int* both_results, int n_outer) {
     uint32_t strong_pixels_from_modules=0;
     image_modules_t* modules;
-    int outer_num = (omp_get_max_threads()>1) ? 2 : 1;
     double t0 = omp_get_wtime();
-    if (omp_get_max_threads() % 2 == 0) {
-        omp_set_nested(1);
+    int outer_num = (n_outer > omp_get_max_threads()) ? omp_get_max_threads() : n_outer;
+    if (omp_get_max_threads() % outer_num == 0 && omp_get_max_threads()>1) {
+        omp_set_nested(1); 
         omp_set_max_active_levels(2);
     }
     #pragma omp parallel for default(none) private(modules, strong_pixels_from_modules) shared(n_images, n_modules, obj, mini_spotfinders, both_results, outer_num) num_threads(outer_num)
@@ -300,12 +300,13 @@ double time_parallelism_over_images_using_modules_noblit(h5read_handle* obj, int
     return omp_get_wtime()-t0;
 }
 
-double time_parallelism_over_both_noblit(h5read_handle* obj, int n_images, void** noblit_spotfinders, int* both_results_nb) {
+double time_parallelism_over_both_noblit(h5read_handle* obj, int n_images, void** noblit_spotfinders, int* both_results_nb, int n_outer) {
     uint32_t result;
     image_t* image;
     double t0 = omp_get_wtime();
-    int outer_num = (omp_get_max_threads()>1) ? 2 : 1;
-    if (omp_get_max_threads() % 2 == 0) {
+    
+    int outer_num = (n_outer > omp_get_max_threads()) ? omp_get_max_threads() : n_outer;
+    if (omp_get_max_threads() % outer_num == 0 && omp_get_max_threads()>1) {
         omp_set_nested(1); 
         omp_set_max_active_levels(2);
     }
