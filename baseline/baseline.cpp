@@ -154,6 +154,111 @@ class DispersionThreshold {
         return omp_get_wtime() - t0;
     }
 
+    template <typename T>
+    double compute_sat_new(af::ref<Data<T>> table,
+                     const af::const_ref<T, af::c_grid<2>> &src,
+                     const af::const_ref<bool, af::c_grid<2>> &mask) {
+        double t0 = omp_get_wtime();
+        // Largest value to consider
+        const T BIG = (1 << 24);  // About 16m counts
+
+        // Get the size of the image
+        std::size_t ysize = src.accessor()[1];
+        std::size_t xsize = src.accessor()[0];
+
+        // Create the summed area table
+        for (size_t module_row_num=0; module_row_num<8; module_row_num++) {
+            size_t row_offset = module_row_num * (E2XE_GAP_SLOW+E2XE_MOD_SLOW) * E2XE_16M_FAST;
+            size_t offset2 = 1 * (E2XE_MOD_FAST+E2XE_GAP_FAST);
+            size_t offset3 = 2 * (E2XE_MOD_FAST+E2XE_GAP_FAST);
+            size_t offset4 = 3 * (E2XE_MOD_FAST+E2XE_GAP_FAST);
+            // printf("%d %d %d %d %d\n", module_row_num, row_offset, offset2, offset3, offset4);
+            size_t row_end = (module_row_num == 7) ? 512 : 550;
+            size_t k =row_offset;
+            for (std::size_t j = 0; j < row_end; ++j) {
+                //k = row_offset;
+                int m = 0;
+                T x = 0;
+                T y = 0;
+                int m2 = 0;
+                T x2 = 0;
+                T y2 = 0;
+                int m3 = 0;
+                T x3 = 0;
+                T y3 = 0;
+                int m4 = 0;
+                T x4 = 0;
+                T y4 = 0;
+                for (std::size_t i = 0; i < 4148; ++i, ++k) {
+
+                    size_t k2 = k+offset2;
+                    size_t k3 = k+offset3;
+                    size_t k4 = k+offset4;
+
+                    int mm = (mask[k] && src[k] < BIG) ? 1 : 0;
+                    m += mm;
+                    x += mm * src[k];
+                    y += mm * src[k] * src[k];
+
+                    // int mm2= (mask[k2] && src[k2] < BIG) ? 1 : 0;
+                    // m2 += mm2;
+                    // x2 += mm2 * src[k2];
+                    // y2 += mm2 * src[k2] * src[k2];
+
+                    // int mm3= (mask[k3] && src[k3] < BIG) ? 1 : 0;
+                    // m3 += mm3;
+                    // x3 += mm3 * src[k3];
+                    // y3 += mm3 * src[k3] * src[k3];
+
+                    // int mm4= (mask[k4] && src[k4] < BIG) ? 1 : 0;
+                    // m4 += mm4;
+                    // x4 += mm4 * src[k4];
+                    // y4 += mm4 * src[k4] * src[k4];
+
+                    if (j == 0 && module_row_num==0) {
+                        table[k].m = m;
+                        table[k].x = x;
+                        table[k].y = y;
+
+                        // table[k2].m = m2;
+                        // table[k2].x = x2;
+                        // table[k2].y = y2;
+
+                        // table[k3].m = m3;
+                        // table[k3].x = x3;
+                        // table[k3].y = y3;
+
+                        // table[k4].m = m4;
+                        // table[k4].x = x4;
+                        // table[k4].y = y4;
+                    } else {
+                        table[k].m = table[k - xsize].m + m;
+                        table[k].x = table[k - xsize].x + x;
+                        table[k].y = table[k - xsize].y + y;
+
+                        // table[k2].m = table[k2 - xsize].m + m2;
+                        // table[k2].x = table[k2 - xsize].x + x2;
+                        // table[k2].y = table[k2 - xsize].y + y2;
+
+                        // table[k3].m = table[k3 - xsize].m + m3;
+                        // table[k3].x = table[k3 - xsize].x + x3;
+                        // table[k3].y = table[k3 - xsize].y + y3;
+
+                        // table[k4].m = table[k4 - xsize].m + m4;
+                        // table[k4].x = table[k4 - xsize].x + x4;
+                        // table[k4].y = table[k4 - xsize].y + y4;
+                    }
+                }
+            }
+            printf("row %d k_max=%d\n", module_row_num, k);
+        }
+        size_t last = E2XE_16M_SLOW * E2XE_16M_FAST -1;
+        printf("x: %g %g %g %g %g %g\n", src[1027], src[1039], src[2067], src[3107], src[4147], src[last]);
+        printf("x: %g %g %g %g %g %g\n", table[1027].x, table[1039].x, table[2067].x, table[3107].x, table[4147].x, table[last].x);
+        // printf("%g %g %g\n", table[1027].m,table[1027].x,table[1027].y);
+        return omp_get_wtime() - t0;
+    }
+
     /**
      * Compute the threshold
      * @param src - The input array
@@ -435,6 +540,255 @@ class DispersionThreshold {
     }
 
 
+    template <typename T>
+    double compute_threshold_new(af::ref<Data<T>> table,
+                           const af::const_ref<T, af::c_grid<2>> &src,
+                           const af::const_ref<bool, af::c_grid<2>> &mask,
+                           af::ref<bool, af::c_grid<2>> dst) {
+        double t0 = omp_get_wtime();
+        // Get the size of the image
+        // I HAVE SWAPPED THESE TO MATCH THE DATA INDICES
+        std::size_t ysize = src.accessor()[1];
+        std::size_t xsize = src.accessor()[0];
+        // ysize = 512;
+        // xsize = 1028;
+        // The kernel size
+        int kxsize = kernel_size_[1];
+        int kysize = kernel_size_[0];
+        for (size_t module_row_num=0; module_row_num<8; module_row_num++) {
+            size_t row_offset = module_row_num * (E2XE_GAP_SLOW+E2XE_MOD_SLOW) * E2XE_16M_FAST;
+            size_t offset2 = 1 * (E2XE_MOD_FAST+E2XE_GAP_FAST);
+            size_t offset3 = 2 * (E2XE_MOD_FAST+E2XE_GAP_FAST);
+            size_t offset4 = 3 * (E2XE_MOD_FAST+E2XE_GAP_FAST);
+            size_t row_end = (module_row_num == 7) ? 512 : 512;
+            size_t k = row_offset;
+            // printf("%d %d %d %d %d\n", module_row_num, row_offset, offset2, offset3, offset4);
+        // Calculate the local mean at every point
+            for (std::size_t j = 0; j < row_end; ++j) {
+                for (std::size_t i = 0; i < 1028; ++i, ++k) {
+
+                    int col_offset = 0 * (E2XE_MOD_FAST+E2XE_GAP_FAST);
+                    int i0 = col_offset + i - kxsize - 1, i1 = col_offset + i + kxsize;
+                    int j0 = j - kysize - 1, j1 = j + kysize;
+                    i1 = i1 < xsize ? i1 : xsize - 1;
+                    j1 = j1 < ysize ? j1 : ysize - 1;
+                    int k0 = row_offset + j0 * xsize;
+                    int k1 = row_offset + j1 * xsize;
+
+                    double m = 0;
+                    double x = 0;
+                    double y = 0;
+
+                    if (module_row_num > 0) {
+                        const Data<T> &d00 = table[k0 + i0];
+                        const Data<T> &d10 = table[k1 + i0];
+                        const Data<T> &d01 = table[k0 + i1];
+                        m += d00.m - (d10.m + d01.m);
+                        x += d00.x - (d10.x + d01.x);
+                        y += d00.y - (d10.y + d01.y);
+                    } else if (i0 >= 0 && j0 >= 0) {
+                        const Data<T> &d00 = table[k0 + i0];
+                        const Data<T> &d10 = table[k1 + i0];
+                        const Data<T> &d01 = table[k0 + i1];
+                        m += d00.m - (d10.m + d01.m);
+                        x += d00.x - (d10.x + d01.x);
+                        y += d00.y - (d10.y + d01.y);
+                    } else if (i0 >= 0) {
+                        const Data<T> &d10 = table[k1 + i0];
+                        m -= d10.m;
+                        x -= d10.x;
+                        y -= d10.y;
+                    } else if (j0 >= 0) {
+                        const Data<T> &d01 = table[k0 + i1];
+                        m -= d01.m;
+                        x -= d01.x;
+                        y -= d01.y;
+                    }
+
+                    Data<T> &d11 = table[k1 + i1];
+                    m += d11.m;
+                    x += d11.x;
+                    y += d11.y;
+
+                    k = row_offset + j * E2XE_16M_FAST + col_offset + i;
+                    dst[k] = false;
+                    if (mask[k] && m >= min_count_ && x >= 0 && src[k] > threshold_) {
+                        double a = m * y - x * x - x * (m - 1);
+                        double tmp = m*src[k]-x;
+                        double b = m * src[k] - x;
+                        double c = x * nsig_b_ * std::sqrt(2 * (m - 1));
+                        double d = nsig_s_ * std::sqrt(x * m);
+                        dst[k] = a > c && b > d;
+                    }
+
+                    col_offset = 1 * (E2XE_MOD_FAST+E2XE_GAP_FAST);
+                    i0 = col_offset + i - kxsize - 1, i1 = col_offset + i + kxsize;
+                    j0 = j - kysize - 1, j1 = j + kysize;
+                    i1 = i1 < xsize ? i1 : xsize - 1;
+                    j1 = j1 < ysize ? j1 : ysize - 1;
+                    k0 = row_offset + j0 * xsize;
+                    k1 = row_offset + j1 * xsize;
+
+                    m = 0;
+                    x = 0;
+                    y = 0;
+
+                    if (module_row_num > 0) {
+                        const Data<T> &d00 = table[k0 + i0];
+                        const Data<T> &d10 = table[k1 + i0];
+                        const Data<T> &d01 = table[k0 + i1];
+                        m += d00.m - (d10.m + d01.m);
+                        x += d00.x - (d10.x + d01.x);
+                        y += d00.y - (d10.y + d01.y);
+                    } else if (i0 >= 0 && j0 >= 0) {
+                        const Data<T> &d00 = table[k0 + i0];
+                        const Data<T> &d10 = table[k1 + i0];
+                        const Data<T> &d01 = table[k0 + i1];
+                        m += d00.m - (d10.m + d01.m);
+                        x += d00.x - (d10.x + d01.x);
+                        y += d00.y - (d10.y + d01.y);
+                    } else if (i0 >= 0) {
+                        const Data<T> &d10 = table[k1 + i0];
+                        m -= d10.m;
+                        x -= d10.x;
+                        y -= d10.y;
+                    } else if (j0 >= 0) {
+                        const Data<T> &d01 = table[k0 + i1];
+                        m -= d01.m;
+                        x -= d01.x;
+                        y -= d01.y;
+                    }
+
+                    d11 = table[k1 + i1];
+                    m += d11.m;
+                    x += d11.x;
+                    y += d11.y;
+
+                    k = row_offset + j * E2XE_16M_FAST + col_offset + i;
+                    dst[k] = false;
+                    if (mask[k] && m >= min_count_ && x >= 0 && src[k] > threshold_) {
+                        double a = m * y - x * x - x * (m - 1);
+                        double tmp = m*src[k]-x;
+                        double b = m * src[k] - x;
+                        double c = x * nsig_b_ * std::sqrt(2 * (m - 1));
+                        double d = nsig_s_ * std::sqrt(x * m);
+                        dst[k] = a > c && b > d;
+                    }
+
+                    col_offset = 2 * (E2XE_MOD_FAST+E2XE_GAP_FAST);
+                    i0 = col_offset + i - kxsize - 1, i1 = col_offset + i + kxsize;
+                    j0 = j - kysize - 1, j1 = j + kysize;
+                    i1 = i1 < xsize ? i1 : xsize - 1;
+                    j1 = j1 < ysize ? j1 : ysize - 1;
+                    k0 = row_offset + j0 * xsize;
+                    k1 = row_offset + j1 * xsize;
+
+                    m = 0;
+                    x = 0;
+                    y = 0;
+
+                    if (module_row_num > 0) {
+                        const Data<T> &d00 = table[k0 + i0];
+                        const Data<T> &d10 = table[k1 + i0];
+                        const Data<T> &d01 = table[k0 + i1];
+                        m += d00.m - (d10.m + d01.m);
+                        x += d00.x - (d10.x + d01.x);
+                        y += d00.y - (d10.y + d01.y);
+                    } else if (i0 >= 0 && j0 >= 0) {
+                        const Data<T> &d00 = table[k0 + i0];
+                        const Data<T> &d10 = table[k1 + i0];
+                        const Data<T> &d01 = table[k0 + i1];
+                        m += d00.m - (d10.m + d01.m);
+                        x += d00.x - (d10.x + d01.x);
+                        y += d00.y - (d10.y + d01.y);
+                    } else if (i0 >= 0) {
+                        const Data<T> &d10 = table[k1 + i0];
+                        m -= d10.m;
+                        x -= d10.x;
+                        y -= d10.y;
+                    } else if (j0 >= 0) {
+                        const Data<T> &d01 = table[k0 + i1];
+                        m -= d01.m;
+                        x -= d01.x;
+                        y -= d01.y;
+                    }
+
+                    d11 = table[k1 + i1];
+                    m += d11.m;
+                    x += d11.x;
+                    y += d11.y;
+
+                    k = row_offset + j * E2XE_16M_FAST + col_offset + i;
+                    dst[k] = false;
+                    if (mask[k] && m >= min_count_ && x >= 0 && src[k] > threshold_) {
+                        double a = m * y - x * x - x * (m - 1);
+                        double tmp = m*src[k]-x;
+                        double b = m * src[k] - x;
+                        double c = x * nsig_b_ * std::sqrt(2 * (m - 1));
+                        double d = nsig_s_ * std::sqrt(x * m);
+                        dst[k] = a > c && b > d;
+                    }
+
+                    col_offset = 3 * (E2XE_MOD_FAST+E2XE_GAP_FAST);
+                    i0 = col_offset + i - kxsize - 1, i1 = col_offset + i + kxsize;
+                    j0 = j - kysize - 1, j1 = j + kysize;
+                    i1 = i1 < xsize ? i1 : xsize - 1;
+                    j1 = j1 < ysize ? j1 : ysize - 1;
+                    k0 = row_offset + j0 * xsize;
+                    k1 = row_offset + j1 * xsize;
+
+                    m = 0;
+                    x = 0;
+                    y = 0;
+
+                    if (module_row_num > 0) {
+                        const Data<T> &d00 = table[k0 + i0];
+                        const Data<T> &d10 = table[k1 + i0];
+                        const Data<T> &d01 = table[k0 + i1];
+                        m += d00.m - (d10.m + d01.m);
+                        x += d00.x - (d10.x + d01.x);
+                        y += d00.y - (d10.y + d01.y);
+                    } else if (i0 >= 0 && j0 >= 0) {
+                        const Data<T> &d00 = table[k0 + i0];
+                        const Data<T> &d10 = table[k1 + i0];
+                        const Data<T> &d01 = table[k0 + i1];
+                        m += d00.m - (d10.m + d01.m);
+                        x += d00.x - (d10.x + d01.x);
+                        y += d00.y - (d10.y + d01.y);
+                    } else if (i0 >= 0) {
+                        const Data<T> &d10 = table[k1 + i0];
+                        m -= d10.m;
+                        x -= d10.x;
+                        y -= d10.y;
+                    } else if (j0 >= 0) {
+                        const Data<T> &d01 = table[k0 + i1];
+                        m -= d01.m;
+                        x -= d01.x;
+                        y -= d01.y;
+                    }
+
+                    d11 = table[k1 + i1];
+                    m += d11.m;
+                    x += d11.x;
+                    y += d11.y;
+
+                    k = row_offset + j * E2XE_16M_FAST + col_offset + i;
+                    dst[k] = false;
+                    if (mask[k] && m >= min_count_ && x >= 0 && src[k] > threshold_) {
+                        double a = m * y - x * x - x * (m - 1);
+                        double tmp = m*src[k]-x;
+                        double b = m * src[k] - x;
+                        double c = x * nsig_b_ * std::sqrt(2 * (m - 1));
+                        double d = nsig_s_ * std::sqrt(x * m);
+                        dst[k] = a > c && b > d;
+                    }
+                }
+            }
+        }
+        return omp_get_wtime() - t0;
+    }
+
+
     /**
      * Compute the threshold
      * @param src - The input array
@@ -531,12 +885,20 @@ class DispersionThreshold {
                                buffer_.size());
 
         // compute the summed area table
-        double sat_time;
+        double sat_time=0;
         sat_time = compute_sat2(table, src, mask);
+        //sat_time = compute_sat_new(table, src, mask);
+        printf("SAT: %g", sat_time);
+        //sat_time = compute_sat2(table, src, mask);
+        printf(" %g\n", sat_time);
 
         // Compute the image threshold
-        double thresh_time;
+        double thresh_time=0;
+        thresh_time = compute_threshold_new(table, src, mask, dst);
+        printf("THRESH: %g", thresh_time);
         thresh_time = compute_threshold(table, src, mask, dst);
+        compute_threshold_new(table, src, mask, dst);
+        printf(" %g\n", thresh_time);
     }
 
     /**
