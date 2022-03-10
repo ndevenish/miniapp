@@ -82,12 +82,12 @@ int main(int argc, char **argv) {
     int both_results_nb[n_images];
 
     double over_images_time = time_parallelism_over_images(obj, n_images, spotfinders, full_results);
-    double over_images_using_modules_time =0; // time_parallelism_over_images_using_modules(obj, n_images, n_modules, mini_spotfinders, full_results_m);
-    double over_images_using_modules_noblit_time =0; // time_parallelism_over_images_using_modules_noblit(obj, n_images, noblit_spotfinders, mini_results_nb);
-    double over_modules_time =0; // time_parallelism_over_modules(obj, n_images, n_modules, mini_spotfinders, mini_results);
-    double over_modules_using_floats_time =0; // time_parallelism_over_modules_using_floats(obj, n_images, n_modules, mini_spotfinders, mini_f_results);
-    double over_both_time =0; // time_parallelism_over_both(obj, n_images, n_modules, mini_spotfinders, both_results);
-    double over_both_noblit_time =0; // time_parallelism_over_both_noblit(obj, n_images, noblit_spotfinders, both_results_nb);
+    double over_images_using_modules_time =time_parallelism_over_images_using_modules(obj, n_images, n_modules, mini_spotfinders, full_results_m);
+    double over_images_using_modules_noblit_time =time_parallelism_over_images_using_modules_noblit(obj, n_images, noblit_spotfinders, mini_results_nb);
+    double over_modules_time =time_parallelism_over_modules(obj, n_images, n_modules, mini_spotfinders, mini_results);
+    double over_modules_using_floats_time =time_parallelism_over_modules_using_floats(obj, n_images, n_modules, mini_spotfinders, mini_f_results);
+    double over_both_time =time_parallelism_over_both(obj, n_images, n_modules, mini_spotfinders, both_results);
+    double over_both_noblit_time =time_parallelism_over_both_noblit(obj, n_images, noblit_spotfinders, both_results_nb);
 
     for (size_t j=0; j<num_spotfinders; j++) {
         spotfinder_free(mini_spotfinders[j]);
