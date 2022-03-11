@@ -50,6 +50,22 @@ int old_main(h5read_handle* obj, int n_images);
 
 int module_to_image_index(int module_num, int module_idx);
 
+double time_baselines(h5read_handle* obj,
+                                    int n_images,
+                                    void** spotfinders,
+                                    int* full_results) {
+    int temp;
+    image_t* image;
+    double t0 = omp_get_wtime();
+    for (size_t j = 0; j < n_images; j++) {
+        image = h5read_get_image(obj, j);
+        temp = spotfinder_standard_dispersion(spotfinders[omp_get_thread_num()], image);
+        h5read_free_image(image);
+        full_results[j] = temp;
+    }
+    return omp_get_wtime() - t0;
+}
+
 int main(int argc, char** argv) {
     h5read_handle* obj = h5read_parse_standard_args(argc, argv);
     size_t n_images = h5read_get_number_of_images(obj);
@@ -97,12 +113,14 @@ int main(int argc, char** argv) {
 
     // time_image_loading(obj, n_images);
 
+    int baseline_results[n_images];
     int full_results[n_images];
     int mini_results[n_images];
     int both_results[n_images];
     int full_results_m[n_images];
     int both_results_nb[n_images];
 
+    double baseline_time = time_baselines(obj, n_images, spotfinders, baseline_results);
     double over_images_time =
       time_parallelism_over_images(obj, n_images, spotfinders, full_results);
     double over_images_using_modules_time = time_parallelism_over_images_using_modules(
@@ -128,13 +146,15 @@ int main(int argc, char** argv) {
 
     printf(
       "\nTime to run with parallel over:\n\
-        Images with modules:           %4.0f ms/image\n\
+        Nothing (baseline)             %4.0f ms/image\n\
         Images:                        %4.0f ms/image\n\
+        Images with modules:           %4.0f ms/image\n\
         Modules:                       %4.0f ms/image\n\
         Both:                          %4.0f ms/image\n\
         Both (no blit):                %4.0f ms/image\n",
-      over_images_using_modules_time / n_images * 1000,
+      baseline_time / n_images * 1000,
       over_images_time / n_images * 1000,
+      over_images_using_modules_time / n_images * 1000,
       over_modules_time / n_images * 1000,
       over_both_time / n_images * 1000,
       over_both_noblit_time / n_images * 1000);
