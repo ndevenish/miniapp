@@ -283,6 +283,7 @@ class DispersionThreshold {
                 }
                 if (j == 510 && i == 380) {
                     printf("B  y=%zu x=%zu => %d\n", j, i, int(dst[k]));
+                    printf("TLBR = %d,%d,%d,%d\n", j0, i0, j1, i1);
                 }
                 // printf("M  y=%zu x=%zu => %d\n", j, i, int(dst[k]));
             }
@@ -617,6 +618,7 @@ class DispersionThresholdModules {
                 }
                 if (j == 510 && i == 380) {
                     printf("NB y=%zu x=%zu => %d\n", j, i, int(dst[k]));
+                    printf("TLBR = %d,%d,%d,%d\n", j0, i0, j1, i1);
                 }
             }
         }
