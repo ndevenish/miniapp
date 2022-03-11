@@ -1,21 +1,21 @@
 
 #include "baseline.h"
-#include "eiger2xe.h"
 
 #include <dials/algorithms/image/filter/distance.h>
 #include <dials/algorithms/image/filter/index_of_dispersion_filter.h>
 #include <dials/algorithms/image/filter/mean_and_variance.h>
 #include <dials/error.h>
+#include <omp.h>
 #include <scitbx/array_family/ref_reductions.h>
 #include <scitbx/array_family/tiny_types.h>
-#include <omp.h>
 #include <stdio.h>
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <vector>
-#include <algorithm>
 
+#include "eiger2xe.h"
 #include "spotfind_test_utils.h"
 
 namespace baseline {
@@ -77,15 +77,15 @@ class DispersionThreshold {
      */
     template <typename T>
     double compute_sat(af::ref<Data<T>> table,
-                     const af::const_ref<T, af::c_grid<2>> &src,
-                     const af::const_ref<bool, af::c_grid<2>> &mask) {
+                       const af::const_ref<T, af::c_grid<2>> &src,
+                       const af::const_ref<bool, af::c_grid<2>> &mask) {
         double t0 = omp_get_wtime();
         // Largest value to consider
         const T BIG = (1 << 24);  // About 16m counts
 
         // Get the size of the image
-        std::size_t ysize = src.accessor()[1]; // 1028/4148 = FAST
-        std::size_t xsize = src.accessor()[0]; // 512/4362 = SLOW
+        std::size_t ysize = src.accessor()[1];  // 1028/4148 = FAST
+        std::size_t xsize = src.accessor()[0];  // 512/4362 = SLOW
 
         // Create the summed area table
         for (std::size_t j = 0, k = 0; j < ysize; ++j) {
@@ -113,8 +113,8 @@ class DispersionThreshold {
 
     template <typename T>
     double compute_sat_new(af::ref<Data<T>> table,
-                     const af::const_ref<T, af::c_grid<2>> &src,
-                     const af::const_ref<bool, af::c_grid<2>> &mask) {
+                           const af::const_ref<T, af::c_grid<2>> &src,
+                           const af::const_ref<bool, af::c_grid<2>> &mask) {
         double t0 = omp_get_wtime();
         // Largest value to consider
         const T BIG = (1 << 24);  // About 16m counts
@@ -124,13 +124,14 @@ class DispersionThreshold {
         std::size_t xsize = src.accessor()[0];
 
         // Create the summed area table
-        for (size_t module_row_num=0; module_row_num<8; module_row_num++) {
-            size_t row_offset = module_row_num * (E2XE_GAP_SLOW+E2XE_MOD_SLOW) * E2XE_16M_FAST;
-            size_t offset2 = 1 * (E2XE_MOD_FAST+E2XE_GAP_FAST);
-            size_t offset3 = 2 * (E2XE_MOD_FAST+E2XE_GAP_FAST);
-            size_t offset4 = 3 * (E2XE_MOD_FAST+E2XE_GAP_FAST);
+        for (size_t module_row_num = 0; module_row_num < 8; module_row_num++) {
+            size_t row_offset =
+              module_row_num * (E2XE_GAP_SLOW + E2XE_MOD_SLOW) * E2XE_16M_FAST;
+            size_t offset2 = 1 * (E2XE_MOD_FAST + E2XE_GAP_FAST);
+            size_t offset3 = 2 * (E2XE_MOD_FAST + E2XE_GAP_FAST);
+            size_t offset4 = 3 * (E2XE_MOD_FAST + E2XE_GAP_FAST);
             size_t row_end = (module_row_num == 7) ? 512 : 512;
-            size_t k =row_offset;
+            size_t k = row_offset;
             for (std::size_t j = 0; j < row_end; ++j) {
                 int m = 0;
                 T x = 0;
@@ -145,32 +146,31 @@ class DispersionThreshold {
                 T x4 = 0;
                 T y4 = 0;
                 for (std::size_t i = 0; i < 1028; ++i, ++k) {
-
-                    size_t k2 = k+offset2;
-                    size_t k3 = k+offset3;
-                    size_t k4 = k+offset4;
+                    size_t k2 = k + offset2;
+                    size_t k3 = k + offset3;
+                    size_t k4 = k + offset4;
 
                     int mm = (mask[k] && src[k] < BIG) ? 1 : 0;
                     m += mm;
                     x += mm * src[k];
                     y += mm * src[k] * src[k];
 
-                    int mm2= (mask[k2] && src[k2] < BIG) ? 1 : 0;
+                    int mm2 = (mask[k2] && src[k2] < BIG) ? 1 : 0;
                     m2 += mm2;
                     x2 += mm2 * src[k2];
                     y2 += mm2 * src[k2] * src[k2];
 
-                    int mm3= (mask[k3] && src[k3] < BIG) ? 1 : 0;
+                    int mm3 = (mask[k3] && src[k3] < BIG) ? 1 : 0;
                     m3 += mm3;
                     x3 += mm3 * src[k3];
                     y3 += mm3 * src[k3] * src[k3];
 
-                    int mm4= (mask[k4] && src[k4] < BIG) ? 1 : 0;
+                    int mm4 = (mask[k4] && src[k4] < BIG) ? 1 : 0;
                     m4 += mm4;
                     x4 += mm4 * src[k4];
                     y4 += mm4 * src[k4] * src[k4];
 
-                    if (j == 0 && module_row_num==0) {
+                    if (j == 0 && module_row_num == 0) {
                         table[k].m = m;
                         table[k].x = x;
                         table[k].y = y;
@@ -218,9 +218,9 @@ class DispersionThreshold {
 
     template <typename T>
     double compute_threshold(af::ref<Data<T>> table,
-                           const af::const_ref<T, af::c_grid<2>> &src,
-                           const af::const_ref<bool, af::c_grid<2>> &mask,
-                           af::ref<bool, af::c_grid<2>> dst) {
+                             const af::const_ref<T, af::c_grid<2>> &src,
+                             const af::const_ref<bool, af::c_grid<2>> &mask,
+                             af::ref<bool, af::c_grid<2>> dst) {
         double t0 = omp_get_wtime();
         // Get the size of the image
         // I HAVE SWAPPED THESE TO MATCH THE DATA INDICES
@@ -232,10 +232,10 @@ class DispersionThreshold {
         int kysize = kernel_size_[0];
 
         // Calculate the local mean at every point
-//#pragma omp parallel for default(none) shared(mask, dst, min_count_, src, threshold_, nsig_b_, nsig_s_, table, xsize, ysize, kxsize, kysize) //private(k)
+        //#pragma omp parallel for default(none) shared(mask, dst, min_count_, src, threshold_, nsig_b_, nsig_s_, table, xsize, ysize, kxsize, kysize) //private(k)
         for (std::size_t j = 0; j < ysize; ++j) {
             for (std::size_t i = 0; i < xsize; ++i) {
-                size_t k = j*xsize+i;
+                size_t k = j * xsize + i;
                 int i0 = i - kxsize - 1, i1 = i + kxsize;
                 int j0 = j - kysize - 1, j1 = j + kysize;
                 i1 = i1 < xsize ? i1 : xsize - 1;
@@ -285,7 +285,6 @@ class DispersionThreshold {
         }
         return omp_get_wtime() - t0;
     }
-
 
     /**
      * Compute the threshold
@@ -445,11 +444,11 @@ class DispersionThresholdModules {
     };
 
     DispersionThresholdModules(int2 image_size,
-                        int2 kernel_size,
-                        double nsig_b,
-                        double nsig_s,
-                        double threshold,
-                        int min_count)
+                               int2 kernel_size,
+                               double nsig_b,
+                               double nsig_s,
+                               double threshold,
+                               int min_count)
         : image_size_(image_size),
           kernel_size_(kernel_size),
           nsig_b_(nsig_b),
@@ -482,9 +481,9 @@ class DispersionThresholdModules {
      */
     template <typename T>
     double compute_module_sat(af::ref<Data<T>> table,
-                     const af::const_ref<T, af::c_grid<2>> &src,
-                     const af::const_ref<bool, af::c_grid<2>> &mask,
-                     int module_num) {
+                              const af::const_ref<T, af::c_grid<2>> &src,
+                              const af::const_ref<bool, af::c_grid<2>> &mask,
+                              int module_num) {
         double t0 = omp_get_wtime();
         // Largest value to consider
         const T BIG = (1 << 24);  // About 16m counts
@@ -493,10 +492,13 @@ class DispersionThresholdModules {
         std::size_t ysize = E2XE_MOD_SLOW;
         std::size_t xsize = E2XE_MOD_FAST;
 
-        std::size_t offset = (module_num / E2XE_16M_NFAST) * (E2XE_MOD_SLOW + E2XE_GAP_SLOW) * E2XE_16M_FAST + (module_num % E2XE_16M_NFAST) * (E2XE_MOD_FAST + E2XE_GAP_FAST);
-        std::size_t row_step = E2XE_16M_FAST-E2XE_MOD_FAST;
+        std::size_t offset =
+          (module_num / E2XE_16M_NFAST) * (E2XE_MOD_SLOW + E2XE_GAP_SLOW)
+            * E2XE_16M_FAST
+          + (module_num % E2XE_16M_NFAST) * (E2XE_MOD_FAST + E2XE_GAP_FAST);
+        std::size_t row_step = E2XE_16M_FAST - E2XE_MOD_FAST;
         // Create the summed area table
-        for (std::size_t j = 0, k = offset; j < ysize; ++j, k+=row_step) {
+        for (std::size_t j = 0, k = offset; j < ysize; ++j, k += row_step) {
             int m = 0;
             T x = 0;
             T y = 0;
@@ -516,7 +518,7 @@ class DispersionThresholdModules {
                 }
             }
         }
-        
+
         return omp_get_wtime() - t0;
     }
 
@@ -529,18 +531,21 @@ class DispersionThresholdModules {
      */
     template <typename T>
     double compute_module_threshold(af::ref<Data<T>> table,
-                           const af::const_ref<T, af::c_grid<2>> &src,
-                           const af::const_ref<bool, af::c_grid<2>> &mask,
-                           af::ref<bool, af::c_grid<2>> dst,
-                           int module_num) {
+                                    const af::const_ref<T, af::c_grid<2>> &src,
+                                    const af::const_ref<bool, af::c_grid<2>> &mask,
+                                    af::ref<bool, af::c_grid<2>> dst,
+                                    int module_num) {
         double t0 = omp_get_wtime();
         // Get the size of the image
         // I HAVE SWAPPED THESE TO MATCH THE DATA INDICES
         std::size_t ysize = E2XE_MOD_SLOW;
         std::size_t xsize = E2XE_MOD_FAST;
-    
-        std::size_t offset = (module_num / E2XE_16M_NFAST) * (E2XE_MOD_SLOW + E2XE_GAP_SLOW) * E2XE_16M_FAST + (module_num % E2XE_16M_NFAST) * (E2XE_MOD_FAST + E2XE_GAP_FAST);
-        std::size_t row_step = E2XE_16M_FAST-E2XE_MOD_FAST;
+
+        std::size_t offset =
+          (module_num / E2XE_16M_NFAST) * (E2XE_MOD_SLOW + E2XE_GAP_SLOW)
+            * E2XE_16M_FAST
+          + (module_num % E2XE_16M_NFAST) * (E2XE_MOD_FAST + E2XE_GAP_FAST);
+        std::size_t row_step = E2XE_16M_FAST - E2XE_MOD_FAST;
         int i_offset = (module_num % E2XE_16M_NFAST) * (E2XE_MOD_FAST + E2XE_GAP_FAST);
         int j_offset = (module_num / E2XE_16M_NFAST) * (E2XE_MOD_SLOW + E2XE_GAP_SLOW);
 
@@ -549,9 +554,8 @@ class DispersionThresholdModules {
         int kysize = kernel_size_[0];
 
         // Calculate the local mean at every point
-        for (std::size_t j = 0, k=offset; j < ysize; ++j, k+=row_step) {
+        for (std::size_t j = 0, k = offset; j < ysize; ++j, k += row_step) {
             for (std::size_t i = 0; i < xsize; ++i, ++k) {
-
                 dst[k] = false;
 
                 int i_im = i_offset + i;
@@ -646,9 +650,10 @@ class DispersionThresholdModules {
 
         int n_modules = E2XE_16M_NSLOW * E2XE_16M_NFAST;
 
-        for (size_t k=0; k<E2XE_16M_FAST*E2XE_16M_SLOW; ++k) dst[k] = false;
-    #pragma omp parallel for default(none) shared(n_modules, table, src, mask, dst) num_threads(omp_get_max_threads()/2)
-        for (size_t n=0; n<n_modules; n++) {
+        for (size_t k = 0; k < E2XE_16M_FAST * E2XE_16M_SLOW; ++k) dst[k] = false;
+#pragma omp parallel for default(none) shared(n_modules, table, src, mask, dst) \
+  num_threads(omp_get_max_threads() / 2)
+        for (size_t n = 0; n < n_modules; n++) {
             compute_module_sat(table, src, mask, n);
             compute_module_threshold(table, src, mask, dst, n);
         }
@@ -1159,7 +1164,9 @@ class DispersionExtendedThreshold {
 
 }  // namespace baseline
 
-template <typename T, typename internal_T = T, typename algo_T = baseline::DispersionThreshold>
+template <typename T,
+          typename internal_T = T,
+          typename algo_T = baseline::DispersionThreshold>
 class _spotfind_context {
   public:
     af::ref<bool, af::c_grid<2>> dst;
@@ -1206,10 +1213,14 @@ void spotfinder_free_f(void *context) {
 }
 
 void *spotfinder_create_new(size_t width, size_t height) {
-    return new _spotfind_context<image_t_type, double, baseline::DispersionThresholdModules>(width, height);
+    return new _spotfind_context<image_t_type,
+                                 double,
+                                 baseline::DispersionThresholdModules>(width, height);
 }
 void spotfinder_free_new(void *context) {
-    delete reinterpret_cast<_spotfind_context<image_t_type, double, baseline::DispersionThresholdModules> *>(context);
+    delete reinterpret_cast<
+      _spotfind_context<image_t_type, double, baseline::DispersionThresholdModules> *>(
+      context);
 }
 
 uint32_t spotfinder_standard_dispersion(void *context, image_t *image) {
@@ -1233,18 +1244,21 @@ uint32_t spotfinder_standard_dispersion(void *context, image_t *image) {
     return pixel_count;
 }
 
-uint32_t spotfinder_standard_dispersion_modules(void *context, image_modules_t *image_modules, size_t index) {
+uint32_t spotfinder_standard_dispersion_modules(void *context,
+                                                image_modules_t *image_modules,
+                                                size_t index) {
     auto ctx = reinterpret_cast<_spotfind_context<image_t_type, double> *>(context);
 
     size_t offset = index * ctx->size[0] * ctx->size[1];
 
     // mask needs to convert uint8_t to bool
     auto mask = af::const_ref<bool, af::c_grid<2>>(
-      reinterpret_cast<bool *>(&(image_modules->mask[offset])), af::c_grid<2>(ctx->size[0], ctx->size[1])); 
+      reinterpret_cast<bool *>(&(image_modules->mask[offset])),
+      af::c_grid<2>(ctx->size[0], ctx->size[1]));
 
     // Convert all items from the source image to double
     for (int i = 0; i < (ctx->size[0] * ctx->size[1]); ++i) {
-        ctx->src_converted[i] = image_modules->data[offset+i];
+        ctx->src_converted[i] = image_modules->data[offset + i];
     }
 
     ctx->threshold(ctx->src_converted, mask);
@@ -1258,18 +1272,21 @@ uint32_t spotfinder_standard_dispersion_modules(void *context, image_modules_t *
     return pixel_count;
 }
 
-uint32_t spotfinder_standard_dispersion_modules_f(void *context, image_modules_t *image_modules, size_t index) {
+uint32_t spotfinder_standard_dispersion_modules_f(void *context,
+                                                  image_modules_t *image_modules,
+                                                  size_t index) {
     auto ctx = reinterpret_cast<_spotfind_context<image_t_type, float> *>(context);
 
     size_t offset = index * ctx->size[0] * ctx->size[1];
 
     // mask needs to convert uint8_t to bool
     auto mask = af::const_ref<bool, af::c_grid<2>>(
-      reinterpret_cast<bool *>(&(image_modules->mask[offset])), af::c_grid<2>(ctx->size[0], ctx->size[1])); 
+      reinterpret_cast<bool *>(&(image_modules->mask[offset])),
+      af::c_grid<2>(ctx->size[0], ctx->size[1]));
 
     // Convert all items from the source image to double
     for (int i = 0; i < (ctx->size[0] * ctx->size[1]); ++i) {
-        ctx->src_converted[i] = image_modules->data[offset+i];
+        ctx->src_converted[i] = image_modules->data[offset + i];
     }
 
     ctx->threshold(ctx->src_converted, mask);
@@ -1281,11 +1298,13 @@ uint32_t spotfinder_standard_dispersion_modules_f(void *context, image_modules_t
 }
 
 uint32_t spotfinder_standard_dispersion_modules_new(void *context, image_t *image) {
-    auto ctx = reinterpret_cast<_spotfind_context<image_t_type, double, baseline::DispersionThresholdModules> *>(context);
+    auto ctx = reinterpret_cast<
+      _spotfind_context<image_t_type, double, baseline::DispersionThresholdModules> *>(
+      context);
 
     // mask needs to convert uint8_t to bool
     auto mask = af::const_ref<bool, af::c_grid<2>>(
-      reinterpret_cast<bool *>(image->mask), af::c_grid<2>(ctx->size[0], ctx->size[1])); 
+      reinterpret_cast<bool *>(image->mask), af::c_grid<2>(ctx->size[0], ctx->size[1]));
 
     // Convert all items from the source image to double
     for (int i = 0; i < (ctx->size[0] * ctx->size[1]); ++i) {
