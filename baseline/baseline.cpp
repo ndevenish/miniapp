@@ -606,23 +606,8 @@ class DispersionThresholdModules {
                 m += d11.m;
                 x += d11.x;
                 y += d11.y;
-                // if (module_num/E2XE_16M_NFAST==0 || module_num%E2XE_16M_NFAST==0) {
-                // ...
-                // } else {
-                //     const Data<T> &d00 = table[k0 + i0];
-                //     const Data<T> &d10 = table[k1 + i0];
-                //     const Data<T> &d01 = table[k0 + i1];
-                //     m += d00.m - (d10.m + d01.m);
-                //     x += d00.x - (d10.x + d01.x);
-                //     y += d00.y - (d10.y + d01.y);
-                //     const Data<T> &d11 = table[k1 + i1];
-                //     m += d11.m;
-                //     x += d11.x;
-                //     y += d11.y;
-                // }
 
                 // Compute the thresholds
-                // dst[k] = false;
                 if (mask[k] && m >= min_count_ && x >= 0 && src[k] > threshold_) {
                     double a = m * y - x * x - x * (m - 1);
                     double b = m * src[k] - x;
