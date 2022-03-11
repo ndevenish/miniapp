@@ -585,8 +585,10 @@ class DispersionThresholdModules {
                 if (j == 510 && i == 380) {
                     printf("TLBR Raw = %d,%d,%d,%d\n", j0, i0, j1, i1);
                 }
-                i1 = i1 < E2XE_16M_FAST ? i1 : E2XE_16M_FAST - 1;
-                j1 = j1 < E2XE_16M_SLOW ? j1 : E2XE_16M_SLOW - 1;
+                int mod_right = i_offset + E2XE_MOD_FAST;
+                int mod_bottom = j_offset + E2XE_MOD_SLOW;
+                i1 = i1 < mod_right ? i1 : mod_right - 1;
+                j1 = j1 < mod_bottom ? j1 : mod_bottom - 1;
                 if (j == 510 && i == 380) {
                     printf("TLBR Max = %d,%d,%d,%d\n", j0, i0, j1, i1);
                 }
