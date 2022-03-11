@@ -567,9 +567,15 @@ class DispersionThresholdModules {
                 int j0 = j_im - kysize - 1;
                 int j1 = j_im + kysize;
 
-                
-                i1 = i1 < E2XE_16M_FAST ? i1 : E2XE_16M_FAST - 1;
-                j1 = j1 < E2XE_16M_SLOW ? j1 : E2XE_16M_SLOW - 1;
+                // j0,i0,j1,i1 are in image-space
+                // but - we still need to cut off the kernel edges
+                // at the edge of the module, not the edge of the
+                // image
+                int mod_right = i_offset + E2XE_MOD_FAST;
+                int mod_bottom = j_offset + E2XE_MOD_SLOW;
+                i1 = i1 < mod_right ? i1 : mod_right - 1;
+                j1 = j1 < mod_bottom ? j1 : mod_bottom - 1;
+
                 // array index of the first pixel in the first and last
                 // row of the kernel
                 int k0 = j0 * E2XE_16M_FAST;
