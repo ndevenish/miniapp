@@ -281,6 +281,10 @@ class DispersionThreshold {
                     double d = nsig_s_ * std::sqrt(x * m);
                     dst[k] = a > c && b > d;
                 }
+                if (j == 510 && i == 380) {
+                    printf("B  y=%zu x=%zu => %d\n", j, i, int(dst[k]));
+                }
+                // printf("M  y=%zu x=%zu => %d\n", j, i, int(dst[k]));
             }
         }
         return omp_get_wtime() - t0;
@@ -567,7 +571,6 @@ class DispersionThresholdModules {
                 int j0 = j_im - kysize - 1;
                 int j1 = j_im + kysize;
 
-                
                 i1 = i1 < E2XE_16M_FAST ? i1 : E2XE_16M_FAST - 1;
                 j1 = j1 < E2XE_16M_SLOW ? j1 : E2XE_16M_SLOW - 1;
                 // array index of the first pixel in the first and last
@@ -627,6 +630,9 @@ class DispersionThresholdModules {
                     double d = nsig_s_ * std::sqrt(x * m);
                     dst[k] = a > c && b > d;
                 }
+                if (j == 510 && i == 380) {
+                    printf("NB y=%zu x=%zu => %d\n", j, i, int(dst[k]));
+                }
             }
         }
         return omp_get_wtime() - t0;
@@ -657,12 +663,14 @@ class DispersionThresholdModules {
         int n_modules = E2XE_16M_NSLOW * E2XE_16M_NFAST;
 
         for (size_t k = 0; k < E2XE_16M_FAST * E2XE_16M_SLOW; ++k) dst[k] = false;
-#pragma omp parallel for default(none) shared(n_modules, table, src, mask, dst) \
-  num_threads(omp_get_max_threads() / 2)
-        for (size_t n = 0; n < n_modules; n++) {
-            compute_module_sat(table, src, mask, n);
-            compute_module_threshold(table, src, mask, dst, n);
-        }
+        // #pragma omp parallel for default(none) shared(n_modules, table, src, mask, dst) \
+//   num_threads(omp_get_max_threads() / 2)
+        // for (size_t n = 0; n < 4; n++) {
+        size_t n = 2;
+        printf("OM Module=%d\n", n);
+        compute_module_sat(table, src, mask, n);
+        compute_module_threshold(table, src, mask, dst, n);
+        // }
     }
 
   private:
