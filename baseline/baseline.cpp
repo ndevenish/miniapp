@@ -238,11 +238,18 @@ class DispersionThreshold {
                 size_t k = j * xsize + i;
                 int i0 = i - kxsize - 1, i1 = i + kxsize;
                 int j0 = j - kysize - 1, j1 = j + kysize;
+
+                if (j == 510 && i == 380) {
+                    printf("TLBR Raw = %d,%d,%d,%d\n", j0, i0, j1, i1);
+                }
+
                 i1 = i1 < xsize ? i1 : xsize - 1;
                 j1 = j1 < ysize ? j1 : ysize - 1;
                 int k0 = j0 * xsize;
                 int k1 = j1 * xsize;
-
+                if (j == 510 && i == 380) {
+                    printf("TLBR Max = %d,%d,%d,%d\n", j0, i0, j1, i1);
+                }
                 // Compute the number of points valid in the local area,
                 // the sum of the pixel values and the sum of the squared pixel
                 // values.
@@ -561,6 +568,10 @@ class DispersionThresholdModules {
         // Calculate the local mean at every point
         for (std::size_t j = 0, k = offset; j < ysize; ++j, k += row_step) {
             for (std::size_t i = 0; i < xsize; ++i, ++k) {
+                if (j == 510 && i == 380) {
+                    printf("Start of issue\n");
+                    printf("Offsets: j,i = %d,%d\n", j_offset, i_offset);
+                }
                 dst[k] = false;
                 // Full image i=x, j=y
                 int i_im = i_offset + i;
@@ -571,9 +582,14 @@ class DispersionThresholdModules {
                 int i1 = i_im + kxsize;
                 int j0 = j_im - kysize - 1;
                 int j1 = j_im + kysize;
-
+                if (j == 510 && i == 380) {
+                    printf("TLBR Raw = %d,%d,%d,%d\n", j0, i0, j1, i1);
+                }
                 i1 = i1 < E2XE_16M_FAST ? i1 : E2XE_16M_FAST - 1;
                 j1 = j1 < E2XE_16M_SLOW ? j1 : E2XE_16M_SLOW - 1;
+                if (j == 510 && i == 380) {
+                    printf("TLBR Max = %d,%d,%d,%d\n", j0, i0, j1, i1);
+                }
                 // array index of the first pixel in the first and last
                 // row of the kernel
                 int k0 = j0 * E2XE_16M_FAST;
@@ -654,7 +670,7 @@ class DispersionThresholdModules {
 //   num_threads(omp_get_max_threads() / 2)
         // for (size_t n = 0; n < 4; n++) {
         size_t n = 2;
-        printf("OM Module=%d\n", n);
+        printf("NB Module=%d\n", n);
         compute_module_sat(table, src, mask, n);
         compute_module_threshold(table, src, mask, dst, n);
         // }
