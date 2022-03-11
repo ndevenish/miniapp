@@ -76,48 +76,6 @@ class DispersionThreshold {
      * @param mask The mask array
      */
     template <typename T>
-    double compute_sat2(af::ref<Data<T>> table,
-                     const af::const_ref<T, af::c_grid<2>> &src,
-                     const af::const_ref<bool, af::c_grid<2>> &mask) {
-        double t0 = omp_get_wtime();
-        // Largest value to consider
-        const T BIG = (1 << 24);  // About 16m counts
-
-        // Get the size of the image
-        std::size_t ysize = src.accessor()[1]; // 512/4362 = SLOW
-        std::size_t xsize = src.accessor()[0]; // 1028/4148 = FAST
-
-        // Create the summed area table
-        for (std::size_t j = 0, k = 0; j < ysize; ++j) {
-            int m = 0;
-            T x = 0;
-            T y = 0;
-            for (std::size_t i = 0; i < xsize; ++i, ++k) {
-                int mm = (mask[k] && src[k] < BIG) ? 1 : 0;
-                m += mm;
-                x += mm * src[k];
-                y += mm * src[k] * src[k];
-                if (j == 0) {
-                    table[k].m = m;
-                    table[k].x = x;
-                    table[k].y = y;
-                } else {
-                    table[k].m = table[k - xsize].m + m;
-                    table[k].x = table[k - xsize].x + x;
-                    table[k].y = table[k - xsize].y + y;
-                }
-            }
-        }
-        //if (xsize > 1028) printf("Table max: %f %f %f\n", table[xsize*ysize-1].x, table[xsize*ysize-1].m, table[xsize*ysize-1].y); - why?
-        return omp_get_wtime() - t0;
-    }
-
-    /**
-     * Compute the summed area tables for the mask, src and src^2.
-     * @param src The input array
-     * @param mask The mask array
-     */
-    template <typename T>
     double compute_sat(af::ref<Data<T>> table,
                      const af::const_ref<T, af::c_grid<2>> &src,
                      const af::const_ref<bool, af::c_grid<2>> &mask) {
@@ -126,16 +84,15 @@ class DispersionThreshold {
         const T BIG = (1 << 24);  // About 16m counts
 
         // Get the size of the image
-        std::size_t ysize = src.accessor()[0]; // 1028/4148 = FAST
-        std::size_t xsize = src.accessor()[1]; // 512/4362 = SLOW
+        std::size_t ysize = src.accessor()[1]; // 1028/4148 = FAST
+        std::size_t xsize = src.accessor()[0]; // 512/4362 = SLOW
 
         // Create the summed area table
-        for (std::size_t j = 0, k = 0; j < ysize; ++j) { // j=[0,1027]
+        for (std::size_t j = 0, k = 0; j < ysize; ++j) {
             int m = 0;
             T x = 0;
             T y = 0;
-            for (std::size_t i = 0; i < xsize; ++i, ++k) { // i=[0,512]
-                // (k = j * xsize + i = j * 512 +i)
+            for (std::size_t i = 0; i < xsize; ++i, ++k) {
                 int mm = (mask[k] && src[k] < BIG) ? 1 : 0;
                 m += mm;
                 x += mm * src[k];
@@ -172,7 +129,6 @@ class DispersionThreshold {
             size_t offset2 = 1 * (E2XE_MOD_FAST+E2XE_GAP_FAST);
             size_t offset3 = 2 * (E2XE_MOD_FAST+E2XE_GAP_FAST);
             size_t offset4 = 3 * (E2XE_MOD_FAST+E2XE_GAP_FAST);
-            // printf("%d %d %d %d %d\n", module_row_num, row_offset, offset2, offset3, offset4);
             size_t row_end = (module_row_num == 7) ? 512 : 512;
             size_t k =row_offset;
             for (std::size_t j = 0; j < row_end; ++j) {
@@ -249,213 +205,6 @@ class DispersionThreshold {
                     }
                 }
             }
-            //printf("row %d k_max=%d\n", module_row_num, k);
-        }
-        size_t last = E2XE_16M_SLOW * E2XE_16M_FAST -1;
-        // printf("x: %g %g %g %g %g %g\n", src[1027], src[1039], src[2067], src[3107], src[4147], src[last]);
-        // printf("x: %g %g %g %g %g %g\n", table[1027].x, table[1039].x, table[2067].x, table[3107].x, table[4147].x, table[last].x);
-        // printf("%g %g %g\n", table[1027].m,table[1027].x,table[1027].y);
-        return omp_get_wtime() - t0;
-    }
-
-    /**
-     * Compute the threshold
-     * @param src - The input array
-     * @param mask - The mask array
-     * @param dst The output array
-     */
-    template <typename T>
-    double compute_threshold2(af::ref<Data<T>> table,
-                           const af::const_ref<T, af::c_grid<2>> &src,
-                           const af::const_ref<bool, af::c_grid<2>> &mask,
-                           af::ref<bool, af::c_grid<2>> dst) {
-        double t0 = omp_get_wtime();
-        // Get the size of the image
-        std::size_t ysize = src.accessor()[1];
-        std::size_t xsize = src.accessor()[0];
-
-        // The kernel size
-        int kxsize = kernel_size_[1];
-        int kysize = kernel_size_[0];
-
-        // Calculate the local mean at every point
-        std::size_t j, k;
-
-
-        // for (std::size_t j = 0; j < ysize; ++j) {
-        //     for (std::size_t i = 0; i < xsize; ++i) {
-        //         size_t k = j*xsize+i;
-        //         int i0 = i - kxsize - 1, i1 = i + kxsize;
-        //         int j0 = j - kysize - 1, j1 = j + kysize;
-        //         int fac1 = i0 < 0 ? 0 : 1;
-        //         int fac2 = j0 < 0 ? 0 : 1;
-        //         i0 = i0*fac1;// < 0 ? 0 : i0;
-        //         j0 = j0*fac2;// < 0 ? 0 : j0;
-        //         i1 = i1 < xsize ? i1 : xsize - 1;
-        //         j1 = j1 < ysize ? j1 : ysize - 1;
-        //         int k0 = j0 * xsize;
-        //         int k1 = j1 * xsize;
-        //         // Compute the number of points valid in the local area,
-        //         // the sum of the pixel values and the sum of the squared pixel
-        //         // values.
-        //         double m = 0;
-        //         double x = 0;
-        //         double y = 0;
-        //         // if (i0 >= 0 && j0 >= 0) {
-        //         const Data<T> &d00 = table[k0 + i0];
-        //         const Data<T> &d10 = table[k1 + i0];
-        //         const Data<T> &d01 = table[k0 + i1];
-        //         const Data<T> &d11 = table[k1 + i1];
-        //         m += fac1*fac2*d00.m - (fac1*d10.m + fac2*d01.m);
-        //         x += fac1*fac2*d00.x - (fac1*d10.x + fac2*d01.x);
-        //         y += fac1*fac2*d00.y - (fac1*d10.y + fac2*d01.y);
-        //         m += d11.m;
-        //         x += d11.x;
-        //         y += d11.y;
-        //         // Compute the thresholds
-        //         dst[k] = false;
-        //         if (mask[k] && m >= min_count_ && x >= 0 && src[k] > threshold_) {
-        //             double tmp = m*src[k]-x;
-        //             double tmp2 = m*y+x-x*(m+x);
-        //             // double a = m * y - x * x - x * (m - 1);
-        //             // double b = m * src[k] - x;
-        //             // double c = x * nsig_b_ * std::sqrt(2 * (m - 1));
-        //             // double d = nsig_s_ * std::sqrt(x * m);
-        //             double a = ((0<tmp2)-(tmp2<0))*(tmp2*tmp2);
-        //             double b = ((0<tmp)-(tmp<0))*(tmp*tmp);
-        //             double c = x*x*nsig_b_*nsig_b_*2*(m-1);
-        //             double d = m*x*nsig_s_*nsig_s_; 
-        //             dst[k] = a > c && b > d;
-        //         }
-        //     }
-        // }
-
-
-        // Left edge
-        for (j = kysize+1; j < ysize; ++j) {
-            for (std::size_t i=0; i < kxsize+1; ++i){
-                int i0 = i - kxsize - 1, i1 = i + kxsize;
-                int j0 = j - kysize - 1, j1 = j + kysize;
-                i1 = i1 < xsize ? i1 : xsize - 1;
-                j1 = j1 < ysize ? j1 : ysize - 1;
-                int k0 = j0 * xsize;
-                int k1 = j1 * xsize;
-
-                double m = 0;
-                double x = 0;
-                double y = 0;
-                const Data<T> &d01 = table[k0 + i1];
-                m -= d01.m;
-                x -= d01.x;
-                y -= d01.y;
-                const Data<T> &d11 = table[k1 + i1];
-                m += d11.m;
-                x += d11.x;
-                y += d11.y;
-
-                k = j * xsize + i;
-                dst[k] = false;
-                if (mask[k] && m >= min_count_ && x >= 0 && src[k] > threshold_) {
-                    double tmp = m*src[k]-x;
-                    double tmp2 = m*y+x-x*(m+x);
-                    // double a = m * y - x * x - x * (m - 1);
-                    // double b = m * src[k] - x;
-                    // double c = x * nsig_b_ * std::sqrt(2 * (m - 1));
-                    // double d = nsig_s_ * std::sqrt(x * m);
-                    double a = ((0<tmp2)-(tmp2<0))*(tmp2*tmp2);
-                    double b = ((0<tmp)-(tmp<0))*(tmp*tmp);
-                    double c = x*x*nsig_b_*nsig_b_*2*(m-1);
-                    double d = m*x*nsig_s_*nsig_s_; 
-                    dst[k] = a > c && b > d;
-                }
-            }
-        }
-
-        // Top edge
-        for (j = 0; j < kysize+1; ++j) {
-            for (std::size_t i = 0; i < xsize; ++i) {
-                int i0 = i - kxsize - 1, i1 = i + kxsize;
-                int j0 = j - kysize - 1, j1 = j + kysize;
-                i1 = i1 < xsize ? i1 : xsize - 1;
-                j1 = j1 < ysize ? j1 : ysize - 1;
-                int k0 = j0 * xsize;
-                int k1 = j1 * xsize;
-
-                double m = 0;
-                double x = 0;
-                double y = 0;
-
-                const Data<T> &d10 = table[k1 + i0];
-                m -= d10.m;
-                x -= d10.x;
-                y -= d10.y;
-                const Data<T> &d11 = table[k1 + i1];
-                m += d11.m;
-                x += d11.x;
-                y += d11.y;
-
-                k = j * xsize + i;
-                dst[k] = false;
-                if (mask[k] && m >= min_count_ && x >= 0 && src[k] > threshold_) {
-                    double tmp = m*src[k]-x;
-                    double tmp2 = m*y+x-x*(m+x);
-                    // double a = m * y - x * x - x * (m - 1);
-                    // double b = m * src[k] - x;
-                    // double c = x * nsig_b_ * std::sqrt(2 * (m - 1));
-                    // double d = nsig_s_ * std::sqrt(x * m);
-                    double a = ((0<tmp2)-(tmp2<0))*(tmp2*tmp2);
-                    double b = ((0<tmp)-(tmp<0))*(tmp*tmp);
-                    double c = x*x*nsig_b_*nsig_b_*2*(m-1);
-                    double d = m*x*nsig_s_*nsig_s_; 
-                    dst[k] = a > c && b > d;
-                }
-            }
-        }
-
-// #pragma omp parallel for default(none) shared(mask, dst, min_count_, src, threshold_, nsig_b_, nsig_s_, table, xsize, ysize, kxsize, kysize) private(k)
-        for (j = kysize+1; j < ysize; ++j) { //k=0
-            for (std::size_t i = kxsize+1; i < xsize; ++i) { //k++
-                int i0 = i - kxsize - 1, i1 = i + kxsize;
-                int j0 = j - kysize - 1, j1 = j + kysize;
-                i1 = i1 < xsize ? i1 : xsize - 1;
-                j1 = j1 < ysize ? j1 : ysize - 1;
-                int k0 = j0 * xsize;
-                int k1 = j1 * xsize;
-
-                // Compute the number of points valid in the local area,
-                // the sum of the pixel values and the sum of the squared pixel
-                // values.
-                double m = 0;
-                double x = 0;
-                double y = 0;
-                const Data<T> &d00 = table[k0 + i0];
-                const Data<T> &d10 = table[k1 + i0];
-                const Data<T> &d01 = table[k0 + i1];
-                m += d00.m - (d10.m + d01.m);
-                x += d00.x - (d10.x + d01.x);
-                y += d00.y - (d10.y + d01.y);
-                const Data<T> &d11 = table[k1 + i1];
-                m += d11.m;
-                x += d11.x;
-                y += d11.y;
-
-                // Compute the thresholds
-                k = j * xsize + i;
-                dst[k] = false;
-                if (mask[k] && m >= min_count_ && x >= 0 && src[k] > threshold_) {
-                    double tmp = m*src[k]-x;
-                    double tmp2 = m*y+x-x*(m+x);
-                    // double a = m * y - x * x - x * (m - 1);
-                    // double b = m * src[k] - x;
-                    // double c = x * nsig_b_ * std::sqrt(2 * (m - 1));
-                    // double d = nsig_s_ * std::sqrt(x * m);
-                    double a = ((0<tmp2)-(tmp2<0))*(tmp2*tmp2);
-                    double b = ((0<tmp)-(tmp<0))*(tmp*tmp);
-                    double c = x*x*nsig_b_*nsig_b_*2*(m-1);
-                    double d = m*x*nsig_s_*nsig_s_; 
-                    dst[k] = a > c && b > d;
-                }
-            }
         }
         return omp_get_wtime() - t0;
     }
@@ -527,7 +276,6 @@ class DispersionThreshold {
                 dst[k] = false;
                 if (mask[k] && m >= min_count_ && x >= 0 && src[k] > threshold_) {
                     double a = m * y - x * x - x * (m - 1);
-                    double tmp = m*src[k]-x;
                     double b = m * src[k] - x;
                     double c = x * nsig_b_ * std::sqrt(2 * (m - 1));
                     double d = nsig_s_ * std::sqrt(x * m);
@@ -635,7 +383,7 @@ class DispersionThreshold {
                                buffer_.size());
 
         // compute the summed area table
-        compute_sat2(table, src, mask);
+        compute_sat(table, src, mask);
         //compute_sat_new(table, src, mask);
 
         // Compute the image threshold
@@ -800,8 +548,6 @@ class DispersionThresholdModules {
         int kxsize = kernel_size_[1];
         int kysize = kernel_size_[0];
 
-        int true_count = 0, nz_count=0, mask_count=0;
-
         // Calculate the local mean at every point
         for (std::size_t j = 0, k=offset; j < ysize; ++j, k+=row_step) {
             for (std::size_t i = 0; i < xsize; ++i, ++k) {
@@ -818,8 +564,6 @@ class DispersionThresholdModules {
                 j1 = j1 < E2XE_16M_SLOW ? j1 : E2XE_16M_SLOW - 1;
                 int k0 = j0 * E2XE_16M_FAST;
                 int k1 = j1 * E2XE_16M_FAST;
-
-                // if (i==100 && j==100) printf("N:%d, i_im:%d, j_im:%d, i0:%d, i1:%d, j0:%d, j1:%d, k0:%d, k1:%d\n", module_num, i_im, j_im, i0, i1, j0, j1, k0, k1);
 
                 // Compute the number of points valid in the local area,
                 // the sum of the pixel values and the sum of the squared pixel
@@ -864,23 +608,17 @@ class DispersionThresholdModules {
                 //     y += d11.y;
                 // }
 
-                if (src[k] > 0) nz_count ++;
-                if (mask[k]) mask_count ++;
-
                 // Compute the thresholds
                 // dst[k] = false;
                 if (mask[k] && m >= min_count_ && x >= 0 && src[k] > threshold_) {
                     double a = m * y - x * x - x * (m - 1);
-                    // double tmp = m*src[k]-x;
                     double b = m * src[k] - x;
                     double c = x * nsig_b_ * std::sqrt(2 * (m - 1));
                     double d = nsig_s_ * std::sqrt(x * m);
                     dst[k] = a > c && b > d;
-                    // if (a>c && b>d) true_count ++;
                 }
             }
         }
-        // printf("True count:%d, non-zero:%d, mask:%d\n", true_count, nz_count, mask_count);
         return omp_get_wtime() - t0;
     }
 

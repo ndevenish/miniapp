@@ -87,7 +87,7 @@ int main(int argc, char **argv) {
     double over_modules_time = time_parallelism_over_modules(obj, n_images, n_modules, mini_spotfinders, mini_results);
     double over_modules_using_floats_time = time_parallelism_over_modules_using_floats(obj, n_images, n_modules, mini_spotfinders, mini_f_results);
     double over_both_time = time_parallelism_over_both(obj, n_images, n_modules, mini_spotfinders, both_results, 2);
-    double over_both_noblit_time = time_parallelism_over_both_noblit(obj, n_images, noblit_spotfinders, both_results_nb, 2);
+    double over_both_noblit_time = time_parallelism_over_both_noblit(obj, n_images, noblit_spotfinders, both_results_nb, 2); // Hard to change outer num properly
 
     for (size_t j=0; j<num_spotfinders; j++) {
         spotfinder_free(mini_spotfinders[j]);
@@ -304,8 +304,8 @@ double time_parallelism_over_both_noblit(h5read_handle* obj, int n_images, void*
     uint32_t result;
     image_t* image;
     double t0 = omp_get_wtime();
-    
     int outer_num = (n_outer > omp_get_max_threads()) ? omp_get_max_threads() : n_outer;
+    outer_num = (outer_num > 2) ? 2 : outer_num;
     if (omp_get_max_threads() % outer_num == 0 && omp_get_max_threads()>1) {
         omp_set_nested(1); 
         omp_set_max_active_levels(2);
