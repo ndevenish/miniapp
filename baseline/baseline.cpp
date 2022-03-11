@@ -537,7 +537,6 @@ class DispersionThresholdModules {
                                     int module_num) {
         double t0 = omp_get_wtime();
         // Get the size of the image
-        // I HAVE SWAPPED THESE TO MATCH THE DATA INDICES
         std::size_t ysize = E2XE_MOD_SLOW;
         std::size_t xsize = E2XE_MOD_FAST;
 
@@ -546,6 +545,7 @@ class DispersionThresholdModules {
             * E2XE_16M_FAST
           + (module_num % E2XE_16M_NFAST) * (E2XE_MOD_FAST + E2XE_GAP_FAST);
         std::size_t row_step = E2XE_16M_FAST - E2XE_MOD_FAST;
+        // X and Y of top-left pixel of the module
         int i_offset = (module_num % E2XE_16M_NFAST) * (E2XE_MOD_FAST + E2XE_GAP_FAST);
         int j_offset = (module_num / E2XE_16M_NFAST) * (E2XE_MOD_SLOW + E2XE_GAP_SLOW);
 
@@ -557,15 +557,21 @@ class DispersionThresholdModules {
         for (std::size_t j = 0, k = offset; j < ysize; ++j, k += row_step) {
             for (std::size_t i = 0; i < xsize; ++i, ++k) {
                 dst[k] = false;
-
+                // Full image i=x, j=y
                 int i_im = i_offset + i;
                 int j_im = j_offset + j;
+
+                // Full image coordinates
                 int i0 = i_im - kxsize - 1;
                 int i1 = i_im + kxsize;
                 int j0 = j_im - kysize - 1;
                 int j1 = j_im + kysize;
+
+                
                 i1 = i1 < E2XE_16M_FAST ? i1 : E2XE_16M_FAST - 1;
                 j1 = j1 < E2XE_16M_SLOW ? j1 : E2XE_16M_SLOW - 1;
+                // array index of the first pixel in the first and last
+                // row of the kernel
                 int k0 = j0 * E2XE_16M_FAST;
                 int k1 = j1 * E2XE_16M_FAST;
 
