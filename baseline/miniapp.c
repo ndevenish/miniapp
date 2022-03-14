@@ -83,6 +83,7 @@ int main(int argc, char **argv) {
 
     double over_images_time = time_parallelism_over_images(obj, n_images, spotfinders, full_results);
     double over_images_using_modules_time = time_parallelism_over_images_using_modules(obj, n_images, n_modules, mini_spotfinders, full_results_m);
+    printf("Does get here\n");
     double over_images_using_modules_noblit_time = time_parallelism_over_images_using_modules_noblit(obj, n_images, noblit_spotfinders, mini_results_nb);
     double over_modules_time = time_parallelism_over_modules(obj, n_images, n_modules, mini_spotfinders, mini_results);
     double over_modules_using_floats_time = time_parallelism_over_modules_using_floats(obj, n_images, n_modules, mini_spotfinders, mini_f_results);
@@ -319,63 +320,6 @@ double time_parallelism_over_both_noblit(h5read_handle* obj, int n_images, void*
         h5read_free_image(image);
     }
     return omp_get_wtime()-t0;
-}
-
-int old_main(h5read_handle* obj, int n_images) {
-    image_t* image;
-    image_modules_t* modules;
-    uint32_t strong_pixels;
-    size_t zero;
-    size_t zero_m;
-    uint16_t image_slow = E2XE_16M_SLOW, image_fast = E2XE_16M_FAST;
-    void *spotfinder = NULL;
-    for (size_t j = 0; j < n_images; j++) {
-        image = h5read_get_image(obj, j);
-        modules = h5read_get_image_modules(obj, j);
-
-        if (j == 0) {
-            // Need to wait until we have an image to get its size
-            image_slow = image->slow;
-            image_fast = image->fast;
-            spotfinder = spotfinder_create(image_fast, image_slow);
-            //n = 0;
-        } else {
-            // For sanity sake, check this matches
-            assert(image->slow == image_slow);
-            assert(image->fast == image_fast);
-        }
-
-        uint32_t strong_pixels;
-        size_t zero;
-        size_t zero_m;
-
-        strong_pixels = spotfinder_standard_dispersion(spotfinder, image);
-
-        zero = 0;
-        for (size_t i = 0; i < (image->fast * image->slow); i++) {
-            if (image->data[i] == 0 && image->mask[i] == 1) {
-                zero++;
-            }
-        }
-
-        zero_m = 0;
-        for (size_t i = 0; i < (modules->fast * modules->slow * modules->modules);
-             i++) {
-            if (modules->data[i] == 0 && modules->mask[i] == 1) {
-                zero_m++;
-            }
-        }
-
-        printf("image %ld had %ld / %ld valid zero pixels, %" PRIu32 " strong pixels\n\n",
-               j,
-               zero,
-               zero_m,
-               strong_pixels);
-
-        h5read_free_image_modules(modules);
-        h5read_free_image(image);
-    }
-    spotfinder_free(spotfinder);
 }
 
 int module_to_image_index(int module_num, int module_idx) {
