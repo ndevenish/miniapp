@@ -129,9 +129,10 @@ class DispersionThreshold {
             size_t offset2 = 1 * (E2XE_MOD_FAST+E2XE_GAP_FAST);
             size_t offset3 = 2 * (E2XE_MOD_FAST+E2XE_GAP_FAST);
             size_t offset4 = 3 * (E2XE_MOD_FAST+E2XE_GAP_FAST);
-            size_t row_end = (module_row_num == 7) ? 512 : 512;
+            size_t row_end = (module_row_num == 7) ? 512 : 550;
             size_t k =row_offset;
-            for (std::size_t j = 0; j < row_end; ++j) {
+            for (std::size_t j = 0; j < 512; ++j) {
+                k = row_offset + j * E2XE_16M_FAST;
                 int m = 0;
                 T x = 0;
                 T y = 0;
@@ -383,11 +384,10 @@ class DispersionThreshold {
                                buffer_.size());
 
         // compute the summed area table
-        compute_sat(table, src, mask);
-        //compute_sat_new(table, src, mask);
+        double old_sat_time = compute_sat(table, src, mask);
 
         // Compute the image threshold
-        compute_threshold(table, src, mask, dst);
+        double old_thresh_time = compute_threshold(table, src, mask, dst);
     }
 
     /**
@@ -535,7 +535,6 @@ class DispersionThresholdModules {
                            int module_num) {
         double t0 = omp_get_wtime();
         // Get the size of the image
-        // I HAVE SWAPPED THESE TO MATCH THE DATA INDICES
         std::size_t ysize = E2XE_MOD_SLOW;
         std::size_t xsize = E2XE_MOD_FAST;
     
@@ -554,14 +553,28 @@ class DispersionThresholdModules {
 
                 dst[k] = false;
 
+                // Full image i=x, j=y
                 int i_im = i_offset + i;
                 int j_im = j_offset + j;
+
+                // Full image coordinates
                 int i0 = i_im - kxsize - 1;
                 int i1 = i_im + kxsize;
                 int j0 = j_im - kysize - 1;
                 int j1 = j_im + kysize;
-                i1 = i1 < E2XE_16M_FAST ? i1 : E2XE_16M_FAST - 1;
-                j1 = j1 < E2XE_16M_SLOW ? j1 : E2XE_16M_SLOW - 1;
+
+                // j0,i0,j1,i1 are in image-space
+                // but - we still need to cut off the kernel edges
+                // at the edge of the module, not the edge of the
+                // image
+                int mod_right = i_offset + E2XE_MOD_FAST;
+                int mod_bottom = j_offset + E2XE_MOD_SLOW;
+
+                i1 = i1 < mod_right ? i1 : mod_right - 1;
+                j1 = j1 < mod_bottom ? j1 : mod_bottom - 1;
+
+                // Array index of the first pixel in the first and last
+                // row of the kernel
                 int k0 = j0 * E2XE_16M_FAST;
                 int k1 = j1 * E2XE_16M_FAST;
 
@@ -593,20 +606,7 @@ class DispersionThresholdModules {
                 m += d11.m;
                 x += d11.x;
                 y += d11.y;
-                // if (module_num/E2XE_16M_NFAST==0 || module_num%E2XE_16M_NFAST==0) {
-                // ...
-                // } else {
-                //     const Data<T> &d00 = table[k0 + i0];
-                //     const Data<T> &d10 = table[k1 + i0];
-                //     const Data<T> &d01 = table[k0 + i1];
-                //     m += d00.m - (d10.m + d01.m);
-                //     x += d00.x - (d10.x + d01.x);
-                //     y += d00.y - (d10.y + d01.y);
-                //     const Data<T> &d11 = table[k1 + i1];
-                //     m += d11.m;
-                //     x += d11.x;
-                //     y += d11.y;
-                // }
+
 
                 // Compute the thresholds
                 // dst[k] = false;
