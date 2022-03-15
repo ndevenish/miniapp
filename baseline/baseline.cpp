@@ -288,6 +288,208 @@ class DispersionThreshold {
     }
 
 
+    template <typename T>
+    double compute_threshold_new(af::ref<Data<T>> table,
+                           const af::const_ref<T, af::c_grid<2>> &src,
+                           const af::const_ref<bool, af::c_grid<2>> &mask,
+                           af::ref<bool, af::c_grid<2>> dst) {
+        double t0 = omp_get_wtime();
+        // Get the size of the image
+        // I HAVE SWAPPED THESE TO MATCH THE DATA INDICES
+        std::size_t ysize = src.accessor()[1];
+        std::size_t xsize = src.accessor()[0];
+        // ysize = 512;
+        // xsize = 1028;
+        // The kernel size
+        int kxsize = kernel_size_[1];
+        int kysize = kernel_size_[0];
+        int i_offset0 = 0;
+        int i_offset1 = 1 * (E2XE_MOD_FAST+E2XE_GAP_FAST);
+        int i_offset2 = 2 * (E2XE_MOD_FAST+E2XE_GAP_FAST);
+        int i_offset3 = 3 * (E2XE_MOD_FAST+E2XE_GAP_FAST);
+
+        for (size_t module_row_num=0; module_row_num<8; module_row_num++) {
+            int j_offset = module_row_num * (E2XE_MOD_SLOW + E2XE_GAP_SLOW);
+        // Calculate the local mean at every point
+            for (std::size_t j = 0; j < 512; ++j) {
+                int j_im = j_offset + j;
+                int j0 = j_im - kysize - 1;
+                int j1 = j_im + kysize;
+                j1 = j1 < (j_offset + E2XE_MOD_SLOW) ? j1 : (j_offset + E2XE_MOD_SLOW) - 1;
+                int k0 = j0 * E2XE_16M_FAST;
+                int k1 = j1 * E2XE_16M_FAST;
+                int k_0 = (j_offset + j) * E2XE_16M_FAST;
+                int k_1 = k_0 + E2XE_MOD_FAST + E2XE_GAP_FAST;
+                int k_2 = k_1 + E2XE_MOD_FAST + E2XE_GAP_FAST;
+                int k_3 = k_2 + E2XE_MOD_FAST + E2XE_GAP_FAST;
+                for (std::size_t i = 0; i < 1028; ++i, ++k_0, ++k_1, ++k_2, ++k_3) {
+
+                    int i_im_0 = i_offset0 + i;
+                    int i_im_1 = i_offset1 + i;
+                    int i_im_2 = i_offset2 + i;
+                    int i_im_3 = i_offset3 + i;
+
+                    int i0_0 = i_im_0 - kxsize - 1;
+                    int i0_1 = i_im_1 - kxsize - 1;
+                    int i0_2 = i_im_2 - kxsize - 1;
+                    int i0_3 = i_im_3 - kxsize - 1;
+
+                    int i1_0 = i_im_0 + kxsize;
+                    int i1_1 = i_im_1 + kxsize;
+                    int i1_2 = i_im_2 + kxsize;
+                    int i1_3 = i_im_3 + kxsize;
+
+                    int mod_right0 = i_offset0 + E2XE_MOD_FAST;
+                    int mod_right1 = i_offset1 + E2XE_MOD_FAST;
+                    int mod_right2 = i_offset2 + E2XE_MOD_FAST;
+                    int mod_right3 = i_offset3 + E2XE_MOD_FAST;
+
+                    i1_0 = i1_0 < mod_right0 ? i1_0 : mod_right0 - 1;
+                    i1_1 = i1_1 < mod_right1 ? i1_1 : mod_right1 - 1;
+                    i1_2 = i1_2 < mod_right2 ? i1_2 : mod_right2 - 1;
+                    i1_3 = i1_3 < mod_right3 ? i1_3 : mod_right3 - 1;
+
+                    double m0 = 0;
+                    double x0 = 0;
+                    double y0 = 0;
+                    double m1 = 0;
+                    double x1 = 0;
+                    double y1 = 0;
+                    double m2 = 0;
+                    double x2 = 0;
+                    double y2 = 0;
+                    double m3 = 0;
+                    double x3 = 0;
+                    double y3 = 0;
+
+                    if (i0_0 >= i_offset0 && j0 >= j_offset) {
+                        const Data<T> &d00_0 = table[k0 + i0_0];
+                        const Data<T> &d10_0 = table[k1 + i0_0];
+                        const Data<T> &d01_0 = table[k0 + i1_0];
+                        m0 += d00_0.m - (d10_0.m + d01_0.m);
+                        x0 += d00_0.x - (d10_0.x + d01_0.x);
+                        y0 += d00_0.y - (d10_0.y + d01_0.y);
+
+                        const Data<T> &d00_1 = table[k0 + i0_1];
+                        const Data<T> &d10_1 = table[k1 + i0_1];
+                        const Data<T> &d01_1 = table[k0 + i1_1];
+                        m1 += d00_1.m - (d10_1.m + d01_1.m);
+                        x1 += d00_1.x - (d10_1.x + d01_1.x);
+                        y1 += d00_1.y - (d10_1.y + d01_1.y);
+
+                        const Data<T> &d00_2 = table[k0 + i0_2];
+                        const Data<T> &d10_2 = table[k1 + i0_2];
+                        const Data<T> &d01_2 = table[k0 + i1_2];
+                        m2 += d00_2.m - (d10_2.m + d01_2.m);
+                        x2 += d00_2.x - (d10_2.x + d01_2.x);
+                        y2 += d00_2.y - (d10_2.y + d01_2.y);
+
+                        const Data<T> &d00_3 = table[k0 + i0_3];
+                        const Data<T> &d10_3 = table[k1 + i0_3];
+                        const Data<T> &d01_3 = table[k0 + i1_3];
+                        m3 += d00_3.m - (d10_3.m + d01_3.m);
+                        x3 += d00_3.x - (d10_3.x + d01_3.x);
+                        y3 += d00_3.y - (d10_3.y + d01_3.y);
+                    } else if (i0_0 >= i_offset0) {
+                        const Data<T> &d10_0 = table[k1 + i0_0];
+                        m0 -= d10_0.m;
+                        x0 -= d10_0.x;
+                        y0 -= d10_0.y;
+
+                        const Data<T> &d10_1 = table[k1 + i0_1];
+                        m1 -= d10_1.m;
+                        x1 -= d10_1.x;
+                        y1 -= d10_1.y;
+
+                        const Data<T> &d10_2 = table[k1 + i0_2];
+                        m2 -= d10_2.m;
+                        x2 -= d10_2.x;
+                        y2 -= d10_2.y;
+
+                        const Data<T> &d10_3 = table[k1 + i0_3];
+                        m3 -= d10_3.m;
+                        x3 -= d10_3.x;
+                        y3 -= d10_3.y;
+                    } else if (j0 >= j_offset) {
+                        const Data<T> &d01_0 = table[k0 + i1_0];
+                        m0 -= d01_0.m;
+                        x0 -= d01_0.x;
+                        y0 -= d01_0.y;
+
+                        const Data<T> &d01_1 = table[k0 + i1_1];
+                        m1 -= d01_1.m;
+                        x1 -= d01_1.x;
+                        y1 -= d01_1.y;
+
+                        const Data<T> &d01_2 = table[k0 + i1_2];
+                        m2 -= d01_2.m;
+                        x2 -= d01_2.x;
+                        y2 -= d01_2.y;
+
+                        const Data<T> &d01_3 = table[k0 + i1_3];
+                        m3 -= d01_3.m;
+                        x3 -= d01_3.x;
+                        y3 -= d01_3.y;
+                    }
+
+                    const Data<T> &d11_0 = table[k1 + i1_0];
+                    m0 += d11_0.m;
+                    x0 += d11_0.x;
+                    y0 += d11_0.y;
+
+                    const Data<T> &d11_1 = table[k1 + i1_1];
+                    m1 += d11_1.m;
+                    x1 += d11_1.x;
+                    y1 += d11_1.y;
+
+                    const Data<T> &d11_2 = table[k1 + i1_2];
+                    m2 += d11_2.m;
+                    x2 += d11_2.x;
+                    y2 += d11_2.y;
+
+                    const Data<T> &d11_3 = table[k1 + i1_3];
+                    m3 += d11_3.m;
+                    x3 += d11_3.x;
+                    y3 += d11_3.y;
+
+                    if (mask[k_0] && m0 >= min_count_ && x0 >= 0 && src[k_0] > threshold_) {
+                        double a = m0 * y0 - x0 * x0 - x0 * (m0 - 1);
+                        double b = m0 * src[k_0] - x0;
+                        double c = x0 * nsig_b_ * std::sqrt(2 * (m0 - 1));
+                        double d = nsig_s_ * std::sqrt(x0 * m0);
+                        dst[k_0] = a > c && b > d;
+                    }
+
+                    if (mask[k_1] && m1 >= min_count_ && x1 >= 0 && src[k_1] > threshold_) {
+                        double a = m1 * y1 - x1 * x1 - x1 * (m1 - 1);
+                        double b = m1 * src[k_1] - x1;
+                        double c = x1 * nsig_b_ * std::sqrt(2 * (m1 - 1));
+                        double d = nsig_s_ * std::sqrt(x1 * m1);
+                        dst[k_1] = a > c && b > d;
+                    }
+
+                    if (mask[k_2] && m2 >= min_count_ && x2 >= 0 && src[k_2] > threshold_) {
+                        double a = m2 * y2 - x2 * x2 - x2 * (m2 - 1);
+                        double b = m2 * src[k_2] - x2;
+                        double c = x2 * nsig_b_ * std::sqrt(2 * (m2 - 1));
+                        double d = nsig_s_ * std::sqrt(x2 * m2);
+                        dst[k_2] = a > c && b > d;
+                    }
+
+                    if (mask[k_3] && m3 >= min_count_ && x3 >= 0 && src[k_3] > threshold_) {
+                        double a = m3 * y3 - x3 * x3 - x3 * (m3 - 1);
+                        double b = m3 * src[k_3] - x3;
+                        double c = x3 * nsig_b_ * std::sqrt(2 * (m3 - 1));
+                        double d = nsig_s_ * std::sqrt(x3 * m3);
+                        dst[k_3] = a > c && b > d;
+                    }
+                }
+            }
+        }
+        return omp_get_wtime() - t0;
+    }
+
+
     /**
      * Compute the threshold
      * @param src - The input array
