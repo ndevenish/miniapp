@@ -481,9 +481,9 @@ class DispersionThresholdModules {
                 // Compute the number of points valid in the local area,
                 // the sum of the pixel values and the sum of the squared pixel
                 // values.
-                double m = 0;
-                double x = 0;
-                double y = 0;
+                T m = 0;
+                T x = 0;
+                T y = 0;
                 if (i0 >= i_offset && j0 >= j_offset) {
                     const Data<T> &d00 = table[k0 + i0];
                     const Data<T> &d10 = table[k1 + i0];
@@ -507,14 +507,12 @@ class DispersionThresholdModules {
                 x += d11.x;
                 y += d11.y;
 
-
                 // Compute the thresholds
-                // dst[k] = false;
                 if (mask[k] && m >= min_count_ && x >= 0 && src[k] > threshold_) {
-                    double a = m * y - x * x - x * (m - 1);
-                    double b = m * src[k] - x;
-                    double c = x * nsig_b_ * std::sqrt(2 * (m - 1));
-                    double d = nsig_s_ * std::sqrt(x * m);
+                    T a = m * y - x * x - x * (m - 1);
+                    T b = m * src[k] - x;
+                    T c = x * nsig_b_ * std::sqrt(2 * (m - 1));
+                    T d = nsig_s_ * std::sqrt(x * m);
                     dst[k] = a > c && b > d;
                 }
             }
@@ -547,11 +545,12 @@ class DispersionThresholdModules {
         int n_modules = E2XE_16M_NSLOW * E2XE_16M_NFAST;
 
         for (size_t k=0; k<E2XE_16M_FAST*E2XE_16M_SLOW; ++k) dst[k] = false;
-    #pragma omp parallel for default(none) shared(n_modules, table, src, mask, dst) num_threads(omp_get_max_threads()/2)
+        #pragma omp parallel for default(none) shared(n_modules, table, src, mask, dst) schedule(dynamic)
         for (size_t n=0; n<n_modules; n++) {
             compute_module_sat(table, src, mask, n);
             compute_module_threshold(table, src, mask, dst, n);
         }
+
     }
 
   private:

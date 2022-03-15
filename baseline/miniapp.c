@@ -67,7 +67,7 @@ double time_parallelism_over_images(h5read_handle *obj, int n_images, void** spo
     int temp;
     image_t* image;
     double t0 = omp_get_wtime();
-    #pragma omp parallel for default(none) private(image, temp) shared(n_images, obj, spotfinders, full_results)
+    #pragma omp parallel for default(none) private(image, temp) shared(n_images, obj, spotfinders, full_results) schedule(dynamic)
     for (size_t j=0; j<n_images; j++) {
         image = h5read_get_image(obj, j);
         temp = spotfinder_standard_dispersion(spotfinders[omp_get_thread_num()], image);
@@ -84,7 +84,7 @@ double time_parallelism_over_modules(h5read_handle* obj, int n_images, int n_mod
     for (size_t j=0; j<n_images; j++) {
         modules = h5read_get_image_modules(obj, j);
         strong_pixels_from_modules = 0;
-#pragma omp parallel for default(none) shared(n_images, modules, mini_spotfinders, n_modules, mini_results) reduction(+:strong_pixels_from_modules)
+#pragma omp parallel for default(none) shared(n_images, modules, mini_spotfinders, n_modules, mini_results) reduction(+:strong_pixels_from_modules) schedule(dynamic)
         for (size_t n=0; n<n_modules; n++) {
             strong_pixels_from_modules += spotfinder_standard_dispersion_modules(mini_spotfinders[omp_get_thread_num()], modules, n);
         }
