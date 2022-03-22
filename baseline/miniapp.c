@@ -10,26 +10,34 @@
 #include "h5read.h"
 
 void time_image_loading(h5read_handle* obj, int n_images) {
-    image_modules_t* modules;
-    image_t* image;
+    image_modules_t* modules[n_images];
+    image_t* images[n_images];
     double t0 = omp_get_wtime();
     for (size_t j = 0; j < n_images; j++) {
-        image = h5read_get_image(obj, j);
-        h5read_free_image(image);
+        images[j] = h5read_get_image(obj, j);
     }
     double t1 = omp_get_wtime();
     for (size_t j = 0; j < n_images; j++) {
-        modules = h5read_get_image_modules(obj, j);
-        h5read_free_image_modules(modules);
+        modules[j] = h5read_get_image_modules(obj, j);
     }
     double t2 = omp_get_wtime();
+    for (size_t j = 0; j < n_images; j++) {
+        h5read_free_image(images[j]);
+    }
+    double t3 = omp_get_wtime();
+    for (size_t j = 0; j < n_images; j++) {
+        h5read_free_image_modules(modules[j]);
+    }
+    double t4 = omp_get_wtime();
     printf(
       "For %d images:\n"
-      "Image load time:  %4.0fms/image\n"
-      "Module load time: %4.0fms/image\n",
+      "Images:  load time:%3.0fms/image free time:%3.0fms/image\n"
+      "Modules: load time:%3.0fms/image free time:%3.0fms/image\n",
       n_images,
       1000 * (t1 - t0) / n_images,
-      1000 * (t2 - t1) / n_images);
+      1000 * (t3 - t2) / n_images,
+      1000 * (t2 - t1) / n_images,
+      1000 * (t4 - t3) / n_images);
 }
 
 double time_baselines(h5read_handle* obj,
@@ -37,20 +45,26 @@ double time_baselines(h5read_handle* obj,
                       void** spotfinders,
                       int* full_results,
                       int preload) {
-    int n_images_to_use = (n_images > 20) ? 20 : n_images;
+    int n_images_to_use = (n_images > 20 && omp_get_max_threads() > 1) ? 20 : n_images;
     if (preload) {
+
         int temp;
         image_t* images[n_images_to_use];
-        for (int i = 0; i < n_images_to_use; i++) images[i] = h5read_get_image(obj, i);
+        for (int i = 0; i < n_images_to_use; i++) {
+            images[i] = h5read_get_image(obj, i);
+        }
         double t0 = omp_get_wtime();
         for (size_t j = 0; j < n_images_to_use; j++) {
             temp = spotfinder_standard_dispersion(spotfinders[omp_get_thread_num()],
                                                   images[j]);
             full_results[j] = temp;
         }
-        for (int i = 0; i < n_images_to_use; i++) h5read_free_image(images[i]);
+        for (int i = 0; i < n_images_to_use; i++) {
+            h5read_free_image(images[i]);
+        }
         return ((double)n_images / (double)n_images_to_use) * (omp_get_wtime() - t0);
     } else {
+
         int temp;
         image_t* image;
         double t0 = omp_get_wtime();
@@ -71,25 +85,34 @@ double time_parallelism_over_images(h5read_handle* obj,
                                     int* full_results,
                                     int preload) {
     if (preload) {
+
         int temp;
+        double t00 = omp_get_wtime();
         image_t* images[n_images];
-        for (int i = 0; i < n_images; i++) images[i] = h5read_get_image(obj, i);
+        for (int i = 0; i < n_images; i++) {
+            images[i] = h5read_get_image(obj, i);
+        }
+        printf("Images loading time: %4.0fms/image\n", 1000*(omp_get_wtime()-t00)/n_images);
         double t0 = omp_get_wtime();
 #pragma omp parallel for default(none) private(temp) \
-  shared(n_images, obj, spotfinders, full_results, images) schedule(dynamic)
+  shared(n_images, obj, spotfinders, full_results, images) schedule(runtime)
         for (size_t j = 0; j < n_images; j++) {
             temp = spotfinder_standard_dispersion(spotfinders[omp_get_thread_num()],
                                                   images[j]);
             full_results[j] = temp;
         }
-        for (int i = 0; i < n_images; i++) h5read_free_image(images[i]);
+        for (int i = 0; i < n_images; i++) {
+            h5read_free_image(images[i]);
+        }
         return omp_get_wtime() - t0;
+
     } else {
+
         int temp;
         image_t* image;
         double t0 = omp_get_wtime();
 #pragma omp parallel for default(none) private(temp, image) \
-  shared(n_images, obj, spotfinders, full_results) schedule(dynamic)
+  shared(n_images, obj, spotfinders, full_results) schedule(runtime)
         for (size_t j = 0; j < n_images; j++) {
             image = h5read_get_image(obj, j);
             temp =
@@ -108,15 +131,19 @@ double time_parallelism_over_modules(h5read_handle* obj,
                                      int* mini_results,
                                      int preload) {
     if (preload) {
+
         uint32_t strong_pixels_from_modules = 0;
+        double t00 = omp_get_wtime();
         image_modules_t* modules[n_images];
-        for (int i = 0; i < n_images; i++)
+        for (int i = 0; i < n_images; i++) {
             modules[i] = h5read_get_image_modules(obj, i);
+        }
+        printf("Modules loading time: %4.0fms/image\n", 1000*(omp_get_wtime()-t00)/n_images);
         double t0 = omp_get_wtime();
         for (size_t j = 0; j < n_images; j++) {
             strong_pixels_from_modules = 0;
             image_modules_t* mods = modules[j];
-#pragma omp parallel for default(none) shared(n_images, mods, mini_spotfinders, n_modules, mini_results) reduction(+:strong_pixels_from_modules) schedule(dynamic)
+#pragma omp parallel for default(none) shared(n_images, mods, mini_spotfinders, n_modules, mini_results) reduction(+:strong_pixels_from_modules) schedule(runtime)
             for (size_t n = 0; n < n_modules; n++) {
                 strong_pixels_from_modules += spotfinder_standard_dispersion_modules(
                   mini_spotfinders[omp_get_thread_num()], mods, n);
@@ -125,14 +152,16 @@ double time_parallelism_over_modules(h5read_handle* obj,
         }
         for (int i = 0; i < n_images; i++) h5read_free_image_modules(modules[i]);
         return omp_get_wtime() - t0;
+
     } else {
+
         uint32_t strong_pixels_from_modules = 0;
         image_modules_t* modules;
         double t0 = omp_get_wtime();
         for (size_t j = 0; j < n_images; j++) {
             modules = h5read_get_image_modules(obj, j);
             strong_pixels_from_modules = 0;
-#pragma omp parallel for default(none) shared(n_images, modules, mini_spotfinders, n_modules, mini_results) reduction(+:strong_pixels_from_modules) schedule(dynamic)
+#pragma omp parallel for default(none) shared(n_images, modules, mini_spotfinders, n_modules, mini_results) reduction(+:strong_pixels_from_modules) schedule(runtime)
             for (size_t n = 0; n < n_modules; n++) {
                 strong_pixels_from_modules += spotfinder_standard_dispersion_modules(
                   mini_spotfinders[omp_get_thread_num()], modules, n);
@@ -201,6 +230,10 @@ int main(int argc, char** argv) {
     int num_spotfinders;
 #ifdef _OPENMP
     printf("OMP found; have %d threads\n", omp_get_max_threads());
+    omp_sched_t kind;
+    int chunk;
+    omp_get_schedule(&kind, &chunk);
+    printf("OMP_SCHEDULE:%d,%d\n", kind, chunk);
     num_spotfinders = omp_get_max_threads();
 #endif
 #ifndef _OPENMP
@@ -231,7 +264,7 @@ int main(int argc, char** argv) {
 
     printf("Finding spots in %d images\n", n_images);
 
-    // time_image_loading(obj, n_images);
+    time_image_loading(obj, n_images);
 
     int baseline_results[n_images];
     int full_results[n_images];
@@ -241,13 +274,12 @@ int main(int argc, char** argv) {
     int preload_results[n_images];
 
     double baseline_time =
-      time_baselines(obj, n_images, spotfinders, baseline_results, 1);
-    double over_images_time =
-      time_parallelism_over_images(obj, n_images, spotfinders, full_results, 1);
+       time_baselines(obj, n_images, spotfinders, baseline_results, 0);
+    double over_images_time =time_parallelism_over_images(obj, n_images, spotfinders, full_results, 0);
     double over_modules_time = time_parallelism_over_modules(
-      obj, n_images, n_modules, mini_spotfinders, modules_results, 1);
+      obj, n_images, n_modules, mini_spotfinders, modules_results, 0);
     double over_modules_noblit_time = time_parallelism_over_modules_noblit(
-      obj, n_images, noblit_spotfinders, modules_results_nb, 1);
+      obj, n_images, noblit_spotfinders, modules_results_nb, 0);
 
     for (size_t j = 0; j < num_spotfinders; j++) {
         spotfinder_free(mini_spotfinders[j]);
@@ -256,6 +288,11 @@ int main(int argc, char** argv) {
     }
 
     h5read_free(obj);
+
+    for (int i=0; i<n_images; i++) {
+        printf("%d ", baseline_results[i]);
+    }
+    printf("\n");
 
     printf(
       "\nTime to run with parallel over:\n\
