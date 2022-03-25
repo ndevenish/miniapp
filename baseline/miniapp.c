@@ -45,7 +45,7 @@ double time_baselines(h5read_handle* obj,
                       void** spotfinders,
                       int* full_results,
                       int preload) {
-    int n_images_to_use = (n_images > 20 && omp_get_max_threads() > 1) ? 20 : n_images;
+    int n_images_to_use = (n_images > 10 && omp_get_max_threads() > 1) ? 10 : n_images;
     if (preload) {
 
         int temp;
@@ -122,6 +122,57 @@ double time_parallelism_over_images(h5read_handle* obj,
         }
         return omp_get_wtime() - t0;
     }
+}
+
+double time_parallelism_over_images_precalc(h5read_handle* obj,
+                                    int n_images,
+                                    void** precalc_spotfinders,
+                                    int* precalc_results,
+                                    int preload) {
+
+    if (preload) {
+
+        int temp;
+        double t00 = omp_get_wtime();
+        image_precalc_mask_t* images[n_images];
+        h5read_handle_precalc* obj_precalc = h5read_precalc(obj);
+        for (int i = 0; i < n_images; i++) {
+            images[i] = h5read_get_image_and_mask_kernels(obj_precalc, i);
+        }
+        double t0 = omp_get_wtime();
+#pragma omp parallel for default(none) private(temp) \
+  shared(n_images, obj_precalc, precalc_spotfinders, precalc_results, images) schedule(runtime)
+        for (size_t j = 0; j < n_images; j++) {
+            temp = spotfinder_standard_dispersion_precalc(precalc_spotfinders[omp_get_thread_num()],
+                                                  images[j]);
+            precalc_results[j] = temp;
+        }
+        for (int i = 0; i < n_images; i++) {
+            h5read_free_image_and_mask_kernels(images[i]);
+        }
+
+        h5read_free_precalc(obj_precalc, 0);
+        return omp_get_wtime() - t0;
+
+    } else {
+
+        int temp;
+        image_precalc_mask_t* image;
+        double t0 = omp_get_wtime();
+        h5read_handle_precalc* obj_precalc = h5read_precalc(obj);
+#pragma omp parallel for default(none) private(temp, image) \
+  shared(n_images, obj_precalc, precalc_spotfinders, precalc_results) schedule(runtime)
+        for (size_t j = 0; j < n_images; j++) {
+            image = h5read_get_image_and_mask_kernels(obj_precalc, j);
+            temp =
+              spotfinder_standard_dispersion_precalc(precalc_spotfinders[omp_get_thread_num()], image);
+            h5read_free_image_and_mask_kernels(image);
+            precalc_results[j] = temp;
+        }
+        h5read_free_precalc(obj_precalc, 0);
+        return omp_get_wtime() - t0;
+    }
+    return 1.0;
 }
 
 double time_parallelism_over_modules(h5read_handle* obj,
@@ -242,10 +293,12 @@ int main(int argc, char** argv) {
     void* mini_spotfinders[num_spotfinders];
     void* spotfinders[num_spotfinders];
     void* noblit_spotfinders[num_spotfinders];
+    void* precalc_spotfinders[num_spotfinders];
     for (size_t j = 0; j < num_spotfinders; j++) {
         mini_spotfinders[j] = spotfinder_create(module_fast_size, module_slow_size);
         spotfinders[j] = spotfinder_create(image_fast_size, image_slow_size);
         noblit_spotfinders[j] = spotfinder_create_new(image_fast_size, image_slow_size);
+        precalc_spotfinders[j] = spotfinder_create_precalc(image_fast_size, image_slow_size);
     }
     int test_count = 0;
     image_t* image;
@@ -264,48 +317,52 @@ int main(int argc, char** argv) {
 
     printf("Finding spots in %d images\n", n_images);
 
-    time_image_loading(obj, n_images);
+    //time_image_loading(obj, n_images);
 
     int baseline_results[n_images];
     int full_results[n_images];
     int modules_results[n_images];
     int modules_results_nb[n_images];
-
+    int precalc_results[n_images];
     int preload_results[n_images];
 
     double baseline_time =
        time_baselines(obj, n_images, spotfinders, baseline_results, 0);
     double over_images_time =time_parallelism_over_images(obj, n_images, spotfinders, full_results, 0);
-    double over_modules_time = time_parallelism_over_modules(
+    double over_modules_time =time_parallelism_over_modules(
       obj, n_images, n_modules, mini_spotfinders, modules_results, 0);
-    double over_modules_noblit_time = time_parallelism_over_modules_noblit(
+    double over_modules_noblit_time =time_parallelism_over_modules_noblit(
       obj, n_images, noblit_spotfinders, modules_results_nb, 0);
+    double over_images_precalc_time = time_parallelism_over_images_precalc(obj, n_images, precalc_spotfinders, precalc_results, 0);
 
     for (size_t j = 0; j < num_spotfinders; j++) {
         spotfinder_free(mini_spotfinders[j]);
         spotfinder_free(spotfinders[j]);
         spotfinder_free_new(noblit_spotfinders[j]);
+        spotfinder_free_precalc(precalc_spotfinders[j]);
     }
 
     h5read_free(obj);
 
-    for (int i=0; i<n_images; i++) {
-        printf("%d ", baseline_results[i]);
-    }
-    printf("\n");
-
     printf(
       "\nTime to run with parallel over:\n\
-        Nothing (baseline)             %4.0f ms/image  (%2.2fx speedup)\n\
+        Nothing (baseline):            %4.0f ms/image  (%2.2fx speedup)\n\
         Images:                        %4.0f ms/image  (%2.2fx speedup)\n\
+        Images (precalc):              %4.0f ms/image  (%2.2fx speedup)\n\
         Modules:                       %4.0f ms/image  (%2.2fx speedup)\n\
         Modules (no blit):             %4.0f ms/image  (%2.2fx speedup)\n",
       baseline_time / n_images * 1000,
       baseline_time / baseline_time,
+
       over_images_time / n_images * 1000,
       baseline_time / over_images_time,
+
+      over_images_precalc_time / n_images * 1000,
+      baseline_time / over_images_precalc_time,
+
       over_modules_time / n_images * 1000,
       baseline_time / over_modules_time,
+
       over_modules_noblit_time / n_images * 1000,
       baseline_time / over_modules_noblit_time);
 
@@ -341,15 +398,17 @@ int main(int argc, char** argv) {
                         "P "
                         "Images "
                         "Modules "
-                        "\"Modules (no blit)\"\n");
+                        "\"Modules (no blit)\" "
+                        "Precalc\n");
             }
             fprintf(fp,
-                    "%d %d %4.0f %4.0f %4.0f\n",
+                    "%d %d %4.0f %4.0f %4.0f %4.0f\n",
                     n_images,
                     omp_get_max_threads(),
                     over_images_time / n_images * 1000,
                     over_modules_time / n_images * 1000,
-                    over_modules_noblit_time / n_images * 1000);
+                    over_modules_noblit_time / n_images * 1000,
+                    over_images_precalc_time / n_images * 1000);
         }
         fclose(fp);
     }

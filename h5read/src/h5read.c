@@ -39,6 +39,11 @@ struct _h5read_handle {
     size_t mask_size;      ///< Total size(in pixels) of mask
 };
 
+struct _h5read_handle_precalc {
+    h5read_handle *obj;
+    int *mask_kernels;
+};
+
 void h5read_free(h5read_handle *obj) {
     for (int i = 0; i < obj->data_file_count; i++) {
         H5Dclose(obj->data_files[i].dataset);
@@ -51,6 +56,12 @@ void h5read_free(h5read_handle *obj) {
     free(obj->module_mask);
 
     free(obj);
+}
+
+void h5read_free_precalc(h5read_handle_precalc *obj_precalc, int free_base_obj) {
+    if (free_base_obj) h5read_free(obj_precalc->obj);
+    free(obj_precalc->mask_kernels);
+    free(obj_precalc);
 }
 
 /// Get the number of frames available
@@ -67,6 +78,12 @@ size_t h5read_get_image_fast(h5read_handle *obj) {
 }
 
 void h5read_free_image(image_t *i) {
+    free(i->data);
+    // Mask is a pointer to the file-global file mask so isn't freed
+    free(i);
+}
+
+void h5read_free_image_and_mask_kernels(image_precalc_mask_t *i) {
     free(i->data);
     // Mask is a pointer to the file-global file mask so isn't freed
     free(i);
@@ -261,6 +278,23 @@ image_t *h5read_get_image(h5read_handle *obj, size_t n) {
     result->data = malloc(sizeof(image_t_type) * obj->slow * obj->fast);
     // Use our read-into-buffer function to fill this
     h5read_get_image_into(obj, n, result->data);
+
+    return result;
+}
+
+image_precalc_mask_t *h5read_get_image_and_mask_kernels(h5read_handle_precalc *obj_precalc, size_t n) {
+    // Make an image_t to write into
+    image_precalc_mask_t *result = malloc(sizeof(image_precalc_mask_t));
+    // h5read_handle *obj = obj_precalc->obj;
+    result->mask = obj_precalc->obj->mask;
+    result->fast = obj_precalc->obj->fast;
+    result->slow = obj_precalc->obj->slow;
+    // Create the buffer here. This will be freed by h5read_free_image
+    result->data = malloc(sizeof(image_t_type) * obj_precalc->obj->slow * obj_precalc->obj->fast);
+    // Use our read-into-buffer function to fill this
+    h5read_get_image_into(obj_precalc->obj, n, result->data);
+
+    result->mask_kernels = obj_precalc->mask_kernels;
 
     return result;
 }
@@ -721,4 +755,77 @@ h5read_handle *h5read_parse_standard_args(int argc, char **argv) {
         exit(1);
     }
     return handle;
+}
+
+void calculate_mask_kernels(h5read_handle *obj, int* mask_kernels) {
+    size_t ysize = obj->slow;
+    size_t xsize = obj->fast;
+    int kxsize = 3;
+    int kysize = 3;
+
+    int *mask_sat = malloc(sizeof(int) * obj->slow * obj->fast);
+
+    for (size_t j = 0, k = 0; j < ysize; ++j) {
+        int m = 0;
+        for (size_t i = 0; i < xsize; ++i, ++k) {
+            int mm = (obj->mask[k]) ? 1 : 0;
+            m += mm;
+            if (j == 0) {
+                mask_sat[k] = m;
+            } else {
+                mask_sat[k] = mask_sat[k - xsize] + m;
+            }
+        }
+    }
+
+    for (size_t j = 0; j < ysize; ++j) {
+        for (size_t i = 0; i < xsize; ++i) {
+            size_t k = j * xsize + i;
+
+            int i0 = i - kxsize - 1, i1 = i + kxsize;
+            int j0 = j - kysize - 1, j1 = j + kysize;
+            i1 = i1 < xsize ? i1 : xsize - 1;
+            j1 = j1 < ysize ? j1 : ysize - 1;
+            int k0 = j0 * xsize;
+            int k1 = j1 * xsize;
+
+            // Compute the number of points valid in the local area.
+            int m = 0;
+            if (i0 >= 0 && j0 >= 0) {
+                int d00 = mask_sat[k0 + i0];
+                int d10 = mask_sat[k1 + i0];
+                int d01 = mask_sat[k0 + i1];
+                m += d00 - (d10 + d01);
+            } else if (i0 >= 0) {
+                int  d10 = mask_sat[k1 + i0];
+                m -= d10;
+            } else if (j0 >= 0) {
+                int  d01 = mask_sat[k0 + i1];
+                m -= d01;
+            }
+            int d11 = mask_sat[k1 + i1];
+            m += d11;
+            mask_kernels[k] = m;
+        }
+    }
+
+    free(mask_sat);
+}
+
+h5read_handle_precalc *h5read_parse_standard_args_precalc(int argc, char **argv) {
+    h5read_handle_precalc *new_handle = calloc(1, sizeof(h5read_handle_precalc));
+    // h5read_handle *old_handle = h5read_parse_standard_args(argc, argv);
+    new_handle->obj = h5read_parse_standard_args(argc, argv);
+    // old_handle;
+    new_handle->mask_kernels = malloc(sizeof(int)*(new_handle->obj->slow)*(new_handle->obj->fast));
+    calculate_mask_kernels(new_handle->obj, new_handle->mask_kernels);
+    return new_handle;
+}
+
+h5read_handle_precalc *h5read_precalc(h5read_handle *obj) {
+    h5read_handle_precalc *new_handle = (h5read_handle_precalc*)calloc(1, sizeof(h5read_handle_precalc));
+    new_handle->obj = obj;
+    new_handle->mask_kernels = (int*)malloc(sizeof(int)*(new_handle->obj->slow)*(new_handle->obj->fast));
+    calculate_mask_kernels(new_handle->obj, new_handle->mask_kernels);
+    return new_handle;
 }

@@ -10,6 +10,8 @@ extern "C" {
 
 typedef struct _h5read_handle h5read_handle;
 
+typedef struct _h5read_handle_precalc h5read_handle_precalc;
+
 // Define a data type alias so that other users don't have to hardcode
 typedef uint16_t image_t_type;
 
@@ -19,6 +21,14 @@ typedef struct image_t {
     size_t slow;
     size_t fast;
 } image_t;
+
+typedef struct image_precalc_mask_t {
+    uint16_t *data;
+    uint8_t *mask;
+    int *mask_kernels;
+    size_t slow;
+    size_t fast;
+} image_precalc_mask_t;
 
 /* data as modules i.e. 3D array */
 typedef struct image_modules_t {
@@ -38,6 +48,9 @@ h5read_handle *h5read_generate_samples();
 /// Cleanup and release an h5 file object
 void h5read_free(h5read_handle *);
 
+/// Cleanup and release an h5 file object (with module kernel precalculation)
+void h5read_free_precalc(h5read_handle_precalc *obj_precalc, int free_base_obj);
+
 /// Get the number of images in a dataset
 size_t h5read_get_number_of_images(h5read_handle *obj);
 /// Get the number of image pixels in the slow dimension
@@ -56,6 +69,11 @@ image_t *h5read_get_image(h5read_handle *obj, size_t number);
 /// Free a previously read image
 void h5read_free_image(image_t *image);
 
+/// Read an image from a dataset and calculate the mask SAT
+image_precalc_mask_t *h5read_get_image_and_mask_kernels(h5read_handle_precalc *obj, size_t n);
+/// Free a previously read image & mask kernel array
+void h5read_free_image_and_mask_kernels(image_precalc_mask_t *image);
+
 /** Read an image from a dataset into a preallocated buffer.
  *
  * The caller is responsible for both allocating and releasing the image
@@ -72,6 +90,12 @@ void h5read_free_image_modules(image_modules_t *modules);
 /// Parse basic command arguments with verbose, filename in form:
 ///     Usage: <prog> [-h|--help] [-v] [FILE.nxs]
 h5read_handle *h5read_parse_standard_args(int argc, char **argv);
+
+/// Parse basic command arguments when precalculating mask kernels
+h5read_handle_precalc *h5read_parse_standard_args_precalc(int argc, char **argv);
+
+/// Precalculate mask kernels for a given h5read_handle
+h5read_handle_precalc *h5read_precalc(h5read_handle *obj);
 
 #ifdef __cplusplus
 }

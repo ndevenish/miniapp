@@ -20,7 +20,6 @@ find_package(Dials REQUIRED)
 find_package(HDF5 REQUIRED)
 find_package(benchmark REQUIRED)
 find_package(OpenMP)
-
 add_subdirectory(../h5read h5read)
 
 add_library(baseline SHARED baseline.cpp )

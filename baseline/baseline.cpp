@@ -1,4 +1,3 @@
-
 #include "baseline.h"
 
 #include <dials/algorithms/image/filter/distance.h>
@@ -324,6 +323,205 @@ class DispersionThreshold {
 
         // Compute the image threshold
         compute_threshold(table, src, mask, gain, dst);
+    }
+
+  private:
+    int2 image_size_;
+    int2 kernel_size_;
+    double nsig_b_;
+    double nsig_s_;
+    double threshold_;
+    int min_count_;
+    std::vector<char> buffer_;
+};
+
+class DispersionThresholdPrecalc {
+  public:
+    /**
+     * Enable more efficient memory usage by putting components required for the
+     * summed area table closer together in memory
+     */
+    template <typename T>
+    struct Data {
+        T x;
+        T y;
+    };
+
+    DispersionThresholdPrecalc(int2 image_size,
+                        int2 kernel_size,
+                        double nsig_b,
+                        double nsig_s,
+                        double threshold,
+                        int min_count)
+        : image_size_(image_size),
+          kernel_size_(kernel_size),
+          nsig_b_(nsig_b),
+          nsig_s_(nsig_s),
+          threshold_(threshold),
+          min_count_(min_count) {
+        // Check the input
+        DIALS_ASSERT(threshold_ >= 0);
+        DIALS_ASSERT(nsig_b >= 0 && nsig_s >= 0);
+        DIALS_ASSERT(image_size.all_gt(0));
+        DIALS_ASSERT(kernel_size.all_gt(0));
+
+        // Ensure the min counts are valid
+        std::size_t num_kernel = (2 * kernel_size[0] + 1) * (2 * kernel_size[1] + 1);
+        if (min_count_ <= 0) {
+            min_count_ = num_kernel;
+        } else {
+            DIALS_ASSERT(min_count_ <= num_kernel && min_count_ > 1);
+        }
+
+        // Allocate the buffer
+        std::size_t element_size = sizeof(Data<double>);
+        buffer_.resize(element_size * image_size[0] * image_size[1]);
+    }
+
+    /**
+     * Compute the summed area tables for the mask, src and src^2.
+     * @param src The input array
+     * @param mask The mask array
+     */
+    template <typename T>
+    double compute_sat(af::ref<Data<T>> table,
+                       const af::const_ref<T, af::c_grid<2>> &src,
+                       const af::const_ref<bool, af::c_grid<2>> &mask) {
+        double t0 = omp_get_wtime();
+        // Largest value to consider
+        const T BIG = (1 << 24);  // About 16m counts
+
+        // Get the size of the image
+        std::size_t ysize = src.accessor()[1];  // 1028/4148 = FAST
+        std::size_t xsize = src.accessor()[0];  // 512/4362 = SLOW
+
+        // Create the summed area table
+        for (std::size_t j = 0, k = 0; j < ysize; ++j) {
+            T x = 0;
+            T y = 0;
+            for (std::size_t i = 0; i < xsize; ++i, ++k) {
+                int mm = mask[k] ? 1 : 0;
+                x += mm * src[k];
+                y += mm * src[k] * src[k];
+                if (j == 0) {
+                    table[k].x = x;
+                    table[k].y = y;
+                } else {
+                    table[k].x = table[k - xsize].x + x;
+                    table[k].y = table[k - xsize].y + y;
+                }
+            }
+        }
+        return omp_get_wtime() - t0;
+    }
+
+    /**
+     * Compute the threshold
+     * @param src - The input array
+     * @param mask - The mask array
+     * @param dst The output array
+     */
+
+    template <typename T>
+    double compute_threshold(af::ref<Data<T>> table,
+                             const af::const_ref<T, af::c_grid<2>> &src,
+                             const af::const_ref<bool, af::c_grid<2>> &mask,
+                             const int* mask_kernel,
+                             af::ref<bool, af::c_grid<2>> dst) {
+        double t0 = omp_get_wtime();
+        // Get the size of the image
+        // I HAVE SWAPPED THESE TO MATCH THE DATA INDICES
+        std::size_t ysize = src.accessor()[1];
+        std::size_t xsize = src.accessor()[0];
+
+        // The kernel size
+        int kxsize = kernel_size_[1];
+        int kysize = kernel_size_[0];
+
+        // Calculate the local mean at every point
+        //#pragma omp parallel for default(none) shared(mask, dst, min_count_, src, threshold_, nsig_b_, nsig_s_, table, xsize, ysize, kxsize, kysize) //private(k)
+        for (std::size_t j = 0; j < ysize; ++j) {
+            for (std::size_t i = 0; i < xsize; ++i) {
+                size_t k = j * xsize + i;
+                dst[k] = false;
+
+                // if (src[k] <= threshold_) {
+                //     continue;
+                // } else {
+                    int i0 = i - kxsize - 1, i1 = i + kxsize;
+                    int j0 = j - kysize - 1, j1 = j + kysize;
+                    i1 = i1 < xsize ? i1 : xsize - 1;
+                    j1 = j1 < ysize ? j1 : ysize - 1;
+                    int k0 = j0 * xsize;
+                    int k1 = j1 * xsize;
+
+                    // Compute the number of points valid in the local area,
+                    // the sum of the pixel values and the sum of the squared pixel
+                    // values.
+                    double x = 0;
+                    double y = 0;
+                    if (i0 >= 0 && j0 >= 0) {
+                        const Data<T> &d00 = table[k0 + i0];
+                        const Data<T> &d10 = table[k1 + i0];
+                        const Data<T> &d01 = table[k0 + i1];
+                        x += d00.x - (d10.x + d01.x);
+                        y += d00.y - (d10.y + d01.y);
+                    } else if (i0 >= 0) {
+                        const Data<T> &d10 = table[k1 + i0];
+                        x -= d10.x;
+                        y -= d10.y;
+                    } else if (j0 >= 0) {
+                        const Data<T> &d01 = table[k0 + i1];
+                        x -= d01.x;
+                        y -= d01.y;
+                    }
+                    const Data<T> &d11 = table[k1 + i1];
+                    x += d11.x;
+                    y += d11.y;
+                    double m = (double) mask_kernel[k];
+
+                    // Compute the thresholds
+                    if (src[k] > threshold_ && x >= 0 && mask[k] && m >= min_count_) {
+                        double a = m * y - x * x - x * (m - 1);
+                        double b = m * src[k] - x;
+                        double c = x * nsig_b_ * std::sqrt(2 * (m - 1));
+                        double d = nsig_s_ * std::sqrt(x * m);
+                        dst[k] = a > c && b > d;
+                    }
+                // }
+            }
+        }
+        return omp_get_wtime() - t0;
+    }
+
+    /**
+     * Compute the threshold for the given image and mask.
+     * @param src - The input image array.
+     * @param mask - The mask array.
+     * @param dst - The destination array.
+     */
+    template <typename T>
+    void threshold(const af::const_ref<T, af::c_grid<2>> &src,
+                   const af::const_ref<bool, af::c_grid<2>> &mask,
+                   const int* mask_kernels,
+                   af::ref<bool, af::c_grid<2>> dst) {
+        // check the input
+        DIALS_ASSERT(src.accessor().all_eq(image_size_));
+        DIALS_ASSERT(src.accessor().all_eq(mask.accessor()));
+        DIALS_ASSERT(src.accessor().all_eq(dst.accessor()));
+
+        // Get the table
+        DIALS_ASSERT(sizeof(T) <= sizeof(double));
+
+        // Cast the buffer to the table type
+        af::ref<Data<T>> table(reinterpret_cast<Data<T> *>(&buffer_[0]),
+                               buffer_.size());
+
+        // compute the summed area table
+        double sat_time = compute_sat(table, src, mask);
+
+        // Compute the image threshold
+        double thresh_time = compute_threshold(table, src, mask, mask_kernels, dst);
     }
 
   private:
@@ -1103,6 +1301,40 @@ class _spotfind_context {
     }
 };
 
+template <>
+class _spotfind_context <image_t_type, double, baseline::DispersionThresholdPrecalc>{
+  public:
+    af::ref<bool, af::c_grid<2>> dst;
+    bool *_dest_store = nullptr;
+    af::tiny<int, 2> size;
+
+    af::ref<double, af::c_grid<2>> src_converted;
+    double *_src_converted_store;
+
+    baseline::DispersionThresholdPrecalc algo;
+
+    _spotfind_context(size_t width, size_t height)
+        : size(width, height),
+          algo(size, kernel_size_, nsig_b_, nsig_s_, threshold_, min_count_) {
+        _dest_store = new bool[width * height];
+        dst = af::ref<bool, af::c_grid<2>>(_dest_store, af::c_grid<2>(width, height));
+        // Make a place to convert sources to the internal type
+        _src_converted_store = new double[width * height];
+        src_converted = af::ref<double, af::c_grid<2>>(
+          _src_converted_store, af::c_grid<2>(width, height));
+    }
+    ~_spotfind_context() {
+        delete[] _dest_store;
+        delete[] _src_converted_store;
+    }
+
+    void threshold(const af::const_ref<double, af::c_grid<2>> &src,
+                   const af::const_ref<bool, af::c_grid<2>> &mask,
+                   const int *mask_kernels) {
+        algo.threshold(src_converted, mask, mask_kernels, dst);
+    }
+};
+
 void *spotfinder_create(size_t width, size_t height) {
     return new _spotfind_context<image_t_type, double>(width, height);
 }
@@ -1125,6 +1357,17 @@ void *spotfinder_create_new(size_t width, size_t height) {
 void spotfinder_free_new(void *context) {
     delete reinterpret_cast<
       _spotfind_context<image_t_type, double, baseline::DispersionThresholdModules> *>(
+      context);
+}
+
+void *spotfinder_create_precalc(size_t width, size_t height) {
+    return new _spotfind_context<image_t_type,
+                                 double,
+                                 baseline::DispersionThresholdPrecalc>(width, height);
+}
+void spotfinder_free_precalc(void *context) {
+    delete reinterpret_cast<
+      _spotfind_context<image_t_type, double, baseline::DispersionThresholdPrecalc> *>(
       context);
 }
 
@@ -1217,6 +1460,30 @@ uint32_t spotfinder_standard_dispersion_modules_new(void *context, image_t *imag
     }
 
     ctx->threshold(ctx->src_converted, mask);
+
+    // Let's count the number of destination pixels for now
+    uint32_t pixel_count = 0;
+    for (int i = 0; i < (ctx->size[0] * ctx->size[1]); ++i) {
+        pixel_count += ctx->dst[i];
+    }
+    return pixel_count;
+}
+
+uint32_t spotfinder_standard_dispersion_precalc(void *context, image_precalc_mask_t *image) {
+    auto ctx = reinterpret_cast<
+      _spotfind_context<image_t_type, double, baseline::DispersionThresholdPrecalc> *>(
+      context);
+
+    // mask needs to convert uint8_t to bool
+    auto mask = af::const_ref<bool, af::c_grid<2>>(
+      reinterpret_cast<bool *>(image->mask), af::c_grid<2>(ctx->size[0], ctx->size[1]));
+
+    // Convert all items from the source image to double
+    for (int i = 0; i < (ctx->size[0] * ctx->size[1]); ++i) {
+        ctx->src_converted[i] = image->data[i];
+    }
+
+    ctx->threshold(ctx->src_converted, mask, image->mask_kernels);
 
     // Let's count the number of destination pixels for now
     uint32_t pixel_count = 0;
