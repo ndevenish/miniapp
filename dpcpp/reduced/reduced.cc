@@ -445,6 +445,7 @@ int main(int argc, char** argv) {
 
                         // Write the new running total over the oldest data
                         PipedPixelsArray new_row = sum + prev_row;
+                        rows[oldest_row_index][block] = new_row;
 
                         // Now, calculate the kernel sum for each of these
                         auto kernel_sum = new_row - oldest_row;
@@ -463,8 +464,6 @@ int main(int argc, char** argv) {
                             //   &destination_data_h[(y - KERNEL_HEIGHT) * fast
                             //                       + block * BLOCK_SIZE]) = kernel_sum;
                         }
-
-                        rows[oldest_row_index][block] = new_row;
                     }
                 }
                 });
