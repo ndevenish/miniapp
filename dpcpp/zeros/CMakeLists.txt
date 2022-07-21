@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 
 set(CMAKE_CXX_COMPILER dpcpp)
+set(CMAKE_C_COMPILER gcc)
 project(dpcpp CXX)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/../../cmake/Modules")
@@ -12,6 +13,7 @@ include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
 
 find_package(FPGA REQUIRED)
+include_directories(../common/include)
 
 add_subdirectory(../../h5read h5read)
 add_subdirectory(../../dependencies/fmt fmt)

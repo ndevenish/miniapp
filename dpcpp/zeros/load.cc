@@ -1,26 +1,17 @@
 #include <fmt/color.h>
 #include <fmt/core.h>
 
-#include <CL/sycl.hpp>
-#include <CL/sycl/INTEL/fpga_extensions.hpp>
 #include <algorithm>
 #include <iostream>
 
+#include "common.hpp"
 #include "h5read.h"
-
-constexpr auto R = "\033[31m";
-constexpr auto G = "\033[32m";
-constexpr auto Y = "\033[33m";
-constexpr auto B = "\033[34m";
-constexpr auto GRAY = "\033[37m";
-constexpr auto BOLD = "\033[1m";
-constexpr auto NC = "\033[0m";
 
 using namespace sycl;
 
 class ZeroCounter;
 
-using PrefetchingLSU = INTEL::lsu<INTEL::prefetch<true>>;
+using PrefetchingLSU = SYCL_INTEL::lsu<SYCL_INTEL::prefetch<true>>;
 
 int main(int argc, char** argv) {
     auto reader = H5Read(argc, argv);
@@ -30,9 +21,9 @@ int main(int argc, char** argv) {
 //  - the FPGA emulator device (CPU emulation of the FPGA)
 //  - the FPGA device (a real FPGA)
 #if defined(FPGA_EMULATOR)
-    INTEL::fpga_emulator_selector device_selector;
+    SYCL_INTEL::fpga_emulator_selector device_selector;
 #else
-    INTEL::fpga_selector device_selector;
+    SYCL_INTEL::fpga_selector device_selector;
 #endif
     queue Q(device_selector, property::queue::enable_profiling{});
 #else
