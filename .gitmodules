@@ -4,3 +4,6 @@
 [submodule "dependencies/span"]
 	path = dependencies/span
 	url = https://github.com/tcbrindle/span.git
+[submodule "dependencies/argparse"]
+	path = dependencies/argparse
+	url = https://github.com/ndevenish/argparse
