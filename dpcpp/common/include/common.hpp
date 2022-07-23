@@ -36,12 +36,10 @@ sycl::queue initialize_queue() {
 #endif
 
     // Print information about the device we are using
-    std::string device_kind =
-      Q.get_device().is_cpu()
-        ? "CPU"
-        : Q.get_device().is_gpu()
-            ? "GPU"
-            : Q.get_device().is_accelerator() ? "FPGA" : "Unknown";
+    std::string device_kind = Q.get_device().is_cpu()           ? "CPU"
+                              : Q.get_device().is_gpu()         ? "GPU"
+                              : Q.get_device().is_accelerator() ? "FPGA"
+                                                                : "Unknown";
     printf("Using %s%s%s Device: %s%s%s\n\n",
            BOLD,
            device_kind.c_str(),
@@ -52,4 +50,82 @@ sycl::queue initialize_queue() {
     return Q;
 }
 
+std::string device_kind(const sycl::device &device) {
+    return device.is_cpu()           ? "CPU"
+           : device.is_gpu()         ? "GPU"
+           : device.is_accelerator() ? "FPGA"
+                                     : "Unknown";
+}
+/**
+ * FPGA Selector that allows choosing a specific indexed FPGA.
+ * 
+ * A list is built of all Intel FPGA platform devices, and these are
+ * sorted by name to make an ordered list. An index can be used to
+ * reference a particular, consistently ordered FPGA.
+ */
+class fpga_index_selector : public sycl::device_selector {
+    // The intel::fpga_selector uses this to discover devices
+    static constexpr auto HARDWARE_PLATFORM_NAME = "Intel(R) FPGA SDK for OpenCL(TM)";
+    static constexpr auto EMULATION_PLATFORM_NAME =
+      "Intel(R) FPGA Emulation Platform for OpenCL(TM)";
+    std::string indexed_device_name;
+
+  public:
+    static std::vector<std::string> get_device_list(void) {
+        std::vector<std::string> devices;
+        // Iterate over all platforms to find the FPGA ones
+        for (auto const &platform : sycl::platform::get_platforms()) {
+            if (platform.get_info<sycl::info::platform::name>()
+                != HARDWARE_PLATFORM_NAME) {
+                continue;
+            }
+            // We've found an FPGA platform. Get the name of all devices
+            for (auto &device : platform.get_devices()) {
+                auto device_name = device.get_info<sycl::info::device::name>();
+                if (std::find(devices.begin(), devices.end(), device_name)
+                    != devices.end()) {
+                    // We've already enumerated this device. Skip.
+                    continue;
+                }
+                devices.push_back(device_name);
+            }
+        }
+        // Sort the list of all FPGAs in the system
+        std::sort(devices.begin(), devices.end());
+        return devices;
+    }
+    /**
+     * @param selector The index of FPGA card to select.
+     */
+    fpga_index_selector(int selector = 0) {
+        auto devices = get_device_list();
+
+        if (selector + 1 > devices.size()) {
+            throw std::runtime_error(
+              fmt::format("Error: Asked for device ({}) that is higher than the number "
+                          "of devices ({})",
+                          selector + 1,
+                          devices.size()));
+        }
+        indexed_device_name = devices[selector];
+    }
+
+    /// Used by SYCL to choose a device. Only scores devices that match the expected names.
+    virtual int operator()(const sycl::device &device) const {
+#if defined(FPGA_EMULATOR)
+        // if we've specified FPGA emulator, then let's always choose that, regardless
+        // of system-FPGA-platform-order.
+        const sycl::platform &pf = device.get_platform();
+        const std::string &platform_name = pf.get_info<sycl::info::platform::name>();
+        if (platform_name == EMULATION_PLATFORM_NAME) {
+            return 10000;
+        }
+#else
+        if (device.get_info<sycl::info::device::name>() == indexed_device_name) {
+            return 10000;
+        }
+#endif
+        return -1;
+    };
+};
 #endif
