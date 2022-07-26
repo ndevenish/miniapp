@@ -7,3 +7,4 @@
 [submodule "dependencies/argparse"]
 	path = dependencies/argparse
 	url = https://github.com/ndevenish/argparse
+    ignore = untracked
