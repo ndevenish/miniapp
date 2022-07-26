@@ -1,8 +1,11 @@
 #ifndef _DPCPP_COMMON_H
 #define _DPCPP_COMMON_H
 
+#include <fmt/core.h>
+
 #include <CL/sycl.hpp>
-#include <cstdio>
+#include <argparse/argparse.hpp>
+#include <optional>
 
 #if __INTEL_LLVM_COMPILER < 20220000
 #include <CL/sycl/INTEL/fpga_extensions.hpp>
@@ -127,5 +130,87 @@ class fpga_index_selector : public sycl::device_selector {
 #endif
         return -1;
     };
+};
+
+template <class T>
+class FPGAArgumentParser;
+
+struct FPGAArguments {
+  public:
+    auto device() -> sycl::device {
+        if (!_device.has_value()) {
+            _device = fpga_index_selector(this->device_index).select_device();
+        }
+        return _device.value();
+    }
+
+  private:
+    std::optional<sycl::device> _device{};
+    int device_index = 0;
+
+    template <class T>
+    friend class FPGAArgumentParser;
+};
+
+template <class ARGS = FPGAArguments>
+class FPGAArgumentParser : public argparse::ArgumentParser {
+    static_assert(std::is_base_of<ARGS, FPGAArguments>::value,
+                  "Must be templated against a subclass of FPGAArgument");
+
+  public:
+    typedef ARGS ArgumentType;
+
+    FPGAArgumentParser(std::string version = "0.1.0") : ArgumentParser("", version) {
+        this->add_argument("-d", "--device")
+          .help("Index of the FPGA device to target.")
+          .default_value(0)
+          .metavar("INDEX")
+          .action([&](const std::string &value) {
+              _arguments.device_index = std::stoi(value);
+              return _arguments.device_index;
+          });
+        this->add_argument("--list-devices")
+          .help("List the order of FPGA devices.")
+          .implicit_value(false)
+          .action([](const std::string &value) {
+              auto devices = fpga_index_selector::get_device_list();
+              int index = 0;
+              fmt::print("System devices:\n");
+              for (auto &device : devices) {
+                  fmt::print("  {:2d}: {}{}{}\n", index, BOLD, device, NC);
+                  ++index;
+              }
+              std::exit(0);
+          });
+    }
+    /** Retrieve the selected device.
+    *
+    * Will fail if parsing has not yet happened.
+    */
+    auto device() -> sycl::device {
+        if (!_device.has_value()) {
+            _device = fpga_index_selector(this->get<int>("--device")).select_device();
+        }
+        return _device.value();
+    }
+
+    auto parse_args(int argc, char **argv) -> ARGS {
+        ArgumentParser::parse_args(argc, argv);
+        FPGAArguments &args = static_cast<FPGAArguments &>(_arguments);
+        // Print information about the device we are using
+        fmt::print("Using {}{}{} Device: {}{}{}\n\n",
+                   BOLD,
+                   device_kind(_arguments.device()),
+                   NC,
+                   BOLD,
+                   args.device().get_info<sycl::info::device::name>(),
+                   NC);
+
+        return _arguments;
+    }
+
+  private:
+    std::optional<sycl::device> _device{};
+    ARGS _arguments{};
 };
 #endif
