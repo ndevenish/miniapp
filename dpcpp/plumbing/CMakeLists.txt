@@ -15,7 +15,11 @@ find_package(FPGA REQUIRED)
 
 add_subdirectory(../../h5read h5read)
 include_directories(../common/include)
+add_subdirectory(../../dependencies/fmt fmt)
+add_subdirectory(../../dependencies/argparse argparse)
+target_compile_options(fmt PUBLIC -Wno-tautological-constant-compare)
+
 
 fpga_add_executable(plumbing plumbing.cc
-    LINK_LIBRARIES h5read
+    LINK_LIBRARIES h5read argparse fmt
 )

@@ -6,13 +6,6 @@
 #include <cassert>
 #include <chrono>
 #include <cstdlib>
-#if __INTEL_LLVM_COMPILER < 20220000
-#include <CL/sycl/INTEL/fpga_extensions.hpp>
-#define SYCL_INTEL sycl::INTEL
-#else
-#include <sycl/ext/intel/fpga_extensions.hpp>
-#define SYCL_INTEL sycl::ext::intel
-#endif
 
 #include "common.hpp"
 #include "eiger2xe.h"
