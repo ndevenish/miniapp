@@ -208,7 +208,7 @@ int main(int argc, char** argv) {
     auto args = parser.parse_args(argc, argv);
     auto reader = args.file.empty() ? H5Read() : H5Read(args.file);
 
-    auto Q = initialize_queue();
+    sycl::queue Q{args.device(), sycl::property::queue::enable_profiling{}};
 
     printf("Running with %s%zu-bit%s wide blocks\n", BOLD, BLOCK_SIZE * 16, NC);
 

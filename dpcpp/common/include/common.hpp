@@ -24,6 +24,13 @@ constexpr auto GRAY = "\033[37m";
 constexpr auto BOLD = "\033[1m";
 constexpr auto NC = "\033[0m";
 
+std::string device_kind(const sycl::device &device) {
+    return device.is_cpu()           ? "CPU"
+           : device.is_gpu()         ? "GPU"
+           : device.is_accelerator() ? "FPGA"
+                                     : "Unknown";
+}
+
 sycl::queue initialize_queue() {
 #ifdef FPGA
 // Select either:
@@ -40,10 +47,9 @@ sycl::queue initialize_queue() {
 #endif
 
     // Print information about the device we are using
-    std::string device_kind = device_kind(Q.get_device());
     printf("Using %s%s%s Device: %s%s%s\n\n",
            BOLD,
-           device_kind.c_str(),
+           device_kind(Q.get_device()).c_str(),
            NC,
            BOLD,
            Q.get_device().get_info<sycl::info::device::name>().c_str(),
@@ -51,12 +57,6 @@ sycl::queue initialize_queue() {
     return Q;
 }
 
-std::string device_kind(const sycl::device &device) {
-    return device.is_cpu()           ? "CPU"
-           : device.is_gpu()         ? "GPU"
-           : device.is_accelerator() ? "FPGA"
-                                     : "Unknown";
-}
 /**
  * FPGA Selector that allows choosing a specific indexed FPGA.
  * 
