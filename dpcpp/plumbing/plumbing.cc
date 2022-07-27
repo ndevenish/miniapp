@@ -202,7 +202,11 @@ void draw_image_data(const uint16_t* data,
 
 int main(int argc, char** argv) {
     auto start_time = std::chrono::high_resolution_clock::now();
-    auto reader = H5Read(argc, argv);
+
+    auto parser = FPGAArgumentParser();
+    parser.add_h5read_arguments();
+    auto args = parser.parse_args(argc, argv);
+    auto reader = args.file.empty() ? H5Read() : H5Read(args.file);
 
     auto Q = initialize_queue();
 

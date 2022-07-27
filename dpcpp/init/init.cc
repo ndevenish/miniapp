@@ -3,25 +3,17 @@
 #include <fmt/core.h>
 
 #include "common.hpp"
+#include "h5read.h"
 
 using namespace sycl;
 
 int main(int argc, char **argv) {
     auto parser = FPGAArgumentParser();
-    auto &group = parser.add_mutually_exclusive_group(false);
-    group.add_argument("--sample")
-      .help(
-        "Don't load a data file, instead use generated test data. If "
-        "H5READ_IMPLICIT_SAMPLE is set, then this is assumed, if a file is not "
-        "provided.")
-      .implicit_value(true);
-    group.add_argument("file")
-      .metavar("FILE.nxs")
-      .help("Path to the Nexus file to parse")
-      .action([](const std::string &value) { fmt::print("Action FILE: {}", value); });
-
+    parser.add_h5read_arguments();
     auto args = parser.parse_args(argc, argv);
+    auto reader = args.file.empty() ? H5Read() : H5Read(args.file);
 
+    fmt::print("Number of images: {}\n", reader.get_number_of_images());
     return 0;
 }
 

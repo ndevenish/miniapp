@@ -17,4 +17,6 @@ add_subdirectory(../../dependencies/fmt fmt)
 add_subdirectory(../../dependencies/argparse argparse)
 target_compile_options(fmt PUBLIC -Wno-tautological-constant-compare)
 
-fpga_add_executable(init init.cc LINK_LIBRARIES fmt::fmt argparse)
+add_subdirectory(../../h5read h5read)
+
+fpga_add_executable(init init.cc LINK_LIBRARIES fmt::fmt argparse h5read)

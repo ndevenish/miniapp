@@ -5,6 +5,7 @@
 
 #include <CL/sycl.hpp>
 #include <argparse/argparse.hpp>
+#include <cstdlib>
 #include <optional>
 
 #if __INTEL_LLVM_COMPILER < 20220000
@@ -39,10 +40,7 @@ sycl::queue initialize_queue() {
 #endif
 
     // Print information about the device we are using
-    std::string device_kind = Q.get_device().is_cpu()           ? "CPU"
-                              : Q.get_device().is_gpu()         ? "GPU"
-                              : Q.get_device().is_accelerator() ? "FPGA"
-                                                                : "Unknown";
+    std::string device_kind = device_kind(Q.get_device());
     printf("Using %s%s%s Device: %s%s%s\n\n",
            BOLD,
            device_kind.c_str(),
@@ -143,6 +141,8 @@ struct FPGAArguments {
         }
         return _device.value();
     }
+    bool verbose = false;
+    std::string file;
 
   private:
     std::optional<sycl::device> _device{};
@@ -160,7 +160,13 @@ class FPGAArgumentParser : public argparse::ArgumentParser {
   public:
     typedef ARGS ArgumentType;
 
-    FPGAArgumentParser(std::string version = "0.1.0") : ArgumentParser("", version) {
+    FPGAArgumentParser(std::string version = "0.1.0")
+        : ArgumentParser("", version, argparse::default_arguments::help) {
+        this->add_argument("-v", "--verbose")
+          .help("Verbose output")
+          .implicit_value(false)
+          .action([&](const std::string &value) { _arguments.verbose = true; });
+
         this->add_argument("-d", "--device")
           .help("Index of the FPGA device to target.")
           .default_value(0)
@@ -170,7 +176,7 @@ class FPGAArgumentParser : public argparse::ArgumentParser {
               return _arguments.device_index;
           });
         this->add_argument("--list-devices")
-          .help("List the order of FPGA devices.")
+          .help("List the order of FPGA devices, then quit.")
           .implicit_value(false)
           .action([](const std::string &value) {
               auto devices = fpga_index_selector::get_device_list();
@@ -207,6 +213,22 @@ class FPGAArgumentParser : public argparse::ArgumentParser {
                    NC);
 
         return _arguments;
+    }
+
+    void add_h5read_arguments() {
+        bool implicit_sample = std::getenv("H5READ_IMPLICIT_SAMPLE") != NULL;
+
+        auto &group = add_mutually_exclusive_group(!implicit_sample);
+        group.add_argument("--sample")
+          .help(
+            "Don't load a data file, instead use generated test data. If "
+            "H5READ_IMPLICIT_SAMPLE is set, then this is assumed, if a file is not "
+            "provided.")
+          .implicit_value(true);
+        group.add_argument("file")
+          .metavar("FILE.nxs")
+          .help("Path to the Nexus file to parse")
+          .action([&](const std::string &value) { _arguments.file = value; });
     }
 
   private:
