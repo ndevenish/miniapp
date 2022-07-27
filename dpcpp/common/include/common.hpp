@@ -201,7 +201,19 @@ class FPGAArgumentParser : public argparse::ArgumentParser {
     }
 
     auto parse_args(int argc, char **argv) -> ARGS {
-        ArgumentParser::parse_args(argc, argv);
+        try {
+            ArgumentParser::parse_args(argc, argv);
+        } catch (std::runtime_error &e) {
+            fmt::print("{}{}Error: {}{}{}{}\n{}\n",
+                       BOLD,
+                       R,
+                       NC,
+                       R,
+                       e.what(),
+                       NC,
+                       ArgumentParser::usage());
+            std::exit(1);
+        }
         FPGAArguments &args = static_cast<FPGAArguments &>(_arguments);
         // Print information about the device we are using
         fmt::print("Using {}{}{} Device: {}{}{}\n\n",
