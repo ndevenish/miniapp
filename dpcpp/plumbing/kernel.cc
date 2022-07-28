@@ -46,6 +46,27 @@ using BufferedPipedPixelsArray =
 // This two-block solution only works if kernel width < block size
 static_assert(KERNEL_WIDTH < BLOCK_SIZE);
 
+template <int blocks>
+using ModuleRowStore = PipedPixelsArray[FULL_KERNEL_HEIGHT][blocks];
+
+// Convenience operators for PipedPixelsArray
+inline auto operator+(const PipedPixelsArray& l, const PipedPixelsArray& r)
+  -> PipedPixelsArray {
+    PipedPixelsArray sum;
+    for (int i = 0; i < BLOCK_SIZE; ++i) {
+        sum.data[i] = l.data[i] + r.data[i];
+    }
+    return sum;
+}
+inline auto operator-(const PipedPixelsArray& l, const PipedPixelsArray& r)
+  -> PipedPixelsArray {
+    PipedPixelsArray sum;
+    for (int i = 0; i < BLOCK_SIZE; ++i) {
+        sum.data[i] = l.data[i] - r.data[i];
+    }
+    return sum;
+}
+
 const sycl::stream& operator<<(const sycl::stream& os,
                                const BufferedPipedPixelsArray& obj) {
     os << "[ ";
@@ -179,16 +200,7 @@ auto run_module(sycl::queue& Q,
 #pragma unroll
                             for (size_t i = 0; i < BLOCK_SIZE; ++i) {
                                 destination_data_h[offset + i] = kernel_sum[i];
-                                // if (y == 5 && block == 0) {
-                                //     result_dest[BLOCK_SIZE] =
-                                //       (uintptr_t)destination_data_h.get();
-                                //     result_dest[i] = (uintptr_t)(offset + i);
-                                //     result_mini[i] = kernel_sum[i];
-                                // }
                             }
-                            // *reinterpret_cast<PipedPixelsArray*>(
-                            //   &destination_data_h[(y - KERNEL_HEIGHT) * fast
-                            //                       + block * BLOCK_SIZE]) = kernel_sum;
                         }
                     }
                 }

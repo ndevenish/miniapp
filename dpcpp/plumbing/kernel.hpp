@@ -47,27 +47,6 @@ class PipedPixelsArray {
     }
 };
 
-// Convenience sum for PipedPixelsArray
-inline auto operator+(const PipedPixelsArray& l, const PipedPixelsArray& r)
-  -> PipedPixelsArray {
-    PipedPixelsArray sum;
-    for (int i = 0; i < BLOCK_SIZE; ++i) {
-        sum.data[i] = l.data[i] + r.data[i];
-    }
-    return sum;
-}
-inline auto operator-(const PipedPixelsArray& l, const PipedPixelsArray& r)
-  -> PipedPixelsArray {
-    PipedPixelsArray sum;
-    for (int i = 0; i < BLOCK_SIZE; ++i) {
-        sum.data[i] = l.data[i] - r.data[i];
-    }
-    return sum;
-}
-
-template <int blocks>
-using ModuleRowStore = PipedPixelsArray[FULL_KERNEL_HEIGHT][blocks];
-
 auto run_producer(sycl::queue& Q,
                   sycl::host_ptr<uint16_t> image_data,
                   std::size_t slow,

@@ -16,21 +16,6 @@
 
 using namespace sycl;
 
-// Width of this array determines how many pixels we read at once
-// class PipedPixelsArray {
-//   public:
-//     typedef H5Read::image_type value_type;
-
-//     value_type data[BLOCK_SIZE];
-
-//     const value_type& operator[](size_t index) const {
-//         return this->data[index];
-//     }
-//     value_type& operator[](size_t index) {
-//         return this->data[index];
-//     }
-// };
-
 const sycl::stream& operator<<(const sycl::stream& os, const PipedPixelsArray& obj) {
     os << "[ ";
     for (int i = 0; i < BLOCK_SIZE; ++i) {
@@ -86,7 +71,13 @@ void draw_image_data(const uint16_t* data,
 }
 
 void check_allocs() {}
-/// Basic sanity check on allocations - so that if they fail, we don't get a SEGV later
+/** Basic sanity check on allocations.
+*
+* So that if they fail, we don't get a SEGV later. This is basically
+* mostly laziness, though has the advantage of not messing up every
+* single allocation with validation. Maybe the allocations could be
+* wrapped instead....
+*/
 template <typename T, typename... R>
 void check_allocs(T arg, R... args) {
     if (arg == nullptr) {
@@ -111,6 +102,7 @@ int main(int argc, char** argv) {
     auto slow = reader.get_image_slow();
     auto fast = reader.get_image_fast();
     const size_t num_pixels = slow * fast;
+
     // Make sure these match our hardcoded values
     assert(slow == SLOW);
     assert(fast == FAST);
@@ -123,23 +115,16 @@ int main(int argc, char** argv) {
     // Paranoia: Ensure that this is properly aligned
     assert(reinterpret_cast<uintptr_t>(image_data.get()) % 64 == 0);
 
-    auto row_count = host_ptr<uint16_t>(malloc_host<uint16_t>(1, Q));
-    check_allocs(row_count);
-    *row_count = 0;
+    // auto row_count = host_ptr<uint16_t>(malloc_host<uint16_t>(1, Q));
+    // check_allocs(row_count);
+    // *row_count = 0;
+
     // Result data - this is accessed remotely but only at the end, to
     // return the results.
-    uintptr_t* result_dest = malloc_host<uintptr_t>(BLOCK_SIZE + 1, Q);
-    uint16_t* result_mini = malloc_host<uint16_t>(BLOCK_SIZE, Q);
+    // uintptr_t* result_dest = malloc_host<uintptr_t>(BLOCK_SIZE + 1, Q);
+    // uint16_t* result_mini = malloc_host<uint16_t>(BLOCK_SIZE, Q);
 
-    auto* result = malloc_host<PipedPixelsArray>(2, Q);
-
-    printf("Uploading mask data to accelerator.... ");
-    auto e_mask_upload = Q.submit(
-      [&](handler& h) { h.memcpy(mask_data, reader.get_mask().data(), num_pixels); });
-    Q.wait();
-    printf("done in %.1f ms (%.2f GBps)\n",
-           event_ms(e_mask_upload),
-           event_GBps(e_mask_upload, num_pixels));
+    // auto* result = malloc_host<PipedPixelsArray>(2, Q);
 
     printf(
       "Block data:\n"
@@ -150,17 +135,22 @@ int main(int argc, char** argv) {
       BLOCK_REMAINDER,
       FULL_BLOCKS);
 
-    // uint16_t* totalblocksum = malloc_host<uint16_t>(FULL_BLOCKS * slow, Q);
+    printf("Uploading mask data to accelerator.... ");
+    auto e_mask_upload = Q.submit(
+      [&](handler& h) { h.memcpy(mask_data, reader.get_mask().data(), num_pixels); });
+    Q.wait();
+    printf("done in %.1f ms (%.2f GBps)\n",
+           event_ms(e_mask_upload),
+           event_GBps(e_mask_upload, num_pixels));
 
-    // auto* destination_data_host = malloc_device<uint16_t>(num_pixels, Q);
-    auto* destination_data = malloc_host<uint16_t>(num_pixels, Q);
-    // Fill this with sample data so we can tell if anything is happening
+    auto destination_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
+    check_allocs(destination_data);
+
+    // Fill this with placeholder data so we can tell if anything is happening
     for (size_t i = 0; i < num_pixels; ++i) {
         destination_data[i] = 42;
     }
-    // auto* rows_ptr = malloc_device<ModuleRowStore<FULL_BLOCKS>>(1, Q);
-    // auto  rows = malloc_device<
-    //                 //                        FULL_KERNEL_HEIGHT>{};
+
     Q.wait();
     printf("Starting image loop:\n");
     for (int i = 0; i < reader.get_number_of_images(); ++i) {
@@ -196,32 +186,6 @@ int main(int argc, char** argv) {
                ms_all,
                GBps(num_pixels * sizeof(uint16_t), ms_all));
 
-        printf("Data store instructs to %" PRIxPTR " ==? %" PRIxPTR "\n",
-               result_dest[BLOCK_SIZE],
-               (uintptr_t)destination_data);
-        for (int i = 0; i < BLOCK_SIZE; ++i) {
-            printf(" %" PRIxPTR, result_dest[i]);
-        }
-        printf("\nData:\n");
-        for (int i = 0; i < BLOCK_SIZE; ++i) {
-            printf(" %" PRIu16, result_mini[i]);
-        }
-        printf("\nData on host:");
-        //   &destination_data_h[(y - KERNEL_HEIGHT) * fast
-        //                       + block * BLOCK_SIZE]) = kernel_sum;
-        size_t offset = (5 - KERNEL_HEIGHT) * fast;
-        printf("%" PRIxPTR ", %" PRIxPTR "\n", offset, (uintptr_t)destination_data);
-        for (int i = 0; i < BLOCK_SIZE; ++i) {
-            printf(" %" PRIu16, destination_data[offset + i]);
-        }
-        printf("\n");
-        // Copy the device destination buffer back
-        // auto host_sum_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
-
-        // auto e_dest_download = Q.submit([&](handler& h) {
-        //     h.memcpy(host_sum_data, destination_data, num_pixels * sizeof(uint16_t));
-        // });
-        // e_dest_download.wait();
         Q.wait();
 
         // Print a section of the image and "destination" arrays
@@ -230,11 +194,8 @@ int main(int argc, char** argv) {
 
         printf("\nSum:\n");
         draw_image_data(destination_data, 0, 0, 16, 16, fast, slow);
-        // free(host_sum_data, Q);
     }
 
-    free(result, Q);
-    free(result_dest, Q);
     free(image_data, Q);
     free(mask_data, Q);
     auto end_time = std::chrono::high_resolution_clock::now();
