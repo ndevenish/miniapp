@@ -31,39 +31,6 @@ constexpr auto GRAY = "\033[37m";
 constexpr auto BOLD = "\033[1m";
 constexpr auto NC = "\033[0m";
 
-std::string device_kind(const sycl::device &device) {
-    return device.is_cpu()           ? "CPU"
-           : device.is_gpu()         ? "GPU"
-           : device.is_accelerator() ? "FPGA"
-                                     : "Unknown";
-}
-
-sycl::queue initialize_queue() {
-#ifdef FPGA
-// Select either:
-//  - the FPGA emulator device (CPU emulation of the FPGA)
-//  - the FPGA device (a real FPGA)
-#if defined(FPGA_EMULATOR)
-    SYCL_INTEL::fpga_emulator_selector device_selector;
-#else
-    SYCL_INTEL::fpga_selector device_selector;
-#endif
-    sycl::queue Q(device_selector, sycl::property::queue::enable_profiling{});
-#else
-    sycl::queue Q{sycl::property::queue::enable_profiling{}};
-#endif
-
-    // Print information about the device we are using
-    printf("Using %s%s%s Device: %s%s%s\n\n",
-           BOLD,
-           device_kind(Q.get_device()).c_str(),
-           NC,
-           BOLD,
-           Q.get_device().get_info<sycl::info::device::name>().c_str(),
-           NC);
-    return Q;
-}
-
 /**
  * FPGA Selector that allows choosing a specific indexed FPGA.
  * 
@@ -223,9 +190,14 @@ class FPGAArgumentParser : public argparse::ArgumentParser {
         }
         FPGAArguments &args = static_cast<FPGAArguments &>(_arguments);
         // Print information about the device we are using
+        auto device = _arguments.device();
+        std::string device_kind = device.is_cpu()           ? "CPU"
+                                  : device.is_gpu()         ? "GPU"
+                                  : device.is_accelerator() ? "FPGA"
+                                                            : "Unknown";
         fmt::print("Using {}{}{} Device: {}{}{}\n\n",
                    BOLD,
-                   device_kind(_arguments.device()),
+                   device_kind,
                    NC,
                    BOLD,
                    args.device().get_info<sycl::info::device::name>(),

@@ -20,6 +20,6 @@ add_subdirectory(../../dependencies/argparse argparse)
 target_compile_options(fmt PUBLIC -Wno-tautological-constant-compare)
 
 
-fpga_add_executable(plumbing plumbing.cc
+fpga_add_executable(plumbing plumbing.cc kernel.cc
     LINK_LIBRARIES h5read argparse fmt
 )
