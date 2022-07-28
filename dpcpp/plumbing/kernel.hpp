@@ -47,10 +47,7 @@ class PipedPixelsArray {
     }
 };
 
-auto run_producer(sycl::queue& Q,
-                  sycl::host_ptr<uint16_t> image_data,
-                  std::size_t slow,
-                  std::size_t fast) -> sycl::event;
+auto run_producer(sycl::queue& Q, sycl::host_ptr<uint16_t> image_data) -> sycl::event;
 
 auto run_module(sycl::queue& Q,
                 sycl::device_ptr<uint8_t> mask_data,

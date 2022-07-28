@@ -101,20 +101,17 @@ PipedPixelsArray sum_buffered_block_0(BufferedPipedPixelsArray* buffer) {
     return sum;
 }
 
-auto run_producer(sycl::queue& Q,
-                  sycl::host_ptr<uint16_t> image_data,
-                  std::size_t slow,
-                  std::size_t fast) -> sycl::event {
+auto run_producer(sycl::queue& Q, sycl::host_ptr<uint16_t> image_data) -> sycl::event {
     return Q.submit([&](handler& h) {
         h.single_task<class Producer>([=]() {
             // For now, send every pixel into one pipe
             // We are using blocks based on the pipe width - this is
             // likely not an exact divisor of the fast width, so for
             // now just ignore the excess pixels
-            for (size_t y = 0; y < slow; ++y) {
+            for (size_t y = 0; y < SLOW; ++y) {
                 for (size_t block = 0; block < FULL_BLOCKS; ++block) {
                     auto image_data_h = host_ptr<PipedPixelsArray>(
-                      reinterpret_cast<PipedPixelsArray*>(image_data.get() + y * fast));
+                      reinterpret_cast<PipedPixelsArray*>(image_data.get() + y * FAST));
                     ProducerPipeToModule::write(image_data_h[block]);
                 }
             }

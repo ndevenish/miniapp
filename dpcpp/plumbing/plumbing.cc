@@ -166,7 +166,7 @@ int main(int argc, char** argv) {
         fmt::print("Starting Kernels\n");
         auto t1 = std::chrono::high_resolution_clock::now();
 
-        event e_producer = run_producer(Q, image_data, slow, fast);
+        event e_producer = run_producer(Q, image_data);
         event e_module = run_module(Q, mask_data, destination_data);
         Q.wait();
 
