@@ -56,6 +56,14 @@ void draw_image_data(const uint16_t* data,
                      size_t height,
                      size_t data_width,
                      size_t data_height) {
+    // Draw a row header if we are at the top
+    if (slow == 0) {
+        fmt::print("x =     \033[4m");
+        for (int x = fast; x < fast + width; ++x) {
+            fmt::print("{:3d}  ", x);
+        }
+        fmt::print("{}\n", NC);
+    }
     for (int y = slow; y < min(slow + height, data_height); ++y) {
         if (y == slow) {
             fmt::print("y = {:2d} │", y);
