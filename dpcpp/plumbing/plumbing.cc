@@ -1,4 +1,5 @@
 
+#include <fmt/core.h>
 #include <inttypes.h>
 
 #include <CL/sycl.hpp>
@@ -200,9 +201,20 @@ void draw_image_data(const uint16_t* data,
     }
 }
 
+void check_allocs() {}
+/// Basic sanity check on allocations - so that if they fail, we don't get a SEGV later
+template <typename T, typename... R>
+void check_allocs(T arg, R... args) {
+    if (arg == nullptr) {
+        throw std::bad_alloc{};
+    }
+    check_allocs(args...);
+}
+
 int main(int argc, char** argv) {
     auto start_time = std::chrono::high_resolution_clock::now();
 
+    // Parse arguments and get our H5Reader
     auto parser = FPGAArgumentParser();
     parser.add_h5read_arguments();
     auto args = parser.parse_args(argc, argv);
@@ -210,20 +222,22 @@ int main(int argc, char** argv) {
 
     sycl::queue Q{args.device(), sycl::property::queue::enable_profiling{}};
 
-    printf("Running with %s%zu-bit%s wide blocks\n", BOLD, BLOCK_SIZE * 16, NC);
+    fmt::print("Running with {}{}-bit{} wide blocks\n", BOLD, BLOCK_SIZE * 16, NC);
 
     auto slow = reader.get_image_slow();
     auto fast = reader.get_image_fast();
-    const size_t num_pixels = reader.get_image_slow() * reader.get_image_fast();
+    const size_t num_pixels = slow * fast;
 
     // Mask data is the same for all images, so we copy it to device early
     auto mask_data = device_ptr<uint8_t>(malloc_device<uint8_t>(num_pixels, Q));
     // Declare the image data that will be remotely accessed
     auto image_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
-    // Absolutely make sure that this is properly aligned
+    check_allocs(mask_data, image_data);
+    // Paranoia: Ensure that this is properly aligned
     assert(reinterpret_cast<uintptr_t>(image_data.get()) % 64 == 0);
 
     auto row_count = host_ptr<uint16_t>(malloc_host<uint16_t>(1, Q));
+    check_allocs(row_count);
     *row_count = 0;
     // Result data - this is accessed remotely but only at the end, to
     // return the results.
