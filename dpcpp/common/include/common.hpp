@@ -16,6 +16,13 @@
 #define SYCL_INTEL sycl::ext::intel
 #endif
 
+#if __has_include(<hdf5.h>)
+#define HAS_HDF5
+namespace _hdf5 {
+#include <hdf5.h>
+}
+#endif
+
 constexpr auto R = "\033[31m";
 constexpr auto G = "\033[32m";
 constexpr auto Y = "\033[33m";
@@ -224,6 +231,13 @@ class FPGAArgumentParser : public argparse::ArgumentParser {
                    args.device().get_info<sycl::info::device::name>(),
                    NC);
 
+#ifdef HAS_HDF5
+        // If we activated h5read, then handle hdf5 verbosity
+        if (_activated_h5read && !_arguments.verbose) {
+            _hdf5::H5Eset_auto((_hdf5::hid_t)0, NULL, NULL);
+        }
+#endif
+
         return _arguments;
     }
 
@@ -241,10 +255,12 @@ class FPGAArgumentParser : public argparse::ArgumentParser {
           .metavar("FILE.nxs")
           .help("Path to the Nexus file to parse")
           .action([&](const std::string &value) { _arguments.file = value; });
+        _activated_h5read = true;
     }
 
   private:
     std::optional<sycl::device> _device{};
     ARGS _arguments{};
+    bool _activated_h5read = false;
 };
 #endif
