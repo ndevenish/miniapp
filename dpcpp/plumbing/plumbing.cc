@@ -7,7 +7,6 @@
 #include <array>
 #include <cassert>
 #include <chrono>
-#include <cstdlib>
 
 #include "common.hpp"
 #include "eiger2xe.h"
@@ -59,14 +58,14 @@ void draw_image_data(const uint16_t* data,
                      size_t data_height) {
     for (int y = slow; y < min(slow + height, data_height); ++y) {
         if (y == slow) {
-            printf("y = %2d │", y);
+            fmt::print("y = {:2d} │", y);
         } else {
-            printf("    %2d │", y);
+            fmt::print("    {:2d} │", y);
         }
         for (int i = fast; i < fast + width; ++i) {
-            printf("%3d  ", data[i + data_width * y]);
+            fmt::print("{:3d}  ", data[i + data_width * y]);
         }
-        printf("│\n");
+        fmt::print("│\n");
     }
 }
 
@@ -126,22 +125,22 @@ int main(int argc, char** argv) {
 
     // auto* result = malloc_host<PipedPixelsArray>(2, Q);
 
-    printf(
+    fmt::print(
       "Block data:\n"
-      "         SIZE: %zu px per block\n"
-      "    REMAINDER: %zu px unprocessed per row\n"
-      "  FULL_BLOCKS: %zu blocks across image width\n",
+      "         SIZE: {} px per block\n"
+      "    REMAINDER: {} px unprocessed per row\n"
+      "  FULL_BLOCKS: {} blocks across image width\n",
       BLOCK_SIZE,
       BLOCK_REMAINDER,
       FULL_BLOCKS);
 
-    printf("Uploading mask data to accelerator.... ");
+    fmt::print("Uploading mask data to accelerator.... ");
     auto e_mask_upload = Q.submit(
       [&](handler& h) { h.memcpy(mask_data, reader.get_mask().data(), num_pixels); });
     Q.wait();
-    printf("done in %.1f ms (%.2f GBps)\n",
-           event_ms(e_mask_upload),
-           event_GBps(e_mask_upload, num_pixels));
+    fmt::print("done in {:.1f} ms ({:.2f} GBps)\n",
+               event_ms(e_mask_upload),
+               event_GBps(e_mask_upload, num_pixels));
 
     auto destination_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
     check_allocs(destination_data);
@@ -152,19 +151,19 @@ int main(int argc, char** argv) {
     }
 
     Q.wait();
-    printf("Starting image loop:\n");
+    fmt::print("Starting image loop:\n");
     for (int i = 0; i < reader.get_number_of_images(); ++i) {
-        printf("\nReading Image %d\n", i);
+        fmt::print("\nReading Image {}\n", i);
         reader.get_image_into(i, image_data);
 
         // Precalculate host-side the answers we expect, so we can validate
-        printf("Calculating host sum\n");
+        fmt::print("Calculating host sum\n");
         // Now we are using blocks and discarding excess, do that here
         size_t host_sum = 0;
         for (int i = 0; i < FULL_BLOCKS * BLOCK_SIZE; ++i) {
             host_sum += image_data[i];
         }
-        printf("Starting Kernels\n");
+        fmt::print("Starting Kernels\n");
         auto t1 = std::chrono::high_resolution_clock::now();
 
         event e_producer = run_producer(Q, image_data, slow, fast);
@@ -176,23 +175,23 @@ int main(int argc, char** argv) {
           std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1).count()
           * 1000;
 
-        printf(" ... produced in %.2f ms (%.3g GBps)\n",
-               event_ms(e_producer),
-               event_GBps(e_producer, num_pixels * sizeof(uint16_t) / 2));
-        printf(" ... consumed in %.2f ms (%.3g GBps)\n",
-               event_ms(e_module),
-               event_GBps(e_module, num_pixels * sizeof(uint16_t) / 2));
-        printf(" ... Total consumed + piped in host time %.2f ms (%.3g GBps)\n",
-               ms_all,
-               GBps(num_pixels * sizeof(uint16_t), ms_all));
+        fmt::print(" ... produced in {:.2f} ms ({:.3g} GBps)\n",
+                   event_ms(e_producer),
+                   event_GBps(e_producer, num_pixels * sizeof(uint16_t) / 2));
+        fmt::print(" ... consumed in {:.2f} ms ({:.3g} GBps)\n",
+                   event_ms(e_module),
+                   event_GBps(e_module, num_pixels * sizeof(uint16_t) / 2));
+        fmt::print(" ... Total consumed + piped in host time {:.2f} ms ({:.3g} GBps)\n",
+                   ms_all,
+                   GBps(num_pixels * sizeof(uint16_t), ms_all));
 
         Q.wait();
 
         // Print a section of the image and "destination" arrays
-        printf("Data:\n");
+        fmt::print("Data:\n");
         draw_image_data(image_data.get(), 0, 0, 16, 16, fast, slow);
 
-        printf("\nSum:\n");
+        fmt::print("\nSum:\n");
         draw_image_data(destination_data, 0, 0, 16, 16, fast, slow);
     }
 
@@ -200,8 +199,8 @@ int main(int argc, char** argv) {
     free(mask_data, Q);
     auto end_time = std::chrono::high_resolution_clock::now();
 
-    printf(
-      "Total run duration: %.2f s\n",
+    fmt::print(
+      "Total run duration: {:.2f} s\n",
       std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time)
         .count());
 }
