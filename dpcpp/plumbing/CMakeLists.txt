@@ -21,5 +21,5 @@ target_compile_options(fmt PUBLIC -Wno-tautological-constant-compare)
 
 
 fpga_add_executable(plumbing plumbing.cc kernel.cc
-    LINK_LIBRARIES h5read argparse fmt
+    LINK_LIBRARIES h5read argparse fmt span
 )
