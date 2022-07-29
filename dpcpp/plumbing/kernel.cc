@@ -130,6 +130,16 @@ void initialise_row_store(ModuleRowStore<FULL_BLOCKS>& rows) {
         }
     }
 }
+
+auto pow2(const PipedPixelsArray& val) -> PipedPixelsArray {
+    PipedPixelsArray sqr;
+#pragma unroll
+    for (int i = 0; i < BLOCK_SIZE; ++i) {
+        sqr[i] = val[i] * val[i];
+    }
+    return sqr;
+}
+
 auto calculate_next_block(std::size_t y,
                           std::size_t block_number,
                           ModuleRowStore<FULL_BLOCKS>& rows,
@@ -169,33 +179,42 @@ auto calculate_next_block(std::size_t y,
 
 auto run_module(sycl::queue& Q,
                 device_ptr<uint8_t> mask_data,
-                host_ptr<uint16_t> destination_data
-
-                ) -> sycl::event {
+                host_ptr<uint16_t> destination_data,
+                host_ptr<uint16_t> destination_data_sq) -> sycl::event {
     return Q.submit([&](handler& h) {
             h.single_task<class Module<0>>([=](){
                 auto destination_data_h = host_ptr<uint16_t>(destination_data);
-
+                auto destination_data_sq_h = host_ptr<uint16_t>(destination_data_sq);
                 size_t sum_pixels = 0;
 
                 // Make a buffer for full rows so we can store them as we go
-                ModuleRowStore<FULL_BLOCKS> rows;
+                ModuleRowStore<FULL_BLOCKS> rows, rows_sq;
+
                 initialise_row_store(rows);
+                initialise_row_store(rows_sq);
 
                 for (size_t y = 0; y < SLOW; ++y) {
                     // The per-pixel buffer array to accumulate the blocks
                     BufferedPipedPixelsArray interim_pixels{};
+                    BufferedPipedPixelsArray interim_pixels_sq{};
+
+                    auto pixels = ProducerPipeToModule::read();
 
                     // Read the first block into initial position in the array
                     auto* interim_blocks = reinterpret_cast<PipedPixelsArray*>(
                       &interim_pixels[KERNEL_WIDTH]);
-                    interim_blocks[0] = ProducerPipeToModule::read();
+                    auto* interim_blocks_sq = reinterpret_cast<PipedPixelsArray*>(
+                      &interim_pixels_sq[KERNEL_WIDTH]);
+                    interim_blocks[0] = pixels;
+                    interim_blocks_sq[0] = pixels;
 
                     for (size_t block = 0; block < FULL_BLOCKS - 1; ++block) {
                         auto pixels = ProducerPipeToModule::read();
 
                         auto kernel_sum =
                           calculate_next_block(y, block, rows, interim_pixels, pixels);
+                        auto kernel_sum_sq = calculate_next_block(
+                          y, block, rows_sq, interim_pixels_sq, pixels);
 
                         // Write this into the output data block
                         if (y >= KERNEL_HEIGHT) {
@@ -205,6 +224,7 @@ auto run_module(sycl::queue& Q,
 #pragma unroll
                             for (size_t i = 0; i < BLOCK_SIZE; ++i) {
                                 destination_data_h[offset + i] = kernel_sum[i];
+                                destination_data_sq_h[offset + i] = kernel_sum_sq[i];
                             }
                         }
                     }

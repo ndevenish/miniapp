@@ -151,11 +151,13 @@ int main(int argc, char** argv) {
                event_GBps(e_mask_upload, num_pixels));
 
     auto destination_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
-    check_allocs(destination_data);
+    auto destination_data_sq = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
+    check_allocs(destination_data, destination_data_sq);
 
     // Fill this with placeholder data so we can tell if anything is happening
     for (size_t i = 0; i < num_pixels; ++i) {
         destination_data[i] = 42;
+        destination_data_sq[i] = 42;
     }
 
     Q.wait();
@@ -175,7 +177,8 @@ int main(int argc, char** argv) {
         auto t1 = std::chrono::high_resolution_clock::now();
 
         event e_producer = run_producer(Q, image_data);
-        event e_module = run_module(Q, mask_data, destination_data);
+        event e_module =
+          run_module(Q, mask_data, destination_data, destination_data_sq);
         Q.wait();
 
         auto t2 = std::chrono::high_resolution_clock::now();
@@ -201,6 +204,9 @@ int main(int argc, char** argv) {
 
         fmt::print("\nSum:\n");
         draw_image_data(destination_data, 0, 0, 16, 16, fast, slow);
+
+        fmt::print("\nSumSq:\n");
+        draw_image_data(destination_data_sq, 0, 0, 16, 16, fast, slow);
     }
 
     free(image_data, Q);
