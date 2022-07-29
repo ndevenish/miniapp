@@ -158,6 +158,7 @@ int main(int argc, char** argv) {
     // Fill this with placeholder data so we can tell if anything is happening
     for (size_t i = 0; i < num_pixels; ++i) {
         destination_data[i] = 42;
+        destination_data_sq[i] = 42;
     }
 
     Q.wait();

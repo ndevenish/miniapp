@@ -200,21 +200,18 @@ auto run_module(sycl::queue& Q,
     return Q.submit([&](handler& h) {
         h.single_task<class Module>([=]() {
             auto destination_data_h = host_ptr<uint16_t>(destination_data);
-            auto destination_data_sq_h = host_ptr<uint16_t>(destination_data_sq);
 
             KernelAccumulator sum;
-            KernelAccumulator sumsq;
 
             for (size_t y = 0; y < SLOW; ++y) {
                 auto pixels = ProducerPipeToModule::read();
                 sum.start_row(pixels, y);
-                sumsq.start_row(pow2(pixels), y);
 
                 for (size_t block = 0; block < FULL_BLOCKS - 1; ++block) {
                     // Read the next block into the right of the array
                     auto pixels = ProducerPipeToModule::read();
                     auto kernel_sum = sum.feed(block, pixels);
-                    auto kernel_sum_sq = sumsq.feed(block, pow2(pixels));
+
                     // Write this into the output data block
                     if (y >= KERNEL_HEIGHT) {
                         // Write a really simple loop.
@@ -222,7 +219,6 @@ auto run_module(sycl::queue& Q,
 #pragma unroll
                         for (size_t i = 0; i < BLOCK_SIZE; ++i) {
                             destination_data_h[offset + i] = kernel_sum[i];
-                            destination_data_sq_h[offset + i] = kernel_sum_sq[i];
                         }
                     }
                 }
