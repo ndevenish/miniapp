@@ -130,9 +130,42 @@ void initialise_row_store(ModuleRowStore<FULL_BLOCKS>& rows) {
         }
     }
 }
-// void calculate_next_block(std::size_t block_number,
-//                           ModuleRowStore<FULL_BLOCKS>& rows,
-//                           BufferedPipedPixelsArray& interim_pixels) {}
+auto calculate_next_block(std::size_t y,
+                          std::size_t block_number,
+                          ModuleRowStore<FULL_BLOCKS>& rows,
+                          BufferedPipedPixelsArray& interim_pixels,
+                          PipedPixelsArray new_block) -> PipedPixelsArray {
+    // Recreate the "block view" of this buffer
+    auto* interim_blocks =
+      reinterpret_cast<PipedPixelsArray*>(&interim_pixels[KERNEL_WIDTH]);
+    interim_blocks[1] = new_block;
+
+    // Now we can calculate the sums for block 0
+    PipedPixelsArray sum = sum_buffered_block_0(&interim_pixels);
+
+    // Now shift everything in the row buffer to the left
+    // to make room for the next pipe read
+#pragma unroll
+    for (int i = 0; i < KERNEL_WIDTH + BLOCK_SIZE; ++i) {
+        interim_pixels[i] = interim_pixels[BLOCK_SIZE + i];
+    }
+    // Calculate the previously written row index, and get the row
+    int prev_row_index = (y + FULL_KERNEL_HEIGHT - 1) % FULL_KERNEL_HEIGHT;
+    auto prev_row = rows[prev_row_index][block_number];
+    // And the oldest row index and row (which we will replace)
+    int oldest_row_index = y % FULL_KERNEL_HEIGHT;
+    auto oldest_row = rows[oldest_row_index][block_number];
+
+    // Write the new running total over the oldest data
+    PipedPixelsArray new_row = sum + prev_row;
+
+    rows[oldest_row_index][block_number] = new_row;
+
+    // Now, calculate the kernel sum for each of these
+    auto kernel_sum = new_row - oldest_row;
+
+    return kernel_sum;
+}
 
 auto run_module(sycl::queue& Q,
                 device_ptr<uint8_t> mask_data,
@@ -153,45 +186,16 @@ auto run_module(sycl::queue& Q,
                     // The per-pixel buffer array to accumulate the blocks
                     BufferedPipedPixelsArray interim_pixels{};
 
-                    // Have a "block" view of this pixel buffer for easy access
+                    // Read the first block into initial position in the array
                     auto* interim_blocks = reinterpret_cast<PipedPixelsArray*>(
                       &interim_pixels[KERNEL_WIDTH]);
-
-                    // Read the first block into initial position in the array
                     interim_blocks[0] = ProducerPipeToModule::read();
 
                     for (size_t block = 0; block < FULL_BLOCKS - 1; ++block) {
-                        // Read this into the right of the array...
-                        interim_blocks[1] = ProducerPipeToModule::read();
+                        auto pixels = ProducerPipeToModule::read();
 
-                        // Now we can calculate the sums for block 0
-                        PipedPixelsArray sum = sum_buffered_block_0(&interim_pixels);
-
-                    // Now shift everything in the row buffer to the left
-                    // to make room for the next pipe read
-#pragma unroll
-                        for (int i = 0; i < KERNEL_WIDTH + BLOCK_SIZE; ++i) {
-                            interim_pixels[i] = interim_pixels[BLOCK_SIZE + i];
-                        }
-
-                        // Now we can insert this into the row accumulation store and
-                        // do per-row calculations
-
-                        // Calculate the previously written row index, and get the row
-                        int prev_row_index =
-                          (y + FULL_KERNEL_HEIGHT - 1) % FULL_KERNEL_HEIGHT;
-                        auto prev_row = rows[prev_row_index][block];
-                        // And the oldest row index and row (which we will replace)
-                        int oldest_row_index = y % FULL_KERNEL_HEIGHT;
-                        auto oldest_row = rows[oldest_row_index][block];
-
-                        // Write the new running total over the oldest data
-                        PipedPixelsArray new_row = sum + prev_row;
-
-                        rows[oldest_row_index][block] = new_row;
-
-                        // Now, calculate the kernel sum for each of these
-                        auto kernel_sum = new_row - oldest_row;
+                        auto kernel_sum =
+                          calculate_next_block(y, block, rows, interim_pixels, pixels);
 
                         // Write this into the output data block
                         if (y >= KERNEL_HEIGHT) {
