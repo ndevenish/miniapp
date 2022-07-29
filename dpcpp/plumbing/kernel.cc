@@ -119,9 +119,21 @@ auto run_producer(sycl::queue& Q, sycl::host_ptr<uint16_t> image_data) -> sycl::
     });
 }
 
-// #ifdef FPGA_EMULATOR
-//             auto out = sycl::stream(10e6, 65535, h);
-// #endif
+void initialise_row_store(ModuleRowStore<FULL_BLOCKS>& rows) {
+    // Initialise this to zeros
+    for (int zr = 0; zr < FULL_KERNEL_HEIGHT; ++zr) {
+        for (int zb = 0; zb < FULL_BLOCKS; ++zb) {
+#pragma unroll
+            for (int zp = 0; zp < BLOCK_SIZE; ++zp) {
+                rows[zr][zb][zp] = 0;
+            }
+        }
+    }
+}
+// void calculate_next_block(std::size_t block_number,
+//                           ModuleRowStore<FULL_BLOCKS>& rows,
+//                           BufferedPipedPixelsArray& interim_pixels) {}
+
 auto run_module(sycl::queue& Q,
                 device_ptr<uint8_t> mask_data,
                 host_ptr<uint16_t> destination_data
@@ -135,15 +147,7 @@ auto run_module(sycl::queue& Q,
 
                 // Make a buffer for full rows so we can store them as we go
                 ModuleRowStore<FULL_BLOCKS> rows;
-                // Initialise this to zeros
-                for (int zr = 0; zr < FULL_KERNEL_HEIGHT; ++zr) {
-                    for (int zb = 0; zb < FULL_BLOCKS; ++zb) {
-#pragma unroll
-                        for (int zp = 0; zp < BLOCK_SIZE; ++zp) {
-                            rows[zr][zb][zp] = 0;
-                        }
-                    }
-                }
+                initialise_row_store(rows);
 
                 for (size_t y = 0; y < SLOW; ++y) {
                     // The per-pixel buffer array to accumulate the blocks
