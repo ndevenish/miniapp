@@ -60,7 +60,7 @@ void draw_image_data(const uint16_t* data,
     if (slow == 0) {
         fmt::print("x =     \033[4m");
         for (int x = fast; x < fast + width; ++x) {
-            fmt::print("{:5d}  ", x);
+            fmt::print("{:3d}  ", x);
         }
         fmt::print("{}\n", NC);
     }
@@ -71,7 +71,7 @@ void draw_image_data(const uint16_t* data,
             fmt::print("    {:2d} │", y);
         }
         for (int i = fast; i < fast + width; ++i) {
-            fmt::print("{:5d}  ", data[i + data_width * y]);
+            fmt::print("{:3d}  ", data[i + data_width * y]);
         }
         fmt::print("│\n");
     }
@@ -151,14 +151,11 @@ int main(int argc, char** argv) {
                event_GBps(e_mask_upload, num_pixels));
 
     auto destination_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
-    auto destination_data_sq = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
-
-    check_allocs(destination_data, destination_data_sq);
+    check_allocs(destination_data);
 
     // Fill this with placeholder data so we can tell if anything is happening
     for (size_t i = 0; i < num_pixels; ++i) {
         destination_data[i] = 42;
-        destination_data_sq[i] = 42;
     }
 
     Q.wait();
@@ -178,8 +175,7 @@ int main(int argc, char** argv) {
         auto t1 = std::chrono::high_resolution_clock::now();
 
         event e_producer = run_producer(Q, image_data);
-        event e_module =
-          run_module(Q, mask_data, destination_data, destination_data_sq);
+        event e_module = run_module(Q, mask_data, destination_data);
         Q.wait();
 
         auto t2 = std::chrono::high_resolution_clock::now();
@@ -205,9 +201,6 @@ int main(int argc, char** argv) {
 
         fmt::print("\nSum:\n");
         draw_image_data(destination_data, 0, 0, 16, 16, fast, slow);
-
-        fmt::print("\nSumSq:\n");
-        draw_image_data(destination_data_sq, 0, 0, 16, 16, fast, slow);
     }
 
     free(image_data, Q);
