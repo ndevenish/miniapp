@@ -206,7 +206,7 @@ auto run_module(sycl::queue& Q,
                     auto* interim_blocks_sq = reinterpret_cast<PipedPixelsArray*>(
                       &interim_pixels_sq[KERNEL_WIDTH]);
                     interim_blocks[0] = pixels;
-                    interim_blocks_sq[0] = pixels;
+                    interim_blocks_sq[0] = pow2(pixels);
 
                     for (size_t block = 0; block < FULL_BLOCKS - 1; ++block) {
                         auto pixels = ProducerPipeToModule::read();
@@ -214,7 +214,7 @@ auto run_module(sycl::queue& Q,
                         auto kernel_sum =
                           calculate_next_block(y, block, rows, interim_pixels, pixels);
                         auto kernel_sum_sq = calculate_next_block(
-                          y, block, rows_sq, interim_pixels_sq, pixels);
+                          y, block, rows_sq, interim_pixels_sq, pow2(pixels));
 
                         // Write this into the output data block
                         if (y >= KERNEL_HEIGHT) {

@@ -60,7 +60,7 @@ void draw_image_data(const uint16_t* data,
     if (slow == 0) {
         fmt::print("x =     \033[4m");
         for (int x = fast; x < fast + width; ++x) {
-            fmt::print("{:3d}  ", x);
+            fmt::print("{:5d}  ", x);
         }
         fmt::print("{}\n", NC);
     }
@@ -71,7 +71,7 @@ void draw_image_data(const uint16_t* data,
             fmt::print("    {:2d} │", y);
         }
         for (int i = fast; i < fast + width; ++i) {
-            fmt::print("{:3d}  ", data[i + data_width * y]);
+            fmt::print("{:5d}  ", data[i + data_width * y]);
         }
         fmt::print("│\n");
     }
