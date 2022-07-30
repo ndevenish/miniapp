@@ -49,7 +49,8 @@ double event_GBps(const sycl::event& e, size_t bytes) {
 /// Draw a subset of the pixel values for a 2D image array
 /// fast, slow, width, height - describe the bounding box to draw
 /// data_width, data_height - describe the full data array size
-void draw_image_data(const uint16_t* data,
+template <typename T>
+void draw_image_data(const T* data,
                      size_t fast,
                      size_t slow,
                      size_t width,
@@ -76,6 +77,16 @@ void draw_image_data(const uint16_t* data,
         fmt::print("│\n");
     }
 }
+template <typename T, access::address_space SPACE>
+void draw_image_data(const multi_ptr<T, SPACE>& data,
+                     size_t fast,
+                     size_t slow,
+                     size_t width,
+                     size_t height,
+                     size_t data_width,
+                     size_t data_height) {
+    draw_image_data(data.get(), fast, slow, width, height, data_width, data_height);
+}
 
 void check_allocs() {}
 /** Basic sanity check on allocations.
@@ -91,6 +102,103 @@ void check_allocs(T arg, R... args) {
         throw std::bad_alloc{};
     }
     check_allocs(args...);
+}
+
+/** Calculate a kernel sum, the simplest possible implementation.
+ * 
+ * This is **slow**, even from the perspective of something running
+ * infrequently. It's relatively simple to get the algorithm correct,
+ * however, so is useful for validating other algorithms.
+ **/
+template <typename Tin>
+auto calculate_kernel_sum_slow(Tin* data, std::size_t fast, std::size_t slow) {
+    auto out_d = std::make_unique<Tin[]>(slow * fast);
+    Tin* out = out_d.get();
+    for (int y = 0; y < slow; ++y) {
+        int y0 = std::max(0, y - KERNEL_HEIGHT);
+        int y1 = std::min((int)slow, y + KERNEL_HEIGHT + 1);
+        // std::size_t y1 = std::min((int)slow-1, y + KERNEL_HEIGHT);
+        for (int x = 0; x < fast; ++x) {
+            int x0 = std::max(0, x - KERNEL_WIDTH);
+            int x1 = std::min((int)fast, x + KERNEL_WIDTH + 1);
+            Tin acc{};
+            for (int ky = y0; ky < y1; ++ky) {
+                for (int kx = x0; kx < x1; ++kx) {
+                    acc += data[(ky * fast) + kx];
+                }
+            }
+            out[(y * fast) + x] = acc;
+            if (y == 2 && x == 12) {
+                fmt::print("Got acc: {}\n", acc);
+            }
+        }
+    }
+    return out_d;
+}
+
+/** Calculate a kernel sum, on the host, using an SAT.
+ * 
+ * This is designed for non-offloading calculations for e.g. crosscheck
+ * or precalculation (like the mask).
+ **/
+template <typename Tin, typename Taccumulator = Tin>
+auto calculate_kernel_sum_sat(Tin* data, std::size_t fast, std::size_t slow)
+  -> std::unique_ptr<Tin[]> {
+    auto sat_d = std::make_unique<Taccumulator[]>(slow * fast);
+    Taccumulator* sat = sat_d.get();
+    for (int y = 0; y < slow; ++y) {
+        Taccumulator acc = 0;
+        for (int x = 0; x < fast; ++x) {
+            acc += data[y * fast + x];
+            if (y == 0) {
+                sat[y * fast + x] = acc;
+            } else {
+                sat[y * fast + x] = acc + sat[(y - 1) * fast + x];
+            }
+        }
+    }
+
+    // Now evaluate the (fixed size) kernel across this SAT
+    auto out_d = std::make_unique<Tin[]>(slow * fast);
+    Tin* out = out_d.get();
+    for (int y = 0; y < slow; ++y) {
+        int y0 = y - KERNEL_HEIGHT - 1;
+        int y1 = std::min((int)slow - 1, y + KERNEL_HEIGHT);
+        for (int x = 0; x < fast; ++x) {
+            int x0 = x - KERNEL_WIDTH - 1;
+            int x1 = std::min((int)fast - 1, x + KERNEL_WIDTH);
+
+            Taccumulator tl{}, tr{}, bl{};
+            Taccumulator br = sat[y1 * fast + x1];
+
+            if (y0 >= 0 && x0 >= 0) {
+                // Top left fully inside kernel
+                tl = sat[y0 * fast + x0];
+                tr = sat[y0 * fast + x1];
+                bl = sat[y1 * fast + x0];
+            } else if (x0 >= 0) {
+                // Top rows - y0 outside range
+                bl = sat[y1 * fast + x0];
+            } else if (y0 >= 0) {
+                // Left rows - x0 outside range
+                tr = sat[y0 * fast + x1];
+            }
+            out[y * fast + x] = br - (bl + tr) + tl;
+        }
+    }
+
+    return out_d;
+}
+
+bool compare_results(const uint16_t* left,
+                     const uint16_t* right,
+                     std::size_t num_pixels) {
+    for (std::size_t i = 0; i < num_pixels; ++i) {
+        if (left[i] != right[i]) {
+            return false;
+        }
+    }
+    return true;
 }
 
 int main(int argc, char** argv) {
@@ -122,17 +230,6 @@ int main(int argc, char** argv) {
     // Paranoia: Ensure that this is properly aligned
     assert(reinterpret_cast<uintptr_t>(image_data.get()) % 64 == 0);
 
-    // auto row_count = host_ptr<uint16_t>(malloc_host<uint16_t>(1, Q));
-    // check_allocs(row_count);
-    // *row_count = 0;
-
-    // Result data - this is accessed remotely but only at the end, to
-    // return the results.
-    // uintptr_t* result_dest = malloc_host<uintptr_t>(BLOCK_SIZE + 1, Q);
-    // uint16_t* result_mini = malloc_host<uint16_t>(BLOCK_SIZE, Q);
-
-    // auto* result = malloc_host<PipedPixelsArray>(2, Q);
-
     fmt::print(
       "Block data:\n"
       "         SIZE: {} px per block\n"
@@ -142,9 +239,13 @@ int main(int argc, char** argv) {
       BLOCK_REMAINDER,
       FULL_BLOCKS);
 
+    // Calculate kernel-summed mask data
+    auto mask_kernelsum =
+      calculate_kernel_sum_sat(reader.get_mask().data(), fast, slow);
+    // draw_image_data(mask_kernelsum.get(), fast - 16, slow - 16, 16, 16, fast, slow);
     fmt::print("Uploading mask data to accelerator.... ");
     auto e_mask_upload = Q.submit(
-      [&](handler& h) { h.memcpy(mask_data, reader.get_mask().data(), num_pixels); });
+      [&](handler& h) { h.memcpy(mask_data, mask_kernelsum.get(), num_pixels); });
     Q.wait();
     fmt::print("done in {:.1f} ms ({:.2f} GBps)\n",
                event_ms(e_mask_upload),
@@ -203,7 +304,7 @@ int main(int argc, char** argv) {
         draw_image_data(image_data.get(), 0, 0, 16, 16, fast, slow);
 
         fmt::print("\nSum:\n");
-        draw_image_data(destination_data, 0, 0, 16, 16, fast, slow);
+        draw_image_data(destination_data, fast - 16, slow - 16, 16, 16, fast, slow);
 
         fmt::print("\nSumSq:\n");
         draw_image_data(destination_data_sq, 0, 0, 16, 16, fast, slow);
