@@ -12,6 +12,7 @@
 #include "eiger2xe.h"
 #include "h5read.h"
 #include "kernel.hpp"
+#include "tinytiffwriter.h"
 
 using namespace sycl;
 
@@ -104,6 +105,36 @@ void check_allocs(T arg, R... args) {
     check_allocs(args...);
 }
 
+FindSpotsDebugOutput::FindSpotsDebugOutput(sycl::queue Q) {
+#ifdef DEBUG_IMAGES
+    sum = sycl::malloc_host<H5Read::image_type>(SLOW * FAST, Q);
+    sumsq = sycl::malloc_host<H5Read::image_type>(SLOW * FAST, Q);
+    dispersion = sycl::malloc_host<float>(SLOW * FAST, Q);
+    mean = sycl::malloc_host<float>(SLOW * FAST, Q);
+    variance = sycl::malloc_host<float>(SLOW * FAST, Q);
+    threshold = sycl::malloc_host<bool>(SLOW * FAST, Q);
+
+    check_allocs(sum, sumsq, dispersion, mean, variance, threshold);
+    for (std::size_t i = 0; i < SLOW * FAST; ++i) {
+        sum[i] = sumsq[i] = 42;
+        dispersion[i] = mean[i] = variance[i] = -1.0f;
+        threshold[i] = false;
+    }
+    // memset(sum, 0, SLOW*FAST*sizeof(H5Read::image_type));
+    // memset(sumsq, 0, SLOW*FAST*sizeof(H5Read::image_type));
+    // memset(dispersion, 0, SLOW*FAST*sizeof(float));
+    // memset(mean, 0, SLOW*FAST*sizeof(float));
+    // memset(variance, 0, SLOW*FAST*sizeof(float));
+    // memset(threshold, 0, SLOW*FAST*sizeof(bool));
+#else
+    sum = nullptr;
+    sumsq = nullptr;
+    dispersion = nullptr;
+    mean = nullptr;
+    variance = nullptr;
+    threshold = nullptr;
+#endif
+}
 /** Calculate a kernel sum, the simplest possible implementation.
  * 
  * This is **slow**, even from the perspective of something running
@@ -201,6 +232,31 @@ bool compare_results(const uint16_t* left,
     return true;
 }
 
+template <typename T>
+auto write_tiff(std::string filename_, int number, T* data) {
+    auto tif_type = TinyTIFFWriter_UInt;
+    if constexpr (std::is_floating_point<T>::value) {
+        tif_type = TinyTIFFWriter_Float;
+    } else if constexpr (std::is_signed<T>::value) {
+        tif_type = TinyTIFFWriter_UInt;
+    }
+    auto filename = fmt::format(filename_, number);
+    TinyTIFFWriterFile* tif = TinyTIFFWriter_open(filename.c_str(),
+                                                  sizeof(T) * 8,
+                                                  tif_type,
+                                                  1,
+                                                  FAST,
+                                                  SLOW,
+                                                  TinyTIFFWriter_Greyscale);
+    if (!tif) {
+        fmt::print("Error: Could not open TIFF\n");
+        std::exit(1);
+    }
+    TinyTIFFWriter_writeImage(tif, data);
+    TinyTIFFWriter_close(tif);
+    fmt::print("Wrote {}\n", filename);
+}
+
 int main(int argc, char** argv) {
     auto start_time = std::chrono::high_resolution_clock::now();
 
@@ -239,30 +295,42 @@ int main(int argc, char** argv) {
       BLOCK_REMAINDER,
       FULL_BLOCKS);
 
-    // Calculate kernel-summed mask data
-    auto mask_kernelsum =
-      calculate_kernel_sum_sat(reader.get_mask().data(), fast, slow);
-    // draw_image_data(mask_kernelsum.get(), fast - 16, slow - 16, 16, 16, fast, slow);
-    fmt::print("Uploading mask data to accelerator.... ");
-    auto e_mask_upload = Q.submit(
-      [&](handler& h) { h.memcpy(mask_data, mask_kernelsum.get(), num_pixels); });
-    Q.wait();
-    fmt::print("done in {:.1f} ms ({:.2f} GBps)\n",
-               event_ms(e_mask_upload),
-               event_GBps(e_mask_upload, num_pixels));
-
-    auto destination_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
-    auto destination_data_sq = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
-    auto strong_pixels = host_ptr<bool>(malloc_host<bool>(num_pixels, Q));
-    check_allocs(destination_data, destination_data_sq, strong_pixels);
-
-    // Fill this with placeholder data so we can tell if anything is happening
-    for (size_t i = 0; i < num_pixels; ++i) {
-        destination_data[i] = 42;
-        destination_data_sq[i] = 42;
+    if (reader.get_mask()) {
+        // Calculate kernel-summed mask data
+        auto mask_kernelsum =
+          calculate_kernel_sum_sat(reader.get_mask()->data(), fast, slow);
+        // draw_image_data(mask_kernelsum.get(), fast - 16, slow - 16, 16, 16, fast, slow);
+        fmt::print("Uploading mask data to accelerator.... ");
+        auto e_mask_upload = Q.submit(
+          [&](handler& h) { h.memcpy(mask_data, mask_kernelsum.get(), num_pixels); });
+        Q.wait();
+        fmt::print("done in {:.1f} ms ({:.2f} GBps)\n",
+                   event_ms(e_mask_upload),
+                   event_GBps(e_mask_upload, num_pixels));
+    } else {
+        fmt::print("Setting empty mask...");
+        auto e_mask_set = Q.memset(
+          mask_data, 0, num_pixels * sizeof(decltype(mask_data)::element_type));
+        e_mask_set.wait();
+        fmt::print("done in {:.1f} ms ({:.2f} GBps)\n",
+                   event_ms(e_mask_set),
+                   event_GBps(e_mask_set, num_pixels));
     }
 
+    FindSpotsDebugOutput debug_data{Q};
+
+    // auto destination_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
+    // auto destination_data_sq = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
+    auto strong_pixels = host_ptr<bool>(malloc_host<bool>(num_pixels, Q));
+    check_allocs(strong_pixels);
+    memset(strong_pixels, 0, sizeof(bool) * num_pixels);
+
+    // for (size_t i = 0; i < num_pixels; ++i) {
+    //     strong_pixels[i] = false;
+    // }
+
     Q.wait();
+
     fmt::print("Starting image loop:\n");
     for (int i = 0; i < reader.get_number_of_images(); ++i) {
         fmt::print("\nReading Image {}\n", i);
@@ -279,8 +347,7 @@ int main(int argc, char** argv) {
         auto t1 = std::chrono::high_resolution_clock::now();
 
         event e_producer = run_producer(Q, image_data);
-        event e_module = run_module(
-          Q, mask_data, destination_data, destination_data_sq, strong_pixels);
+        event e_module = run_module(Q, mask_data, strong_pixels, debug_data);
         Q.wait();
 
         auto t2 = std::chrono::high_resolution_clock::now();
@@ -304,11 +371,41 @@ int main(int argc, char** argv) {
         fmt::print("Data:\n");
         draw_image_data(image_data.get(), 0, 0, 16, 16, fast, slow);
 
-        fmt::print("\nMirror:\n");
-        draw_image_data(destination_data, 0, 0, 16, 16, fast, slow);
+        // fmt::print("\nMirror:\n");
+        // draw_image_data(destination_data, 0, 0, 16, 16, fast, slow);
 
+        // Count the strong pixels
+        size_t num_strong = 0;
+        for (size_t i = 0; i < num_pixels; ++i) {
+            if (strong_pixels[i]) {
+                num_strong++;
+            }
+        }
+        fmt::print("Number of strong pixels: {}\n", num_strong);
         // fmt::print("\nSumSq:\n");
-        // draw_image_data(destination_data_sq, 0, 0, 16, 16, fast, slow);
+        draw_image_data(strong_pixels, 0, 0, 16, 16, fast, slow);
+
+        fmt::print("Size: {}\n", sizeof(bool));
+        // auto filename = fmt::format("image_{}.tif", i);
+        // TinyTIFFWriterFile *tif = TinyTIFFWriter_open(filename.c_str(), 16, TinyTIFFWriter_UInt, 1, FAST, SLOW, TinyTIFFWriter_Greyscale);
+        // if (!tif) {
+        //     fmt::print("Error: Could not open TIFF\n");
+        //     std::exit(1);
+        // }
+        // TinyTIFFWriter_writeImage(tif, image_data.get());
+        // TinyTIFFWriter_close(tif);
+        for (int i = 0; i < num_pixels; ++i) {
+            ((uint8_t*)strong_pixels.get())[i] *= 255;
+
+            ((uint16_t*)image_data.get())[i] *= 20000;
+        }
+        write_tiff("{}_image.tif", i, image_data.get());
+        write_tiff("{}_strong.tif", i, strong_pixels.get());
+#ifdef DEBUG_IMAGES
+        write_tiff("{}_dispersion.tif", i, debug_data.dispersion);
+        write_tiff("{}_mean.tif", i, debug_data.mean);
+        write_tiff("{}_variance.tif", i, debug_data.variance);
+#endif
     }
 
     free(image_data, Q);

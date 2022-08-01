@@ -263,15 +263,22 @@ auto calculate_next_block(std::size_t y,
 
 auto run_module(sycl::queue& Q,
                 device_ptr<uint8_t> mask_data,
-                host_ptr<uint16_t> destination_data,
-                host_ptr<uint16_t> destination_data_sq,
-                host_ptr<bool> strong_pixels) -> sycl::event {
+                host_ptr<bool> strong_pixels,
+                FindSpotsDebugOutput& debug_data) -> sycl::event {
     return Q.submit([&](handler& h) {
             h.single_task<class Module<0>>([=](){
-                auto destination_data_h = host_ptr<uint16_t>(destination_data);
-                auto destination_data_sq_h = host_ptr<uint16_t>(destination_data_sq);
+#ifdef DEBUG_IMAGES
+                auto debug_sum = host_ptr<uint16_t>(debug_data.sum);
+                auto debug_sumsq = host_ptr<uint16_t>(debug_data.sumsq);
+                auto debug_variance = host_ptr<float>(debug_data.variance);
+                auto debug_dispersion = host_ptr<float>(debug_data.dispersion);
+                auto debug_mean = host_ptr<float>(debug_data.mean);
+                auto debug_threshold = host_ptr<bool>(debug_data.threshold);
+#endif
+
                 auto strong_pixels_h = host_ptr<bool>(strong_pixels);
                 size_t sum_pixels = 0;
+                size_t strong_pixels_count = 0;
 
                 // Make a buffer for full rows so we can store them as we go
                 ModuleRowStore<FULL_BLOCKS> rows, rows_sq;
@@ -302,7 +309,7 @@ auto run_module(sycl::queue& Q,
                         auto kernel_sum_sq = calculate_next_block(
                           y, block, rows_sq, interim_pixels_sq, pow2(pixels));
 
-                        // Write this into the output data block
+                        // Until we reach the kernel height, we aren't ready to calculate anything
                         if (y < KERNEL_HEIGHT) {
                             continue;
                         }
@@ -328,12 +335,27 @@ auto run_module(sycl::queue& Q,
 
                         auto is_strong_pixel = is_background && is_signal;
 
+                        size_t _count = 0;
+#pragma unroll
+                        for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+                            if (is_strong_pixel[i]) {
+                                _count += 1;
+                            }
+                        }
+                        strong_pixels_count += _count;
+
                         // Let's write back to our host for introspection
                         size_t offset = (y - KERNEL_HEIGHT) * FAST + block * BLOCK_SIZE;
 #pragma unroll
                         for (size_t i = 0; i < BLOCK_SIZE; ++i) {
-                            destination_data_h[offset + i] = kernel_sum[i];
-                            destination_data_sq_h[offset + i] = kernel_sum_sq[i];
+#ifdef DEBUG_IMAGES
+                            debug_sum[offset + i] = kernel_sum[i];
+                            debug_sumsq[offset + i] = kernel_sum_sq[i];
+                            debug_dispersion[offset + i] = dispersion[i];
+                            debug_mean[offset + i] = mean[i];
+                            debug_variance[offset + i] = variance[i];
+#endif
+
                             strong_pixels_h[offset + i] = is_strong_pixel[i];
                         }
                     }
@@ -347,6 +369,7 @@ auto run_module(sycl::queue& Q,
                 for (int i = 0; i < FULL_BLOCKS * KERNEL_HEIGHT; ++i) {
                     PixelBufferPipe::read();
                 }
+
                 });
     });
 }

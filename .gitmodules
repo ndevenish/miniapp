@@ -8,3 +8,6 @@
 	path = dependencies/argparse
 	url = https://github.com/ndevenish/argparse
     ignore = untracked
+[submodule "dependencies/TinyTIFF"]
+    path = dependencies/TinyTIFF
+    url = https://github.com/jkriege2/TinyTIFF

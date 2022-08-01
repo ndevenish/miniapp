@@ -51,10 +51,23 @@ class PipedPixelsArray {
     }
 };
 
+#define DEBUG_IMAGES
+
+struct FindSpotsDebugOutput {
+    // H5Read::image_type* image_data;
+    H5Read::image_type* sum;
+    H5Read::image_type* sumsq;
+    float* dispersion;
+    float* mean;
+    float* variance;
+    bool* threshold;
+
+    FindSpotsDebugOutput(sycl::queue Q);
+};
+
 auto run_producer(sycl::queue& Q, sycl::host_ptr<uint16_t> image_data) -> sycl::event;
 
 auto run_module(sycl::queue& Q,
                 sycl::device_ptr<uint8_t> mask_data,
-                sycl::host_ptr<uint16_t> destination_data,
-                sycl::host_ptr<uint16_t> destination_data_sq,
-                sycl::host_ptr<bool> strong_pixels) -> sycl::event;
+                sycl::host_ptr<bool> strong_pixels,
+                FindSpotsDebugOutput& debug_data) -> sycl::event;
