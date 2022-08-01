@@ -303,11 +303,11 @@ int main(int argc, char** argv) {
         fmt::print("Data:\n");
         draw_image_data(image_data.get(), 0, 0, 16, 16, fast, slow);
 
-        fmt::print("\nSum:\n");
+        fmt::print("\nMirror:\n");
         draw_image_data(destination_data, 0, 0, 16, 16, fast, slow);
 
-        fmt::print("\nSumSq:\n");
-        draw_image_data(destination_data_sq, 0, 0, 16, 16, fast, slow);
+        // fmt::print("\nSumSq:\n");
+        // draw_image_data(destination_data_sq, 0, 0, 16, 16, fast, slow);
     }
 
     free(image_data, Q);

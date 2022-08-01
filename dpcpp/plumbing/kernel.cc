@@ -11,6 +11,15 @@ class ToModulePipe;
 
 using ProducerPipeToModule = SYCL_INTEL::pipe<class ToModulePipe, PipedPixelsArray, 5>;
 
+class PixelPipe;
+// Pixel buffer pipe, so that we can use the same pixel later in the process
+// We read KERNEL_HEIGHT full rows of data after a pixel before we have
+// the complete kernel are. We need +1 block because we need to read the
+// next block of pixels to account for pixels at the edge of the current
+// block whose kernel area overlaps with the next block.
+using PixelBufferPipe =
+  SYCL_INTEL::pipe<class PixelPipe, PipedPixelsArray, KERNEL_HEIGHT * FULL_BLOCKS + 1>;
+
 template <int Index>
 class Module;
 
@@ -169,6 +178,8 @@ auto run_producer(sycl::queue& Q, sycl::host_ptr<uint16_t> image_data) -> sycl::
                     auto image_data_h = host_ptr<PipedPixelsArray>(
                       reinterpret_cast<PipedPixelsArray*>(image_data.get() + y * FAST));
                     ProducerPipeToModule::write(image_data_h[block]);
+                    // Send every pixel into a second, delay buffer pipe
+                    PixelBufferPipe::write(image_data_h[block]);
                 }
             }
         });
@@ -273,15 +284,19 @@ auto run_module(sycl::queue& Q,
                           y, block, rows_sq, interim_pixels_sq, pow2(pixels));
 
                         // Write this into the output data block
-                        if (y >= KERNEL_HEIGHT) {
-                            // Write a really simple loop.
-                            size_t offset =
-                              (y - KERNEL_HEIGHT) * FAST + block * BLOCK_SIZE;
+                        if (y < KERNEL_HEIGHT) {
+                            continue;
+                        }
+
+                        // Get the value of the pixels KERNEL_HEIGHT rows ago
+                        auto kernel_px = PixelBufferPipe::read();
+
+                        // Let's write back to our host for introspection
+                        size_t offset = (y - KERNEL_HEIGHT) * FAST + block * BLOCK_SIZE;
 #pragma unroll
-                            for (size_t i = 0; i < BLOCK_SIZE; ++i) {
-                                destination_data_h[offset + i] = kernel_sum[i];
-                                destination_data_sq_h[offset + i] = kernel_sum_sq[i];
-                            }
+                        for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+                            destination_data_h[offset + i] = kernel_px[i];
+                            // destination_data_sq_h[offset + i] = kernel_sum_sq[i];
                         }
 
                         // Calculate the thresholding values for these kernels.
@@ -295,12 +310,19 @@ auto run_module(sycl::queue& Q,
                         auto variance =
                           (N * kernel_sum_sq - pow2(kernel_sum)) / (N * (N - 1));
                         auto dispersion = variance / mean;
-
                         auto is_background = dispersion > background_threshold;
-                        // auto background_dispersion = 1 +
 
                         auto signal_threshold = mean + sigma_strong * sqrt(mean);
                     }
+                    // We ignore the last block in the algorithm
+                    if (y >= KERNEL_HEIGHT) {
+                        PixelBufferPipe::read();
+                    }
+                }
+                // Drain the pipe - because we don't do the bottom edge of the image,
+                // we have KERNEL_HEIGHT rows of pixel data that has remained unread
+                for (int i = 0; i < FULL_BLOCKS * KERNEL_HEIGHT; ++i) {
+                    PixelBufferPipe::read();
                 }
                 });
     });
