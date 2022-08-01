@@ -16,6 +16,10 @@ constexpr int KERNEL_WIDTH = 3;
 /// One-direction height of kernel. Total kernel span is (K_H * 2 + 1)
 constexpr int KERNEL_HEIGHT = 3;
 
+// Spotfinding kernel parameters
+constexpr float sigma_background = 6;
+constexpr float sigma_strong = 4;
+
 constexpr int FULL_KERNEL_HEIGHT = KERNEL_HEIGHT * 2 + 1;
 
 // How many pixels we use at once

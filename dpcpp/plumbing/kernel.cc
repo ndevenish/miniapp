@@ -1,5 +1,6 @@
 #include "kernel.hpp"
 
+#include <cmath>
 #include <sycl/ext/intel/fpga_extensions.hpp>
 
 #include "common.hpp"
@@ -50,6 +51,14 @@ template <int blocks>
 using ModuleRowStore = PipedPixelsArray[FULL_KERNEL_HEIGHT][blocks];
 
 // Convenience operators for PipedPixelsArray
+inline auto operator+(const std::array<float, BLOCK_SIZE>& l,
+                      const std::array<float, BLOCK_SIZE>& r) {
+    std::array<float, BLOCK_SIZE> sum;
+    for (int i = 0; i < BLOCK_SIZE; ++i) {
+        sum[i] = l[i] + r[i];
+    }
+    return sum;
+}
 inline auto operator+(const PipedPixelsArray& l, const PipedPixelsArray& r)
   -> PipedPixelsArray {
     PipedPixelsArray sum;
@@ -65,6 +74,53 @@ inline auto operator-(const PipedPixelsArray& l, const PipedPixelsArray& r)
         sum.data[i] = l.data[i] - r.data[i];
     }
     return sum;
+}
+inline auto operator*(const std::size_t l, const PipedPixelsArray& r)
+  -> PipedPixelsArray {
+    PipedPixelsArray mult;
+    for (int i = 0; i < BLOCK_SIZE; ++i) {
+        mult.data[i] = l * r.data[i];
+    }
+    return mult;
+}
+template <typename Tl, typename Tr>
+inline auto operator*(const Tl l, const std::array<Tr, BLOCK_SIZE>& r) {
+    std::array<Tr, BLOCK_SIZE> mult;
+    for (int i = 0; i < BLOCK_SIZE; ++i) {
+        mult[i] = l * r[i];
+    }
+    return mult;
+}
+
+inline auto operator/(const PipedPixelsArray& l, std::size_t r) {
+    // const std::size_t l,
+    std::array<float, BLOCK_SIZE> out;
+    for (int i = 0; i < BLOCK_SIZE; ++i) {
+        out[i] = l[i] / r;
+    }
+    return out;
+}
+inline auto operator/(const std::array<float, BLOCK_SIZE>& l,
+                      const std::array<float, BLOCK_SIZE>& r) {
+    std::array<float, BLOCK_SIZE> out;
+    for (int i = 0; i < BLOCK_SIZE; ++i) {
+        out[i] = l[i] / r[i];
+    }
+    return out;
+}
+inline auto operator>(const std::array<float, BLOCK_SIZE>& l, float r) {
+    std::array<bool, BLOCK_SIZE> out;
+    for (int i = 0; i < BLOCK_SIZE; ++i) {
+        out[i] = l[i] > r;
+    }
+    return out;
+}
+inline auto sqrt(const std::array<float, BLOCK_SIZE>& in) {
+    std::array<float, BLOCK_SIZE> out;
+    for (int i = 0; i < BLOCK_SIZE; ++i) {
+        out[i] = std::sqrt(in[i]);
+    }
+    return out;
 }
 
 const sycl::stream& operator<<(const sycl::stream& os,
@@ -227,6 +283,23 @@ auto run_module(sycl::queue& Q,
                                 destination_data_sq_h[offset + i] = kernel_sum_sq[i];
                             }
                         }
+
+                        // Calculate the thresholding values for these kernels.
+                        // Let's assume for now that everything is unmasked.
+                        constexpr std::size_t N =
+                          (KERNEL_WIDTH * 2 + 1) * (KERNEL_HEIGHT * 2 + 1);
+                        auto background_threshold =
+                          1 + sigma_background * std::sqrt(2 / (N - 1));
+
+                        auto mean = kernel_sum / N;
+                        auto variance =
+                          (N * kernel_sum_sq - pow2(kernel_sum)) / (N * (N - 1));
+                        auto dispersion = variance / mean;
+
+                        auto is_background = dispersion > background_threshold;
+                        // auto background_dispersion = 1 +
+
+                        auto signal_threshold = mean + sigma_strong * sqrt(mean);
                     }
                 }
                 });

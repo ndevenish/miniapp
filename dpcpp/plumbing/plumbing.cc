@@ -304,7 +304,7 @@ int main(int argc, char** argv) {
         draw_image_data(image_data.get(), 0, 0, 16, 16, fast, slow);
 
         fmt::print("\nSum:\n");
-        draw_image_data(destination_data, fast - 16, slow - 16, 16, 16, fast, slow);
+        draw_image_data(destination_data, 0, 0, 16, 16, fast, slow);
 
         fmt::print("\nSumSq:\n");
         draw_image_data(destination_data_sq, 0, 0, 16, 16, fast, slow);
