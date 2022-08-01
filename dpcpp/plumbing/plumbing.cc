@@ -253,7 +253,8 @@ int main(int argc, char** argv) {
 
     auto destination_data = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
     auto destination_data_sq = host_ptr<uint16_t>(malloc_host<uint16_t>(num_pixels, Q));
-    check_allocs(destination_data, destination_data_sq);
+    auto strong_pixels = host_ptr<bool>(malloc_host<bool>(num_pixels, Q));
+    check_allocs(destination_data, destination_data_sq, strong_pixels);
 
     // Fill this with placeholder data so we can tell if anything is happening
     for (size_t i = 0; i < num_pixels; ++i) {
@@ -278,8 +279,8 @@ int main(int argc, char** argv) {
         auto t1 = std::chrono::high_resolution_clock::now();
 
         event e_producer = run_producer(Q, image_data);
-        event e_module =
-          run_module(Q, mask_data, destination_data, destination_data_sq);
+        event e_module = run_module(
+          Q, mask_data, destination_data, destination_data_sq, strong_pixels);
         Q.wait();
 
         auto t2 = std::chrono::high_resolution_clock::now();

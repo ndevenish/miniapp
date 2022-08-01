@@ -56,4 +56,5 @@ auto run_producer(sycl::queue& Q, sycl::host_ptr<uint16_t> image_data) -> sycl::
 auto run_module(sycl::queue& Q,
                 sycl::device_ptr<uint8_t> mask_data,
                 sycl::host_ptr<uint16_t> destination_data,
-                sycl::host_ptr<uint16_t> destination_data_sq) -> sycl::event;
+                sycl::host_ptr<uint16_t> destination_data_sq,
+                sycl::host_ptr<bool> strong_pixels) -> sycl::event;

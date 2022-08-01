@@ -124,10 +124,27 @@ inline auto operator>(const std::array<float, BLOCK_SIZE>& l, float r) {
     }
     return out;
 }
+inline auto operator>(const PipedPixelsArray& l,
+                      const std::array<float, BLOCK_SIZE>& r) {
+    std::array<bool, BLOCK_SIZE> out;
+    for (int i = 0; i < BLOCK_SIZE; ++i) {
+        out[i] = l[i] > r[i];
+    }
+    return out;
+}
 inline auto sqrt(const std::array<float, BLOCK_SIZE>& in) {
     std::array<float, BLOCK_SIZE> out;
     for (int i = 0; i < BLOCK_SIZE; ++i) {
         out[i] = std::sqrt(in[i]);
+    }
+    return out;
+}
+
+inline auto operator&&(const std::array<bool, BLOCK_SIZE>& l,
+                       const std::array<bool, BLOCK_SIZE>& r) {
+    std::array<bool, BLOCK_SIZE> out;
+    for (int i = 0; i < BLOCK_SIZE; ++i) {
+        out[i] = l[i] && r[i];
     }
     return out;
 }
@@ -247,11 +264,13 @@ auto calculate_next_block(std::size_t y,
 auto run_module(sycl::queue& Q,
                 device_ptr<uint8_t> mask_data,
                 host_ptr<uint16_t> destination_data,
-                host_ptr<uint16_t> destination_data_sq) -> sycl::event {
+                host_ptr<uint16_t> destination_data_sq,
+                host_ptr<bool> strong_pixels) -> sycl::event {
     return Q.submit([&](handler& h) {
             h.single_task<class Module<0>>([=](){
                 auto destination_data_h = host_ptr<uint16_t>(destination_data);
                 auto destination_data_sq_h = host_ptr<uint16_t>(destination_data_sq);
+                auto strong_pixels_h = host_ptr<bool>(strong_pixels);
                 size_t sum_pixels = 0;
 
                 // Make a buffer for full rows so we can store them as we go
@@ -291,14 +310,6 @@ auto run_module(sycl::queue& Q,
                         // Get the value of the pixels KERNEL_HEIGHT rows ago
                         auto kernel_px = PixelBufferPipe::read();
 
-                        // Let's write back to our host for introspection
-                        size_t offset = (y - KERNEL_HEIGHT) * FAST + block * BLOCK_SIZE;
-#pragma unroll
-                        for (size_t i = 0; i < BLOCK_SIZE; ++i) {
-                            destination_data_h[offset + i] = kernel_px[i];
-                            // destination_data_sq_h[offset + i] = kernel_sum_sq[i];
-                        }
-
                         // Calculate the thresholding values for these kernels.
                         // Let's assume for now that everything is unmasked.
                         constexpr std::size_t N =
@@ -313,6 +324,18 @@ auto run_module(sycl::queue& Q,
                         auto is_background = dispersion > background_threshold;
 
                         auto signal_threshold = mean + sigma_strong * sqrt(mean);
+                        auto is_signal = kernel_px > signal_threshold;
+
+                        auto is_strong_pixel = is_background && is_signal;
+
+                        // Let's write back to our host for introspection
+                        size_t offset = (y - KERNEL_HEIGHT) * FAST + block * BLOCK_SIZE;
+#pragma unroll
+                        for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+                            destination_data_h[offset + i] = kernel_sum[i];
+                            destination_data_sq_h[offset + i] = kernel_sum_sq[i];
+                            strong_pixels_h[offset + i] = is_strong_pixel[i];
+                        }
                     }
                     // We ignore the last block in the algorithm
                     if (y >= KERNEL_HEIGHT) {
