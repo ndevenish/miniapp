@@ -234,11 +234,14 @@ bool compare_results(const uint16_t* left,
 
 template <typename T>
 auto write_tiff(std::string filename_, int number, T* data) {
+    std::string type = "UInt";
     auto tif_type = TinyTIFFWriter_UInt;
     if constexpr (std::is_floating_point<T>::value) {
         tif_type = TinyTIFFWriter_Float;
+        type = "Float";
     } else if constexpr (std::is_signed<T>::value) {
-        tif_type = TinyTIFFWriter_UInt;
+        tif_type = TinyTIFFWriter_Int;
+        type = "Int";
     }
     auto filename = fmt::format(filename_, number);
     TinyTIFFWriterFile* tif = TinyTIFFWriter_open(filename.c_str(),
@@ -254,7 +257,7 @@ auto write_tiff(std::string filename_, int number, T* data) {
     }
     TinyTIFFWriter_writeImage(tif, data);
     TinyTIFFWriter_close(tif);
-    fmt::print("Wrote {}\n", filename);
+    fmt::print("Wrote {:2} bit {:5} image: {}\n", sizeof(T) * 8, type, filename);
 }
 
 int main(int argc, char** argv) {

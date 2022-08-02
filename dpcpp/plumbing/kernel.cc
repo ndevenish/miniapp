@@ -105,7 +105,7 @@ inline auto operator/(const PipedPixelsArray& l, std::size_t r) {
     // const std::size_t l,
     std::array<float, BLOCK_SIZE> out;
     for (int i = 0; i < BLOCK_SIZE; ++i) {
-        out[i] = l[i] / r;
+        out[i] = static_cast<float>(l[i]) / static_cast<float>(r);
     }
     return out;
 }
