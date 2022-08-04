@@ -268,12 +268,7 @@ auto run_module(sycl::queue& Q,
     return Q.submit([&](handler& h) {
             h.single_task<class Module<0>>([=](){
 #ifdef DEBUG_IMAGES
-                auto debug_sum = host_ptr<uint16_t>(debug_data.sum);
-                auto debug_sumsq = host_ptr<uint16_t>(debug_data.sumsq);
-                auto debug_variance = host_ptr<float>(debug_data.variance);
-                auto debug_dispersion = host_ptr<float>(debug_data.dispersion);
-                auto debug_mean = host_ptr<float>(debug_data.mean);
-                auto debug_threshold = host_ptr<bool>(debug_data.threshold);
+                auto debug = const_cast<FindSpotsDebugOutput&>(debug_data);
 #endif
 
                 auto strong_pixels_h = host_ptr<bool>(strong_pixels);
@@ -349,11 +344,11 @@ auto run_module(sycl::queue& Q,
 #pragma unroll
                         for (size_t i = 0; i < BLOCK_SIZE; ++i) {
 #ifdef DEBUG_IMAGES
-                            debug_sum[offset + i] = kernel_sum[i];
-                            debug_sumsq[offset + i] = kernel_sum_sq[i];
-                            debug_dispersion[offset + i] = dispersion[i];
-                            debug_mean[offset + i] = mean[i];
-                            debug_variance[offset + i] = variance[i];
+                            debug.sum[offset + i] = kernel_sum[i];
+                            debug.sumsq[offset + i] = kernel_sum_sq[i];
+                            debug.dispersion[offset + i] = dispersion[i];
+                            debug.mean[offset + i] = mean[i];
+                            debug.variance[offset + i] = variance[i];
 #endif
 
                             strong_pixels_h[offset + i] = is_strong_pixel[i];

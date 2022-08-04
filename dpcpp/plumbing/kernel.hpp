@@ -55,12 +55,12 @@ class PipedPixelsArray {
 
 struct FindSpotsDebugOutput {
     // H5Read::image_type* image_data;
-    H5Read::image_type* sum;
-    H5Read::image_type* sumsq;
-    float* dispersion;
-    float* mean;
-    float* variance;
-    bool* threshold;
+    sycl::host_ptr<H5Read::image_type> sum;
+    sycl::host_ptr<H5Read::image_type> sumsq;
+    sycl::host_ptr<float> dispersion;
+    sycl::host_ptr<float> mean;
+    sycl::host_ptr<float> variance;
+    sycl::host_ptr<bool> threshold;
 
     FindSpotsDebugOutput(sycl::queue Q);
 };

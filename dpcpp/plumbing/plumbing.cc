@@ -260,6 +260,11 @@ auto write_tiff(std::string filename_, int number, T* data) {
     fmt::print("Wrote {:2} bit {:5} image: {}\n", sizeof(T) * 8, type, filename);
 }
 
+template <typename T>
+auto write_tiff(std::string filename_, int number, sycl::host_ptr<T> data) {
+    return write_tiff(filename_, number, data.get());
+}
+
 int main(int argc, char** argv) {
     auto start_time = std::chrono::high_resolution_clock::now();
 
