@@ -56,42 +56,46 @@ using BufferedPipedPixelsArray =
 // This two-block solution only works if kernel width < block size
 static_assert(KERNEL_WIDTH < BLOCK_SIZE);
 
-template <int blocks>
-using ModuleRowStore = PipedPixelsArray[FULL_KERNEL_HEIGHT][blocks];
+template <typename T, int blocks>
+using ModuleRowStore = std::array<T, BLOCK_SIZE>[FULL_KERNEL_HEIGHT][blocks];
 
-// Convenience operators for PipedPixelsArray
-inline auto operator+(const std::array<float, BLOCK_SIZE>& l,
-                      const std::array<float, BLOCK_SIZE>& r) {
-    std::array<float, BLOCK_SIZE> sum;
+template <typename T, typename U>
+inline auto operator+(const std::array<T, BLOCK_SIZE>& l,
+                      const std::array<U, BLOCK_SIZE>& r) {
+    std::array<typename std::common_type<T, U>::type, BLOCK_SIZE> sum;
     for (int i = 0; i < BLOCK_SIZE; ++i) {
         sum[i] = l[i] + r[i];
     }
     return sum;
 }
-inline auto operator+(const PipedPixelsArray& l, const PipedPixelsArray& r)
-  -> PipedPixelsArray {
-    PipedPixelsArray sum;
+template <typename T, typename U>
+inline auto operator-(const std::array<T, BLOCK_SIZE>& l,
+                      const std::array<U, BLOCK_SIZE>& r) {
+    std::array<typename std::common_type<T, U>::type, BLOCK_SIZE> sub;
     for (int i = 0; i < BLOCK_SIZE; ++i) {
-        sum[i] = l[i] + r[i];
+        sub[i] = l[i] - r[i];
     }
-    return sum;
+    return sub;
 }
-inline auto operator-(const PipedPixelsArray& l, const PipedPixelsArray& r)
-  -> PipedPixelsArray {
-    PipedPixelsArray sum;
+
+template <typename T>
+inline auto operator/(const std::array<T, BLOCK_SIZE>& l, float r) {
+    std::array<float, BLOCK_SIZE> out;
     for (int i = 0; i < BLOCK_SIZE; ++i) {
-        sum[i] = l[i] - r[i];
+        out[i] = static_cast<float>(l[i]) / r;
     }
-    return sum;
+    return out;
 }
-inline auto operator*(const std::size_t l, const PipedPixelsArray& r)
-  -> PipedPixelsArray {
-    PipedPixelsArray mult;
+template <typename T, typename U>
+inline auto operator/(const std::array<T, BLOCK_SIZE>& l,
+                      const std::array<U, BLOCK_SIZE>& r) {
+    std::array<float, BLOCK_SIZE> out;
     for (int i = 0; i < BLOCK_SIZE; ++i) {
-        mult[i] = l * r[i];
+        out[i] = static_cast<float>(l[i]) / static_cast<float>(r[i]);
     }
-    return mult;
+    return out;
 }
+
 template <typename Tl, typename Tr>
 inline auto operator*(const Tl l, const std::array<Tr, BLOCK_SIZE>& r) {
     std::array<Tr, BLOCK_SIZE> mult;
@@ -100,8 +104,8 @@ inline auto operator*(const Tl l, const std::array<Tr, BLOCK_SIZE>& r) {
     }
     return mult;
 }
-template <typename Tr>
-inline auto operator*(const PipedPixelsArray& l, const Tr r) {
+template <typename Tl, typename Tr>
+inline auto operator*(const std::array<Tl, BLOCK_SIZE>& l, const Tr r) {
     std::array<float, BLOCK_SIZE> mult;
     for (int i = 0; i < BLOCK_SIZE; ++i) {
         mult[i] = l[i] * r;
@@ -114,22 +118,6 @@ inline auto operator/(const PipedPixelsArray& l, std::size_t r) {
     std::array<float, BLOCK_SIZE> out;
     for (int i = 0; i < BLOCK_SIZE; ++i) {
         out[i] = static_cast<float>(l[i]) / static_cast<float>(r);
-    }
-    return out;
-}
-inline auto operator/(const std::array<float, BLOCK_SIZE>& l,
-                      const std::array<float, BLOCK_SIZE>& r) {
-    std::array<float, BLOCK_SIZE> out;
-    for (int i = 0; i < BLOCK_SIZE; ++i) {
-        out[i] = l[i] / r[i];
-    }
-    return out;
-}
-inline auto operator/(const PipedPixelsArray& l,
-                      const std::array<float, BLOCK_SIZE>& r) {
-    std::array<float, BLOCK_SIZE> out;
-    for (int i = 0; i < BLOCK_SIZE; ++i) {
-        out[i] = l[i] / r[i];
     }
     return out;
 }
@@ -220,7 +208,8 @@ auto run_producer(sycl::queue& Q, sycl::host_ptr<uint16_t> image_data) -> sycl::
     });
 }
 
-void initialise_row_store(ModuleRowStore<FULL_BLOCKS>& rows) {
+template <typename T>
+void initialise_row_store(ModuleRowStore<T, FULL_BLOCKS>& rows) {
     // Initialise this to zeros
     for (int zr = 0; zr < FULL_KERNEL_HEIGHT; ++zr) {
         for (int zb = 0; zb < FULL_BLOCKS; ++zb) {
@@ -240,12 +229,12 @@ auto pow2(const PipedPixelsArray& val) -> PipedPixelsArray {
     }
     return sqr;
 }
-
+template <typename T>
 auto calculate_next_block(std::size_t y,
                           std::size_t block_number,
-                          ModuleRowStore<FULL_BLOCKS>& rows,
+                          ModuleRowStore<T, FULL_BLOCKS>& rows,
                           BufferedPipedPixelsArray& interim_pixels,
-                          PipedPixelsArray new_block) -> PipedPixelsArray {
+                          PipedPixelsArray new_block) -> std::array<T, BLOCK_SIZE> {
     // Recreate the "block view" of this buffer
     auto* interim_blocks =
       reinterpret_cast<PipedPixelsArray*>(&interim_pixels[KERNEL_WIDTH]);
@@ -268,7 +257,7 @@ auto calculate_next_block(std::size_t y,
     auto oldest_row = rows[oldest_row_index][block_number];
 
     // Write the new running total over the oldest data
-    PipedPixelsArray new_row = sum + prev_row;
+    auto new_row = sum + prev_row;
 
     rows[oldest_row_index][block_number] = new_row;
 
@@ -294,7 +283,7 @@ auto run_module(sycl::queue& Q,
                 size_t strong_pixels_count = 0;
 
                 // Make a buffer for full rows so we can store them as we go
-                ModuleRowStore<FULL_BLOCKS> rows, rows_sq;
+                ModuleRowStore<uint32_t, FULL_BLOCKS> rows, rows_sq;
 
                 initialise_row_store(rows);
                 initialise_row_store(rows_sq);
