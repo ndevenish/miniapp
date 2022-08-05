@@ -51,8 +51,6 @@ class PipedPixelsArray {
     }
 };
 
-#define DEBUG_IMAGES
-
 struct FindSpotsDebugOutput {
     // H5Read::image_type* image_data;
     sycl::host_ptr<H5Read::image_type> sum;
