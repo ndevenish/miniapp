@@ -59,13 +59,22 @@ void draw_image_data(const T* data,
                      size_t data_width,
                      size_t data_height) {
     // Draw a row header if we are at the top
-    if (slow == 0) {
-        fmt::print("x =     \033[4m");
-        for (int x = fast; x < fast + width; ++x) {
-            fmt::print("{:5d}  ", x);
-        }
-        fmt::print("{}\n", NC);
+    std::string format = "";
+    if constexpr (std::is_integral<T>::value) {
+        format = "{:6d}  ";
+    } else {
+        format = "{:6.2f}  ";
     }
+    fmt::print("x =      ");
+    for (int x = fast; x < fast + width; ++x) {
+        fmt::print("{:6d}  ", x);
+    }
+    fmt::print("{}\n", NC);
+    fmt::print("        ┌");
+    for (int i = 0; i < width; ++i) {
+        fmt::print("───────");
+    }
+    fmt::print("┐\n");
     for (int y = slow; y < min(slow + height, data_height); ++y) {
         if (y == slow) {
             fmt::print("y = {:2d} │", y);
@@ -73,7 +82,7 @@ void draw_image_data(const T* data,
             fmt::print("    {:2d} │", y);
         }
         for (int i = fast; i < fast + width; ++i) {
-            fmt::print("{:5d}  ", data[i + data_width * y]);
+            fmt::print(format, data[i + data_width * y]);
         }
         fmt::print("│\n");
     }
@@ -375,9 +384,10 @@ int main(int argc, char** argv) {
 
         Q.wait();
 
+        int x = 2101, y = 3228;
         // Print a section of the image and "destination" arrays
         fmt::print("Data:\n");
-        draw_image_data(image_data.get(), 0, 0, 16, 16, fast, slow);
+        draw_image_data(image_data.get(), x, y, 16, 16, fast, slow);
 
         // fmt::print("\nMirror:\n");
         // draw_image_data(destination_data, 0, 0, 16, 16, fast, slow);
@@ -389,11 +399,22 @@ int main(int argc, char** argv) {
                 num_strong++;
             }
         }
-        fmt::print("Number of strong pixels: {}\n", num_strong);
-        // fmt::print("\nSumSq:\n");
-        draw_image_data(strong_pixels, 0, 0, 16, 16, fast, slow);
+        fmt::print("Sum:\n");
+        draw_image_data(debug_data.sum.get(), x, y, 16, 16, fast, slow);
 
-        fmt::print("Size: {}\n", sizeof(bool));
+        fmt::print("SumSq:\n");
+        draw_image_data(debug_data.sumsq, x, y, 16, 16, fast, slow);
+
+        fmt::print("Mean:\n");
+        draw_image_data(debug_data.mean, x, y, 16, 16, fast, slow);
+        // fmt::print("Number of strong pixels: {}\n", num_strong);
+        // fmt::print("\nSumSq:\n");
+        // draw_image_data(strong_pixels, 0, 0, 16, 16, fast, slow);
+
+        fmt::print("Variance:\n");
+        draw_image_data(debug_data.variance, x, y, 16, 16, fast, slow);
+
+        // fmt::print("Size: {}\n", sizeof(bool));
         // auto filename = fmt::format("image_{}.tif", i);
         // TinyTIFFWriterFile *tif = TinyTIFFWriter_open(filename.c_str(), 16, TinyTIFFWriter_UInt, 1, FAST, SLOW, TinyTIFFWriter_Greyscale);
         // if (!tif) {
@@ -402,11 +423,11 @@ int main(int argc, char** argv) {
         // }
         // TinyTIFFWriter_writeImage(tif, image_data.get());
         // TinyTIFFWriter_close(tif);
-        for (int i = 0; i < num_pixels; ++i) {
-            ((uint8_t*)strong_pixels.get())[i] *= 255;
+        // for (int i = 0; i < num_pixels; ++i) {
+        //     ((uint8_t*)strong_pixels.get())[i] *= 255;
 
-            ((uint16_t*)image_data.get())[i] *= 20000;
-        }
+        //     ((uint16_t*)image_data.get())[i] *= 20000;
+        // }
         write_tiff("{}_image.tif", i, image_data.get());
         write_tiff("{}_strong.tif", i, strong_pixels.get());
 #ifdef DEBUG_IMAGES
@@ -414,6 +435,7 @@ int main(int argc, char** argv) {
         write_tiff("{}_mean.tif", i, debug_data.mean);
         write_tiff("{}_variance.tif", i, debug_data.variance);
 #endif
+        break;
     }
 
     free(image_data, Q);

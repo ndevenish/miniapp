@@ -100,6 +100,14 @@ inline auto operator*(const Tl l, const std::array<Tr, BLOCK_SIZE>& r) {
     }
     return mult;
 }
+template <typename Tr>
+inline auto operator*(const PipedPixelsArray& l, const Tr r) {
+    std::array<float, BLOCK_SIZE> mult;
+    for (int i = 0; i < BLOCK_SIZE; ++i) {
+        mult[i] = l[i] * r;
+    }
+    return mult;
+}
 
 inline auto operator/(const PipedPixelsArray& l, std::size_t r) {
     // const std::size_t l,
@@ -117,6 +125,15 @@ inline auto operator/(const std::array<float, BLOCK_SIZE>& l,
     }
     return out;
 }
+inline auto operator/(const PipedPixelsArray& l,
+                      const std::array<float, BLOCK_SIZE>& r) {
+    std::array<float, BLOCK_SIZE> out;
+    for (int i = 0; i < BLOCK_SIZE; ++i) {
+        out[i] = l[i] / r[i];
+    }
+    return out;
+}
+
 inline auto operator>(const std::array<float, BLOCK_SIZE>& l, float r) {
     std::array<bool, BLOCK_SIZE> out;
     for (int i = 0; i < BLOCK_SIZE; ++i) {
@@ -264,6 +281,7 @@ auto calculate_next_block(std::size_t y,
 auto run_module(sycl::queue& Q,
                 device_ptr<uint8_t> mask_data,
                 host_ptr<bool> strong_pixels,
+
                 FindSpotsDebugOutput& debug_data) -> sycl::event {
     return Q.submit([&](handler& h) {
             h.single_task<class Module<0>>([=](){
@@ -320,9 +338,22 @@ auto run_module(sycl::queue& Q,
                           1 + sigma_background * std::sqrt(2 / (N - 1));
 
                         auto mean = kernel_sum / N;
-                        auto variance =
-                          (N * kernel_sum_sq - pow2(kernel_sum)) / (N * (N - 1));
+                        // auto variance =
+                        //   (N * kernel_sum_sq - pow2(kernel_sum)) / (N * (N - 1));
+                        std::array<float, BLOCK_SIZE> variance;
+                        for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+                            variance[i] = static_cast<float>(
+                              (static_cast<double>(N)
+                                 * static_cast<double>(kernel_sum_sq[i])
+                               - static_cast<double>(kernel_sum[i])
+                                   * static_cast<double>(kernel_sum[i]))
+                              / (static_cast<double>(N) * (static_cast<float>(N) - 1)));
+                            if (variance[i] < 0) variance[i] = 0;
+                        }
+
                         auto dispersion = variance / mean;
+                        // auto dispersion = (N * kernel_sum_sq - pow2(kernel_sum))
+                        //                   / (kernel_sum * (N - 1));
                         auto is_background = dispersion > background_threshold;
 
                         auto signal_threshold = mean + sigma_strong * sqrt(mean);
