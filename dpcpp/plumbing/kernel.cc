@@ -72,7 +72,7 @@ inline auto operator+(const PipedPixelsArray& l, const PipedPixelsArray& r)
   -> PipedPixelsArray {
     PipedPixelsArray sum;
     for (int i = 0; i < BLOCK_SIZE; ++i) {
-        sum.data[i] = l.data[i] + r.data[i];
+        sum[i] = l[i] + r[i];
     }
     return sum;
 }
@@ -80,7 +80,7 @@ inline auto operator-(const PipedPixelsArray& l, const PipedPixelsArray& r)
   -> PipedPixelsArray {
     PipedPixelsArray sum;
     for (int i = 0; i < BLOCK_SIZE; ++i) {
-        sum.data[i] = l.data[i] - r.data[i];
+        sum[i] = l[i] - r[i];
     }
     return sum;
 }
@@ -88,7 +88,7 @@ inline auto operator*(const std::size_t l, const PipedPixelsArray& r)
   -> PipedPixelsArray {
     PipedPixelsArray mult;
     for (int i = 0; i < BLOCK_SIZE; ++i) {
-        mult.data[i] = l * r.data[i];
+        mult[i] = l * r[i];
     }
     return mult;
 }

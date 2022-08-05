@@ -37,19 +37,7 @@ constexpr size_t FAST = E2XE_16M_FAST;
 // Validate these values match our assumptions
 static_assert(is_power_of_two(BLOCK_SIZE));
 
-class PipedPixelsArray {
-  public:
-    typedef H5Read::image_type value_type;
-
-    value_type data[BLOCK_SIZE];
-
-    const value_type& operator[](size_t index) const {
-        return this->data[index];
-    }
-    value_type& operator[](size_t index) {
-        return this->data[index];
-    }
-};
+using PipedPixelsArray = std::array<H5Read::image_type, BLOCK_SIZE>;
 
 struct FindSpotsDebugOutput {
     // H5Read::image_type* image_data;
