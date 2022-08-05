@@ -58,35 +58,43 @@ void draw_image_data(const T* data,
                      size_t height,
                      size_t data_width,
                      size_t data_height) {
-    // Draw a row header if we are at the top
-    std::string format = "";
+    std::string format_type = "";
     if constexpr (std::is_integral<T>::value) {
-        format = "{:5d} ";
+        format_type = "d";
     } else {
-        format = "{:5.1f} ";
+        format_type = ".1f";
     }
+
+    // Walk over the data and get various metadata for generation
+    // Maximum value
+    T accum = 0;
+    // Maximum format width for each column
+    std::vector<int> col_widths;
+    for (int col = fast; col < fast + width; ++col) {
+        size_t maxw = fmt::formatted_size("{}", col);
+        for (int row = slow; row < min(slow + height, data_height); ++row) {
+            auto val = data[col + data_width * row];
+            auto fmt_spec = fmt::format("{{:{}}}", format_type);
+            maxw = std::max(maxw, fmt::formatted_size(fmt_spec, val));
+            accum = max(accum, val);
+        }
+        col_widths.push_back(maxw);
+    }
+
+    // Draw a row header
     fmt::print("x =       ");
-    for (int x = fast; x < fast + width; ++x) {
-        fmt::print("{:5d} ", x);
-    }
-    fmt::print("{}\n", NC);
-    fmt::print("         ┌");
     for (int i = 0; i < width; ++i) {
-        fmt::print("──────");
+        auto x = i + fast;
+        fmt::print("{:{}} ", x, col_widths[i]);
+    }
+    fmt::print("\n         ┌");
+    for (int i = 0; i < width; ++i) {
+        for (int j = 0; j < col_widths[i]; ++j) {
+            fmt::print("─");
+        }
+        fmt::print("─");
     }
     fmt::print("┐\n");
-
-    // Work out the maximum value
-    T accum = 0;
-    for (int y = slow; y < min(slow + height, data_height); ++y) {
-        for (int i = fast; i < fast + width; ++i) {
-            accum = max(accum, data[i + data_width * y]);
-        }
-    }
-    // Black, 232->255, White
-    // Range of 24 colors, not including white. Split into 25 bins, so
-    // that we have a whole black top bin
-    // float bin_scale = -25
 
     for (int y = slow; y < min(slow + height, data_height); ++y) {
         if (y == slow) {
@@ -96,6 +104,10 @@ void draw_image_data(const T* data,
         }
         for (int i = fast; i < fast + width; ++i) {
             // Calculate color
+            // Black, 232->255, White
+            // Range of 24 colors, not including white. Split into 25 bins, so
+            // that we have a whole black top bin
+            // float bin_scale = -25
             auto dat = data[i + data_width * y];
             int color = 255 - ((float)dat / (float)accum) * 24;
             if (color <= 231) color = 0;
@@ -108,7 +120,9 @@ void draw_image_data(const T* data,
             } else {
                 fmt::print("\033[38;5;{}m", color);
             }
-            fmt::print(format, dat);
+            auto fmt_spec =
+              fmt::format("{{:{}{}}} ", col_widths[i - fast], format_type);
+            fmt::print(fmt_spec, dat);
             if (dat == accum) {
                 fmt::print("\033[0m");
             }
@@ -147,8 +161,8 @@ void check_allocs(T arg, R... args) {
 
 FindSpotsDebugOutput::FindSpotsDebugOutput(sycl::queue Q) {
 #ifdef DEBUG_IMAGES
-    sum = sycl::malloc_host<H5Read::image_type>(SLOW * FAST, Q);
-    sumsq = sycl::malloc_host<H5Read::image_type>(SLOW * FAST, Q);
+    sum = sycl::malloc_host<decltype(sum)::element_type>(SLOW * FAST, Q);
+    sumsq = sycl::malloc_host<decltype(sumsq)::element_type>(SLOW * FAST, Q);
     dispersion = sycl::malloc_host<float>(SLOW * FAST, Q);
     mean = sycl::malloc_host<float>(SLOW * FAST, Q);
     variance = sycl::malloc_host<float>(SLOW * FAST, Q);

@@ -41,8 +41,8 @@ using PipedPixelsArray = std::array<H5Read::image_type, BLOCK_SIZE>;
 
 struct FindSpotsDebugOutput {
     // H5Read::image_type* image_data;
-    sycl::host_ptr<H5Read::image_type> sum;
-    sycl::host_ptr<H5Read::image_type> sumsq;
+    sycl::host_ptr<uint32_t> sum;
+    sycl::host_ptr<uint32_t> sumsq;
     sycl::host_ptr<float> dispersion;
     sycl::host_ptr<float> mean;
     sycl::host_ptr<float> variance;
