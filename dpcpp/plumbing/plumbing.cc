@@ -61,20 +61,33 @@ void draw_image_data(const T* data,
     // Draw a row header if we are at the top
     std::string format = "";
     if constexpr (std::is_integral<T>::value) {
-        format = "{:6d}  ";
+        format = "{:5d} ";
     } else {
-        format = "{:6.2f}  ";
+        format = "{:5.1f} ";
     }
-    fmt::print("x =      ");
+    fmt::print("x =       ");
     for (int x = fast; x < fast + width; ++x) {
-        fmt::print("{:6d}  ", x);
+        fmt::print("{:5d} ", x);
     }
     fmt::print("{}\n", NC);
-    fmt::print("        ┌");
+    fmt::print("         ┌");
     for (int i = 0; i < width; ++i) {
-        fmt::print("───────");
+        fmt::print("──────");
     }
     fmt::print("┐\n");
+
+    // Work out the maximum value
+    T accum = 0;
+    for (int y = slow; y < min(slow + height, data_height); ++y) {
+        for (int i = fast; i < fast + width; ++i) {
+            accum = max(accum, data[i + data_width * y]);
+        }
+    }
+    // Black, 232->255, White
+    // Range of 24 colors, not including white. Split into 25 bins, so
+    // that we have a whole black top bin
+    // float bin_scale = -25
+
     for (int y = slow; y < min(slow + height, data_height); ++y) {
         if (y == slow) {
             fmt::print("y = {:2d} │", y);
@@ -82,20 +95,38 @@ void draw_image_data(const T* data,
             fmt::print("    {:2d} │", y);
         }
         for (int i = fast; i < fast + width; ++i) {
-            fmt::print(format, data[i + data_width * y]);
+            // Calculate color
+            auto dat = data[i + data_width * y];
+            int color = 255 - ((float)dat / (float)accum) * 24;
+            if (color <= 231) color = 0;
+            if (dat < 0) {
+                color = 9;
+            }
+
+            if (dat == accum) {
+                fmt::print("\033[0m\033[1m");
+            } else {
+                fmt::print("\033[38;5;{}m", color);
+            }
+            fmt::print(format, dat);
+            if (dat == accum) {
+                fmt::print("\033[0m");
+            }
         }
-        fmt::print("│\n");
+        fmt::print("\033[0m│\n");
     }
 }
-template <typename T, access::address_space SPACE>
-void draw_image_data(const multi_ptr<T, SPACE>& data,
-                     size_t fast,
-                     size_t slow,
-                     size_t width,
-                     size_t height,
-                     size_t data_width,
-                     size_t data_height) {
-    draw_image_data(data.get(), fast, slow, width, height, data_width, data_height);
+template <typename T>
+void draw_image_data(
+  const multi_ptr<T, access::address_space::ext_intel_host_device_space>& data,
+  size_t fast,
+  size_t slow,
+  size_t width,
+  size_t height,
+  size_t data_width,
+  size_t data_height) {
+    draw_image_data(
+      static_cast<T*>(data.get()), fast, slow, width, height, data_width, data_height);
 }
 
 void check_allocs() {}
@@ -387,7 +418,7 @@ int main(int argc, char** argv) {
         int x = 2101, y = 3228;
         // Print a section of the image and "destination" arrays
         fmt::print("Data:\n");
-        draw_image_data(image_data.get(), x, y, 16, 16, fast, slow);
+        draw_image_data(image_data, x, y, 16, 16, fast, slow);
 
         // fmt::print("\nMirror:\n");
         // draw_image_data(destination_data, 0, 0, 16, 16, fast, slow);
@@ -400,7 +431,7 @@ int main(int argc, char** argv) {
             }
         }
         fmt::print("Sum:\n");
-        draw_image_data(debug_data.sum.get(), x, y, 16, 16, fast, slow);
+        draw_image_data(debug_data.sum, x, y, 16, 16, fast, slow);
 
         fmt::print("SumSq:\n");
         draw_image_data(debug_data.sumsq, x, y, 16, 16, fast, slow);

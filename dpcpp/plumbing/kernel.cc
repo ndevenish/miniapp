@@ -343,12 +343,11 @@ auto run_module(sycl::queue& Q,
                         std::array<float, BLOCK_SIZE> variance;
                         for (size_t i = 0; i < BLOCK_SIZE; ++i) {
                             variance[i] = static_cast<float>(
-                              (static_cast<double>(N)
-                                 * static_cast<double>(kernel_sum_sq[i])
-                               - static_cast<double>(kernel_sum[i])
-                                   * static_cast<double>(kernel_sum[i]))
-                              / (static_cast<double>(N) * (static_cast<float>(N) - 1)));
-                            if (variance[i] < 0) variance[i] = 0;
+                              (static_cast<float>(N)
+                                 * static_cast<float>(kernel_sum_sq[i])
+                               - static_cast<float>(kernel_sum[i])
+                                   * static_cast<float>(kernel_sum[i]))
+                              / (static_cast<float>(N) * (static_cast<float>(N) - 1)));
                         }
 
                         auto dispersion = variance / mean;
