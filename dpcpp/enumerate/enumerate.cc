@@ -30,11 +30,9 @@ int main(void) {
             cout << "         " << BOLD << device.get_info<info::device::name>() << NC
                  << "\n";
             cout << GRAY << "                          Type " << NC
-                 << (device.is_host()
-                       ? "Host"
-                       : (device.is_cpu()
-                            ? "CPU"
-                            : (device.is_accelerator() ? "Accelerator" : "Unknown")))
+                 << (device.is_cpu()
+                       ? "CPU"
+                       : (device.is_accelerator() ? "Accelerator" : "Unknown"))
                  << "\n";
             cout << GRAY << "                        Vendor " << NC
                  << device.get_info<info::device::vendor>() << "\n";
@@ -43,15 +41,6 @@ int main(void) {
             cout << GRAY << "                         OpenCL " << NC
                  << device.get_info<info::device::opencl_c_version>() << "\n";
 
-            // struct platform;
-            // struct name;
-            // struct vendor;
-            // struct driver_version;
-            // struct profile;
-            // struct version;
-            // struct backend_version;
-            // struct aspects;
-            // do_query<info::device::vendor>(device, "info::device::vendor");
             cout << GRAY << "    Max. work item dimensions: " << NC
                  << device.get_info<info::device::max_work_item_dimensions>() << "\n";
             cout << GRAY << "          Max work group size: " << NC
@@ -61,12 +50,9 @@ int main(void) {
             cout << GRAY << "    partition_max_sub_devices: " << NC
                  << device.get_info<info::device::partition_max_sub_devices>() << "\n";
             cout << GRAY << "                Image support? " << NC
-                 << (device.get_info<info::device::image_support>() ? "Yes" : "No")
-                 << "\n";
+                 << (device.has(aspect::image) ? "Yes" : "No") << "\n";
             cout << GRAY << "               Unified Memory? " << NC
-                 << (device.get_info<info::device::host_unified_memory>() ? "Yes"
-                                                                          : "No")
-                 << "\n";
+                 << (device.has(aspect::usm_device_allocations) ? "Yes" : "No") << "\n";
             cout << GRAY << "                   Extensions:\n";
             for (auto const& extension : device.get_info<info::device::extensions>()) {
                 cout << "                       " << extension << "\n";
