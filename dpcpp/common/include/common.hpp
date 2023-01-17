@@ -38,7 +38,7 @@ constexpr auto NC = "\033[0m";
  * sorted by name to make an ordered list. An index can be used to
  * reference a particular, consistently ordered FPGA.
  */
-class fpga_index_selector : public sycl::device_selector {
+class fpga_index_selector {
     // The intel::fpga_selector uses this to discover devices
     static constexpr auto HARDWARE_PLATFORM_NAME = "Intel(R) FPGA SDK for OpenCL(TM)";
     static constexpr auto EMULATION_PLATFORM_NAME =
@@ -111,7 +111,7 @@ struct FPGAArguments {
   public:
     auto device() -> sycl::device {
         if (!_device.has_value()) {
-            _device = fpga_index_selector(this->device_index).select_device();
+            _device = sycl::device{fpga_index_selector{this->device_index}};
         }
         return _device.value();
     }
@@ -169,7 +169,7 @@ class FPGAArgumentParser : public argparse::ArgumentParser {
     */
     auto device() -> sycl::device {
         if (!_device.has_value()) {
-            _device = fpga_index_selector(this->get<int>("--device")).select_device();
+            _device = sycl::device{fpga_index_selector{this->get<int>("--device")}};
         }
         return _device.value();
     }
