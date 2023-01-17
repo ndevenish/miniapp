@@ -38,7 +38,7 @@ int main(void) {
                  << device.get_info<info::device::vendor>() << "\n";
             cout << GRAY << "                        Driver " << NC
                  << device.get_info<info::device::driver_version>() << "\n";
-            cout << GRAY << "                         OpenCL " << NC
+            cout << GRAY << "                        OpenCL " << NC
                  << device.get_info<info::device::opencl_c_version>() << "\n";
 
             cout << GRAY << "    Max. work item dimensions: " << NC
