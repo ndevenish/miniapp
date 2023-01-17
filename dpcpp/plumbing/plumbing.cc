@@ -132,7 +132,7 @@ void draw_image_data(const T* data,
 }
 template <typename T>
 void draw_image_data(
-  const multi_ptr<T, access::address_space::ext_intel_host_device_space>& data,
+  const multi_ptr<T, access::address_space::ext_intel_global_host_space>& data,
   size_t fast,
   size_t slow,
   size_t width,
