@@ -43,5 +43,7 @@ int main(int argc, char** argv) {
                    deviceProp.maxGridSize[1],
                    deviceProp.maxGridSize[2]));
         print("    Max threads in a block: {}\n", bold(deviceProp.maxThreadsPerBlock));
+        print("           ATS Page Access: {}\n",
+              deviceProp.pageableMemoryAccessUsesHostPageTables ? "Yes" : "No");
     }
 }
