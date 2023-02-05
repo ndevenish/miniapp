@@ -94,7 +94,6 @@ int main(int argc, char **argv) {
 
     // Work out how many blocks this is
     dim3 thread_block_size{32, 16};
-    assert(thread_block_size.x == 32);
     dim3 blocks_dims{
       static_cast<unsigned int>(ceilf((float)width / thread_block_size.x)),
       static_cast<unsigned int>(ceilf((float)height / thread_block_size.y))};
