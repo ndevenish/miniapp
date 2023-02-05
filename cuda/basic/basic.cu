@@ -155,97 +155,52 @@ __global__ void do_sum_image(size_t *block_store,
                              size_t pitch,
                              size_t width,
                              size_t height) {
-    // Store an int for every warp. On all cards max_threads <= 1024 (32 warps)
+    // Store an interim block sum int for every warp.
+    // In theory this could be less than 32, because we might not have
+    // launched the maximum threads. However, then we would need to
+    // calculate and pass shared memory requirements on launch. On all
+    // cards max_threads <= 1024 (32 warps), so settings to 32 is safe.
     static __shared__ size_t shared[32];
 
     int warpId = (threadIdx.x + blockDim.x * threadIdx.y) / warpSize;
     int lane = (threadIdx.x + blockDim.x * threadIdx.y) % warpSize;
 
+    // Which position on the image do we need to read
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-    int blockId = blockIdx.x + gridDim.x * blockIdx.y;
-
-    // if (blockId == 2080) __brkpt();
-
-    // if (x > width) return;
-    // if (y > height) return;
+    // Always run the warp lane, even if out of image range. This is
+    // because the warp shuffle functions will return the input number
+    // if the target source is inactive, which gives us phantom numbers
+    // for out-of-range pixels.
     size_t pixel = 0;
     if (x < width && y < height) {
         pixel = data[y * (pitch / sizeof(pixel_t)) + x];
     }
-
-    // pixel_t pixel = data[y * (pitch / sizeof(pixel_t)) + x];
-    // pixel = 1;
-    // if (x == 3074 && y == 4144) {
-    //     printf("     Device pixel: %d, %d = %d\n", x, y, pixel);
-    // }
-
+    // Sum the current warp
     size_t sum = warpReduceSum_sync(pixel);
-
-    // Once per warp, store the sum of the whole block
-    // if (lane == 0) {
-    // }
+    // And save the warp-total to shared memory
     if (lane == 0) {
         shared[warpId] = sum;
-        // printf("Thread %3d,%3d image (%4d, %4d) storing sum %d to warp %d\n",
-        //        threadIdx.x,
-        //        threadIdx.y,
-        //        x,
-        //        y,
-        //        sum,
-        //        warpId);
     }
-    // if (blockId == 35579 && warpId == 0) {
-    //     printf(
-    //       "Block %5d (%d, %d) Warp %2d Lane %2d = %d (from index %d) (xy %d, %d)\n",
-    //       blockId,
-    //       blockIdx.x,
-    //       blockIdx.y,
-    //       warpId,
-    //       lane,
-    //       sum,
-    //       0,
-    //       x,
-    //       y);
-    // }
 
+    // Wait for all thread warps in the block to write
     __syncthreads();
-    // Work out how many warps there were. This is so that we can load
-    // only the first N shared values for reduction.
-    // Load each of the shared values into the first warp. This works
-    // because maximum #warps <= warpSize.
+
     if (warpId == 0) {
         // Load the shared memory value for the warp corresponding to this lane.
         // We need to check this, because although we have a maximum number
         // of warps per block (32), we might have had less than that.
         sum = (lane < (blockDim.x * blockDim.y) / warpSize) ? shared[lane] : 0;
-        // printf("Lane %2d read back %d via %d < (%d * %d) / %d < (%d)\n",
-        //        lane,
-        //        sum,
-        //        lane,
-        //        blockDim.x,
-        //        blockDim.y,
-        //        warpSize,
-        //        (blockDim.x * blockDim.y) / warpSize);
-        // int count = __ballot_sync((unsigned int)-1, sum);
+        // And sum all of the warps in this block together
         sum = warpReduceSum_sync(sum);
+        // Finally, store the block total sum, once.
         if (lane == 0) {
-            // if (blockId == 35579) {
-            //     printf(" Storing block %3d = %d xy(%d, %d)\n", blockId, sum, x, y);
-            // }
-            // atomicAdd(output, 1);
+            int blockId = blockIdx.x + gridDim.x * blockIdx.y;
             block_store[blockId] = sum;
-            // if (sum == 0) {
-            //     printf("%d = 0\n", blockId);
-            // }
         }
     }
 }
-
-// __global__ void set(int *store, int to) {
-//     *store = to;
-// }
 
 int main(int argc, char **argv) {
     // Parse arguments and get our H5Reader
@@ -290,11 +245,6 @@ int main(int argc, char **argv) {
     cudaMalloc(&dev_result, sizeof(decltype(*dev_result)) * num_blocks);
     cuda_throw_error();
 
-    // int *man_output = nullptr;
-    // // cudaHostAlloc(&host_output, sizeof(int)*num_blocks, )
-    // cudaMallocManaged(&man_output, num_blocks * sizeof(int));
-    // *man_output = 0;
-
     for (size_t image_id = 0; image_id < reader.get_number_of_images(); ++image_id) {
         print("Image {}:\n", image_id);
         reader.get_image_into(image_id, host_image.get());
@@ -307,11 +257,6 @@ int main(int argc, char **argv) {
             }
         }
         print("    Summed pixels: {}\n", bold(sum));
-        // xy(4288, 4144)
-
-        // Copy to device
-        // fill<<<1, 1>>>(dev_image, (device_pitch * height) / sizeof(pixel_t));
-        // cuda_throw_error();
 
         cudaMemcpy2D(dev_image,
                      device_pitch,
@@ -320,32 +265,7 @@ int main(int argc, char **argv) {
                      width * sizeof(pixel_t),
                      height,
                      cudaMemcpyHostToDevice);
-
-        // pixel_t pixel_test = 0;
-        // cudaMemcpy(dev_image + 3808 + device_pitch * 4355,
-        //            host_image.get() + 3808 + width * 4355,
-        //            sizeof(pixel_t),
-        //            cudaMemcpyHostToDevice);
-        // cudaMemcpy(&pixel_test,
-        //            dev_image + 3808 + device_pitch * 4355,
-        //            sizeof(pixel_t),
-        //            cudaMemcpyDeviceToHost);
-        // print("       Re-read device pixel: {}\n", pixel_test);
-
         cuda_throw_error();
-
-        // set<<<1, 1>>>(dev_result, 0);
-        // cuda_throw_error();
-
-        // Launch the summing kernel
-
-        // do_sum_image<<<2, dim3{16, 8}>>>(
-        // do_sum_image<<<dim3{16, 8}, thread_block_size>>>(
-        // diagnose_memory(host_image.get(),)
-        // diagnose_memory<<<1, 1>>>(dev_image, device_pitch, width, height);
-        // cudaDeviceSynchronize();
-        // cudaDeviceSynchronize();
-        // cuda_throw_error();
 
         do_sum_image<<<blocks_dims, thread_block_size>>>(
           dev_result, dev_image, device_pitch, width, height);
@@ -353,10 +273,10 @@ int main(int argc, char **argv) {
         cudaDeviceSynchronize();
         cuda_throw_error();
 
+        // Copy the per-block sum data back, to sum CPU-side for now
         auto host_result =
           std::make_unique<std::remove_reference<decltype(*dev_result)>::type[]>(
             num_blocks);
-
         cudaMemcpy(host_result.get(),
                    dev_result,
                    sizeof(decltype(*dev_result)) * num_blocks,
@@ -368,21 +288,14 @@ int main(int argc, char **argv) {
         size_t accum = 0;
         for (int i = 0; i < num_blocks; ++i) {
             accum += host_result[i];
-            // printf("%d ", host_result[i]);
-            // if (i * blocks_dims.x == 0) printf("\n");
         }
         if (accum == sum) {
             print("    Kernel Summed: {}\n", green(bold(accum)));
         } else {
             print("    Kernel Summed: {}\n", red(bold(accum)));
         }
-        // print("    Kernel - Host: {:+}\n", accum - int(sum));
-        // print("      First value: {}\n", host_result[0]);
-        // draw_image_data<pixel_t>(host_image.get(), 3068, 4140, 10, 10, width, height);
 
-        // print("           Output: {}\n", *man_output);
         print("\n");
-        // break;
     }
     cudaFree(dev_result);
     cudaFree(dev_image);
