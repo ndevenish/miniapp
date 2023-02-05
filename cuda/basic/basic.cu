@@ -27,6 +27,7 @@ __inline__ __device__ auto warpReduceSum_sync(T val) -> T {
     return val;
 }
 
+/// GPU Kernel to sum a whole image
 __global__ void do_sum_image(size_t *block_store,
                              pixel_t *data,
                              size_t pitch,
