@@ -20,6 +20,7 @@ using namespace fmt;
 
 using pixel_t = H5Read::image_type;
 
+/// Calculate the sum of every value in the current warp
 template <typename T>
 __inline__ __device__ auto warpReduceSum_sync(T val) -> T {
     for (int offset = warpSize / 2; offset > 0; offset /= 2)
