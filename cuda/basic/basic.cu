@@ -151,7 +151,8 @@ __global__ void do_sum_image(int *block_store,
                              pixel_t *data,
                              size_t pitch,
                              size_t width,
-                             size_t height) {
+                             size_t height,
+                             int *output) {
     // Store an int for every warp. On all cards max_threads <= 1024 (32 warps)
     static __shared__ int shared[32];
 
@@ -226,6 +227,7 @@ __global__ void do_sum_image(int *block_store,
             // if (blockId == 35579) {
             //     printf(" Storing block %3d = %d xy(%d, %d)\n", blockId, sum, x, y);
             // }
+            atomicAdd(output, 1);
             block_store[blockId] = sum;
             // if (sum == 0) {
             //     printf("%d = 0\n", blockId);
@@ -281,6 +283,11 @@ int main(int argc, char **argv) {
     cudaMalloc(&dev_result, sizeof(int) * num_blocks);
     cuda_throw_error();
 
+    int *man_output = nullptr;
+    // cudaHostAlloc(&host_output, sizeof(int)*num_blocks, )
+    cudaMallocManaged(&man_output, num_blocks * sizeof(int));
+    *man_output = 0;
+
     for (size_t image_id = 1; image_id < reader.get_number_of_images(); ++image_id) {
         print("Image {}:\n", image_id);
         reader.get_image_into(image_id, host_image.get());
@@ -293,7 +300,6 @@ int main(int argc, char **argv) {
             }
         }
         print("    Summed pixels: {}\n", bold(sum));
-        print("       Host pixel: {}\n", host_image[3074 + width * 4144]);
         // xy(4288, 4144)
 
         // Copy to device
@@ -306,7 +312,6 @@ int main(int argc, char **argv) {
                      width * sizeof(pixel_t),
                      width * sizeof(pixel_t),
                      height,
-                     //  cudaMemcpyDefault);
                      cudaMemcpyHostToDevice);
 
         // pixel_t pixel_test = 0;
@@ -330,13 +335,13 @@ int main(int argc, char **argv) {
         // do_sum_image<<<2, dim3{16, 8}>>>(
         // do_sum_image<<<dim3{16, 8}, thread_block_size>>>(
         // diagnose_memory(host_image.get(),)
-        diagnose_memory<<<1, 1>>>(dev_image, device_pitch, width, height);
+        // diagnose_memory<<<1, 1>>>(dev_image, device_pitch, width, height);
         // cudaDeviceSynchronize();
         // cudaDeviceSynchronize();
         // cuda_throw_error();
 
         do_sum_image<<<blocks_dims, thread_block_size>>>(
-          dev_result, dev_image, device_pitch, width, height);
+          dev_result, dev_image, device_pitch, width, height, man_output);
 
         cudaDeviceSynchronize();
         cuda_throw_error();
@@ -357,12 +362,15 @@ int main(int argc, char **argv) {
             if (i * blocks_dims.x == 0) printf("\n");
         }
         print("    Kernel Summed: {}\n", bold(accum));
+        print("    Kernel - Host: {:+}\n", accum - int(sum));
         // print("      First value: {}\n", host_result[0]);
         // draw_image_data<pixel_t>(host_image.get(), 3068, 4140, 10, 10, width, height);
 
+        print("           Output: {}\n", *man_output);
         print("\n");
         break;
     }
+    cudaFree(man_output);
     cudaFree(dev_result);
     cudaFree(dev_image);
 }
