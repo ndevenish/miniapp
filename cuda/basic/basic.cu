@@ -44,20 +44,25 @@ __global__ void do_sum_image(size_t *block_store,
     int warpId = (threadIdx.x + blockDim.x * threadIdx.y) / warpSize;
     int lane = (threadIdx.x + blockDim.x * threadIdx.y) % warpSize;
 
-    // Which position on the image do we need to read
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
-
-    // Always run the warp lane, even if out of image range. This is
-    // because the warp shuffle functions will return the input number
-    // if the target source is inactive, which gives us phantom numbers
-    // for out-of-range pixels.
-    size_t pixel = 0;
-    if (x < width && y < height) {
-        pixel = data[y * (pitch / sizeof(pixel_t)) + x];
+    // Grid-stride looping.
+    //
+    // This ensures that we always cover the entire image, even if the
+    // combination of grid and block shapes wouldn't. This allows us to
+    // optimise the shape of the grid seperately from the size of the
+    // image, instead of being forced into 1 thread = 1 pixel
+    //
+    // See https://developer.nvidia.com/blog/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/
+    size_t sum = 0;
+    for (int y = blockIdx.y * blockDim.y + threadIdx.y; y < height;
+         y += blockDim.y * gridDim.y) {
+        for (int x = blockIdx.x * blockDim.x + threadIdx.x; x < width;
+             x += blockDim.x * gridDim.x) {
+            sum += data[y * (pitch / sizeof(pixel_t)) + x];
+        }
     }
+
     // Sum the current warp
-    size_t sum = warpReduceSum_sync(pixel);
+    sum = warpReduceSum_sync(sum);
     // And save the warp-total to shared memory
     if (lane == 0) {
         shared[warpId] = sum;
