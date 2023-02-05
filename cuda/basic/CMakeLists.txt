@@ -20,3 +20,4 @@ add_subdirectory(../../dependencies/argparse argparse)
 
 add_executable(basic basic.cu)
 target_link_libraries(basic fmt h5read argparse)
+target_compile_options(basic PRIVATE "$<$<CONFIG:Debug>:-G>")
