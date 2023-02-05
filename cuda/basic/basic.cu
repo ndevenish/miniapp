@@ -354,7 +354,10 @@ int main(int argc, char **argv) {
         cudaDeviceSynchronize();
         cuda_throw_error();
 
-        auto host_result = std::make_unique<size_t[]>(num_blocks);
+        auto host_result =
+          std::make_unique<std::remove_reference<decltype(*dev_result)>::type[]>(
+            num_blocks);
+
         cudaMemcpy(host_result.get(),
                    dev_result,
                    sizeof(decltype(*dev_result)) * num_blocks,
