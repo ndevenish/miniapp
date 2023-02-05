@@ -117,7 +117,7 @@ int main(int argc, char **argv) {
           width * sizeof(pixel_t));
     cuda_throw_error();
 
-    // And a device-side location to store results
+    // And a device-side location to store per-block results
     size_t *dev_result = nullptr;
     cudaMalloc(&dev_result, sizeof(decltype(*dev_result)) * num_blocks);
     cuda_throw_error();
@@ -135,6 +135,7 @@ int main(int argc, char **argv) {
         }
         print("    Summed pixels: {}\n", bold(sum));
 
+        // Copy the image to GPU
         cudaMemcpy2D(dev_image,
                      device_pitch,
                      host_image.get(),
@@ -144,13 +145,13 @@ int main(int argc, char **argv) {
                      cudaMemcpyHostToDevice);
         cuda_throw_error();
 
+        // Launch the kernel to sum each block
         do_sum_image<<<blocks_dims, thread_block_size>>>(
           dev_result, dev_image, device_pitch, width, height);
-
         cudaDeviceSynchronize();
         cuda_throw_error();
 
-        // Copy the per-block sum data back, to sum CPU-side for now
+        // Copy the per-block sum data back, to sum (CPU-side for now)
         auto host_result =
           std::make_unique<std::remove_reference<decltype(*dev_result)>::type[]>(
             num_blocks);
