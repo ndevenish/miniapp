@@ -160,7 +160,6 @@ int main(int argc, char **argv) {
                    sizeof(decltype(*dev_result)) * num_blocks,
                    cudaMemcpyDeviceToHost);
         cuda_throw_error();
-        cudaDeviceSynchronize();
 
         // Manually sum the response here
         size_t accum = 0;
