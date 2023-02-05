@@ -109,6 +109,7 @@ __global__ void diagnose_memory(pixel_t *data,
                                 size_t pitch,
                                 size_t width,
                                 size_t height) {
+    int sum = 0;
     // int calc_width = pitch / sizeof(pixel_t);
     int item_pitch = pitch / sizeof(pixel_t);
     for (int y = 0; y < height; ++y) {
@@ -125,6 +126,7 @@ __global__ void diagnose_memory(pixel_t *data,
             }
             size_t index = y * item_pitch + x;
             pixel_t val = data[index];
+            sum += val;
             if (val != last_val) {
                 if (count > 0) {
                     printf("%d×%-4d ", last_val, count);
@@ -142,6 +144,7 @@ __global__ void diagnose_memory(pixel_t *data,
         }
         printf("\n");
     }
+    printf("Total: %d\n", sum);
 }
 
 __global__ void do_sum_image(int *block_store,
@@ -157,15 +160,19 @@ __global__ void do_sum_image(int *block_store,
 
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
+
     int blockId = blockIdx.x + gridDim.x * blockIdx.y;
+
+    // if (blockId == 2080) __brkpt();
+
     if (x >= width) return;
     if (y >= height) return;
 
-    pixel_t pixel = data[y * pitch + x];
+    pixel_t pixel = data[y * (pitch / sizeof(pixel_t)) + x];
 
-    if (x == 3074 && y == 4144) {
-        printf("     Device pixel: %d, %d = %d\n", x, y, pixel);
-    }
+    // if (x == 3074 && y == 4144) {
+    //     printf("     Device pixel: %d, %d = %d\n", x, y, pixel);
+    // }
 
     int sum = warpReduceSum_sync(pixel);
 
@@ -182,19 +189,19 @@ __global__ void do_sum_image(int *block_store,
         //        sum,
         //        warpId);
     }
-    if (blockId == 35579 && warpId == 0) {
-        printf(
-          "Block %5d (%d, %d) Warp %2d Lane %2d = %d (from index %d) (xy %d, %d)\n",
-          blockId,
-          blockIdx.x,
-          blockIdx.y,
-          warpId,
-          lane,
-          sum,
-          0,
-          x,
-          y);
-    }
+    // if (blockId == 35579 && warpId == 0) {
+    //     printf(
+    //       "Block %5d (%d, %d) Warp %2d Lane %2d = %d (from index %d) (xy %d, %d)\n",
+    //       blockId,
+    //       blockIdx.x,
+    //       blockIdx.y,
+    //       warpId,
+    //       lane,
+    //       sum,
+    //       0,
+    //       x,
+    //       y);
+    // }
 
     __syncthreads();
     // Work out how many warps there were. This is so that we can load
@@ -216,10 +223,13 @@ __global__ void do_sum_image(int *block_store,
         //        (blockDim.x * blockDim.y) / warpSize);
         sum = warpReduceSum_sync(sum);
         if (lane == 0) {
-            if (blockId == 35579) {
-                printf(" Storing block %3d = %d xy(%d, %d)\n", blockId, sum, x, y);
-            }
+            // if (blockId == 35579) {
+            //     printf(" Storing block %3d = %d xy(%d, %d)\n", blockId, sum, x, y);
+            // }
             block_store[blockId] = sum;
+            // if (sum == 0) {
+            //     printf("%d = 0\n", blockId);
+            // }
         }
     }
 }
@@ -260,8 +270,7 @@ int main(int argc, char **argv) {
     // Create a device-side pitched area
     pixel_t *dev_image = nullptr;
     size_t device_pitch = 0;
-    cudaMallocPitch(
-      &dev_image, &device_pitch, width * sizeof(pixel_t), height * sizeof(pixel_t));
+    cudaMallocPitch(&dev_image, &device_pitch, width * sizeof(pixel_t), height);
     print("Allocated device memory. Pitch = {} vs naive {}\n",
           device_pitch,
           width * sizeof(pixel_t));
@@ -288,7 +297,8 @@ int main(int argc, char **argv) {
         // xy(4288, 4144)
 
         // Copy to device
-        fill<<<1, 1>>>(dev_image, device_pitch * height);
+        // fill<<<1, 1>>>(dev_image, (device_pitch * height) / sizeof(pixel_t));
+        // cuda_throw_error();
 
         cudaMemcpy2D(dev_image,
                      device_pitch,
@@ -321,7 +331,9 @@ int main(int argc, char **argv) {
         // do_sum_image<<<dim3{16, 8}, thread_block_size>>>(
         // diagnose_memory(host_image.get(),)
         diagnose_memory<<<1, 1>>>(dev_image, device_pitch, width, height);
-        cudaDeviceSynchronize();
+        // cudaDeviceSynchronize();
+        // cudaDeviceSynchronize();
+        // cuda_throw_error();
 
         do_sum_image<<<blocks_dims, thread_block_size>>>(
           dev_result, dev_image, device_pitch, width, height);
@@ -341,10 +353,12 @@ int main(int argc, char **argv) {
         int accum = 0;
         for (int i = 0; i < num_blocks; ++i) {
             accum += host_result[i];
+            // printf("%d ", host_result[i]);
+            if (i * blocks_dims.x == 0) printf("\n");
         }
         print("    Kernel Summed: {}\n", bold(accum));
-        print("      First value: {}\n", host_result[0]);
-        draw_image_data<pixel_t>(host_image.get(), 3068, 4140, 10, 10, width, height);
+        // print("      First value: {}\n", host_result[0]);
+        // draw_image_data<pixel_t>(host_image.get(), 3068, 4140, 10, 10, width, height);
 
         print("\n");
         break;
