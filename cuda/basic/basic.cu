@@ -1,3 +1,13 @@
+/**
+ * Basic Summing with CUDA
+ * 
+ * Uses h5read to loop over all images, calculates a pixel sum in host
+ * and GPU, and compares the results.
+ * 
+ * Demonstrates using h5read and GPU reduction.
+ * 
+ */
+
 #include <fmt/core.h>
 
 #include <array>
