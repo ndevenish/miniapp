@@ -10,9 +10,8 @@ using namespace fmt;
 
 using pixel_t = H5Read::image_type;
 
-// template <typename T>
-__inline__ __device__ int warpReduceSum_sync(int val) {
-    // T out = val;
+template <typename T>
+__inline__ __device__ auto warpReduceSum_sync(T val) -> T {
     for (int offset = warpSize / 2; offset > 0; offset /= 2)
         val += __shfl_down_sync((unsigned int)-1, val, offset);
     return val;
@@ -157,7 +156,7 @@ __global__ void do_sum_image(size_t *block_store,
                              size_t width,
                              size_t height) {
     // Store an int for every warp. On all cards max_threads <= 1024 (32 warps)
-    static __shared__ int shared[32];
+    static __shared__ size_t shared[32];
 
     int warpId = (threadIdx.x + blockDim.x * threadIdx.y) / warpSize;
     int lane = (threadIdx.x + blockDim.x * threadIdx.y) % warpSize;
@@ -171,7 +170,7 @@ __global__ void do_sum_image(size_t *block_store,
 
     // if (x > width) return;
     // if (y > height) return;
-    pixel_t pixel = 0;
+    size_t pixel = 0;
     if (x < width && y < height) {
         pixel = data[y * (pitch / sizeof(pixel_t)) + x];
     }
@@ -182,7 +181,7 @@ __global__ void do_sum_image(size_t *block_store,
     //     printf("     Device pixel: %d, %d = %d\n", x, y, pixel);
     // }
 
-    int sum = warpReduceSum_sync(pixel);
+    size_t sum = warpReduceSum_sync(pixel);
 
     // Once per warp, store the sum of the whole block
     // if (lane == 0) {
@@ -301,7 +300,7 @@ int main(int argc, char **argv) {
         reader.get_image_into(image_id, host_image.get());
 
         // Calculate the sum of all pixels host-side
-        uint32_t sum = 0;
+        size_t sum = 0;
         for (int y = 0; y < height; ++y) {
             for (int x = 0; x < width; ++x) {
                 sum += host_image[x + y * width];
