@@ -8,6 +8,8 @@
  * 
  */
 
+#include <cooperative_groups.h>
+#include <cooperative_groups/reduce.h>
 #include <fmt/core.h>
 
 #include <array>
@@ -16,17 +18,12 @@
 
 #include "common.hpp"
 #include "h5read.h"
+
+namespace cg = cooperative_groups;
+
 using namespace fmt;
 
 using pixel_t = H5Read::image_type;
-
-/// Calculate the sum of every value in the current warp
-template <typename T>
-__inline__ __device__ auto warpReduceSum_sync(T val) -> T {
-    for (int offset = warpSize / 2; offset > 0; offset /= 2)
-        val += __shfl_down_sync((unsigned int)-1, val, offset);
-    return val;
-}
 
 /// GPU Kernel to sum a whole image
 __global__ void do_sum_image(size_t *block_store,
@@ -41,8 +38,12 @@ __global__ void do_sum_image(size_t *block_store,
     // cards max_threads <= 1024 (32 warps), so settings to 32 is safe.
     static __shared__ size_t shared[32];
 
-    int warpId = (threadIdx.x + blockDim.x * threadIdx.y) / warpSize;
-    int lane = (threadIdx.x + blockDim.x * threadIdx.y) % warpSize;
+    // Use co-operative groups for measurements
+    auto g = cg::this_thread_block();
+    auto warp = cg::tiled_partition<32>(g);
+
+    int warpId = warp.meta_group_rank();
+    int lane = warp.thread_rank();
 
     // Grid-stride looping.
     //
@@ -62,14 +63,15 @@ __global__ void do_sum_image(size_t *block_store,
     }
 
     // Sum the current warp
-    sum = warpReduceSum_sync(sum);
+    sum = cg::reduce(warp, (int)sum, cg::plus<int>());
+
     // And save the warp-total to shared memory
     if (lane == 0) {
         shared[warpId] = sum;
     }
 
     // Wait for all thread warps in the block to write
-    __syncthreads();
+    g.sync();
 
     if (warpId == 0) {
         // Load the shared memory value for the warp corresponding to this lane.
@@ -77,7 +79,7 @@ __global__ void do_sum_image(size_t *block_store,
         // of warps per block (32), we might have had less than that.
         sum = (lane < (blockDim.x * blockDim.y) / warpSize) ? shared[lane] : 0;
         // And sum all of the warps in this block together
-        sum = warpReduceSum_sync(sum);
+        sum = cg::reduce(warp, sum, cg::plus<size_t>());
         // Finally, store the block total sum, once.
         if (lane == 0) {
             int blockId = blockIdx.x + gridDim.x * blockIdx.y;
