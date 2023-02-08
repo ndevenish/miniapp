@@ -143,6 +143,13 @@ int main(int argc, char **argv) {
         }
         print("    Summed pixels: {}\n", bold(sum));
 
+        cudaEvent_t start, mid_pre, mid_post, end;
+        cudaEventCreate(&start);
+        cudaEventCreate(&mid_pre);
+        cudaEventCreate(&mid_post);
+        cudaEventCreate(&end);
+
+        cudaEventRecord(start, 0);
         // Copy the image to GPU
         cudaMemcpy2D(dev_image,
                      device_pitch,
@@ -152,10 +159,12 @@ int main(int argc, char **argv) {
                      height,
                      cudaMemcpyHostToDevice);
         cuda_throw_error();
+        cudaEventRecord(mid_pre, 0);
 
         // Launch the kernel to sum each block
         do_sum_image<<<blocks_dims, thread_block_size>>>(
           dev_result, dev_image, device_pitch, width, height);
+        cudaEventRecord(mid_post, 0);
         cudaDeviceSynchronize();
         cuda_throw_error();
 
@@ -168,6 +177,7 @@ int main(int argc, char **argv) {
                    sizeof(decltype(*dev_result)) * num_blocks,
                    cudaMemcpyDeviceToHost);
         cuda_throw_error();
+        cudaEventRecord(end, 0);
 
         // Manually sum the response here
         size_t accum = 0;
@@ -180,7 +190,20 @@ int main(int argc, char **argv) {
             print("    Kernel Summed: {}\n", red(bold(accum)));
         }
 
+        // Print timings
+        float elapsedTime_pre, elapsedTime_post, elapsedTime_end;
+        cudaEventElapsedTime(&elapsedTime_pre, start, mid_pre);
+        cudaEventElapsedTime(&elapsedTime_post, start, mid_post);
+        cudaEventElapsedTime(&elapsedTime_end, start, end);
+        print("        Time Memcpy: {:6.2f} ms\n", elapsedTime_pre);
+        print(" Time Memcpy+Kernel: {:6.2f} ms\n", elapsedTime_post);
+        print("           Time All: {:6.2f} ms\n", elapsedTime_end);
         print("\n");
+
+        cudaEventDestroy(start);
+        cudaEventDestroy(mid_pre);
+        cudaEventDestroy(mid_post);
+        cudaEventDestroy(end);
     }
     cudaFree(dev_result);
     cudaFree(dev_image);
