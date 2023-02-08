@@ -127,7 +127,9 @@ __global__ void do_spotfinding_naive(pixel_t *image,
                                      int width,
                                      int height,
                                      int *result_sum,
-                                     size_t *result_sumsq) {
+                                     size_t *result_sumsq,
+                                     uint8_t *result_n,
+                                     uint8_t *result_strong) {
     auto block = cg::this_thread_block();
     auto warp = cg::tiled_partition<32>(block);
     int warpId = warp.meta_group_rank();
@@ -135,6 +137,7 @@ __global__ void do_spotfinding_naive(pixel_t *image,
 
     uint sum = 0;
     size_t sumsq = 0;
+    uint8_t n = 0;
 
     int x = block.group_index().x * block.group_dim().x + block.thread_index().x;
     int y = block.group_index().y * block.group_dim().y + block.thread_index().y;
@@ -150,6 +153,7 @@ __global__ void do_spotfinding_naive(pixel_t *image,
                 if (mask_pixel) {
                     sum += pixel;
                     sumsq += pixel * pixel;
+                    n += 1;
                 }
             }
         }
@@ -157,6 +161,8 @@ __global__ void do_spotfinding_naive(pixel_t *image,
     if (x < width && y < height) {
         result_sum[x + image_pitch * y] = sum;
         result_sumsq[x + image_pitch * y] = sumsq;
+        result_n[x + mask_pitch * y] = n;
+        result_strong[x + mask_pitch * y] = 0;
     }
 }
 
@@ -198,6 +204,8 @@ int main(int argc, char **argv) {
     // Managed memory areas for results
     auto result_sum = make_cuda_managed_malloc<int>(device_pitch * height);
     auto result_sumsq = make_cuda_managed_malloc<size_t>(device_pitch * height);
+    auto result_n = make_cuda_managed_malloc<uint8_t>(device_mask_pitch * height);
+    auto result_strong = make_cuda_managed_malloc<uint8_t>(device_mask_pitch * height);
 
     CudaEvent start, memcpy, kernel, all;
 
@@ -260,7 +268,9 @@ int main(int argc, char **argv) {
                                                                  width,
                                                                  height,
                                                                  result_sum.get(),
-                                                                 result_sumsq.get());
+                                                                 result_sumsq.get(),
+                                                                 result_n.get(),
+                                                                 result_strong.get());
         kernel.record();
         all.record();
         cuda_throw_error();
@@ -275,7 +285,17 @@ int main(int argc, char **argv) {
               all.elapsed_time(start),
               GBps<pixel_t>(all.elapsed_time(start), width * height));
 
+        int strong = 0;
+        for (size_t row = 0; row < height; ++row) {
+            for (size_t col = 0; col < width; ++col) {
+                if (result_strong.get()[row * device_mask_pitch + col]) {
+                    strong += 1;
+                }
+            }
+        }
+        print("       Strong: {} px\n", strong);
         draw_image_data(result_sum.get(), 0, 0, 15, 15, device_pitch, height);
+        draw_image_data(result_n.get(), 0, 0, 15, 15, device_mask_pitch, height);
         print("\n");
     }
 }
