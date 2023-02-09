@@ -26,6 +26,11 @@ using namespace fmt;
 
 using pixel_t = H5Read::image_type;
 
+/// One-direction width of kernel. Total kernel span is (K_W * 2 + 1)
+constexpr int KERNEL_WIDTH = 3;
+/// One-direction height of kernel. Total kernel span is (K_H * 2 + 1)
+constexpr int KERNEL_HEIGHT = 3;
+
 // namespace detail {
 
 // template <typename T>
@@ -131,9 +136,9 @@ __global__ void do_spotfinding_naive(pixel_t *image,
                                      uint8_t *result_n,
                                      uint8_t *result_strong) {
     auto block = cg::this_thread_block();
-    auto warp = cg::tiled_partition<32>(block);
-    int warpId = warp.meta_group_rank();
-    int lane = warp.thread_rank();
+    // auto warp = cg::tiled_partition<32>(block);
+    // int warpId = warp.meta_group_rank();
+    // int lane = warp.thread_rank();
 
     uint sum = 0;
     size_t sumsq = 0;
@@ -142,22 +147,22 @@ __global__ void do_spotfinding_naive(pixel_t *image,
     int x = block.group_index().x * block.group_dim().x + block.thread_index().x;
     int y = block.group_index().y * block.group_dim().y + block.thread_index().y;
 
-    // Ignore the edges for now
-    if (x > 3 && x < width - 3 - 1 && y > 3 & y < height - 3 - 1) {
-        for (int row = y - 3; row <= y + 3; ++row) {
-            int row_offset = image_pitch * row;
-            int mask_offset = mask_pitch * row;
-            for (int col = x - 3; col <= x + 3; ++col) {
-                pixel_t pixel = image[row_offset + col];
-                uint8_t mask_pixel = mask[mask_offset + col];
-                if (mask_pixel) {
-                    sum += pixel;
-                    sumsq += pixel * pixel;
-                    n += 1;
-                }
+    for (int row = max(0, y - KERNEL_HEIGHT); row < min(y + KERNEL_HEIGHT + 1, height);
+         ++row) {
+        int row_offset = image_pitch * row;
+        int mask_offset = mask_pitch * row;
+        for (int col = max(0, x - KERNEL_WIDTH); col < min(x + KERNEL_WIDTH + 1, width);
+             ++col) {
+            pixel_t pixel = image[row_offset + col];
+            uint8_t mask_pixel = mask[mask_offset + col];
+            if (mask_pixel) {
+                sum += pixel;
+                sumsq += pixel * pixel;
+                n += 1;
             }
         }
     }
+
     if (x < width && y < height) {
         result_sum[x + image_pitch * y] = sum;
         result_sumsq[x + image_pitch * y] = sumsq;
