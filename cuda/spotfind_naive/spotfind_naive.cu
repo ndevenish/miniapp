@@ -31,17 +31,6 @@ constexpr int KERNEL_WIDTH = 3;
 /// One-direction height of kernel. Total kernel span is (K_H * 2 + 1)
 constexpr int KERNEL_HEIGHT = 3;
 
-// namespace detail {
-
-// template <typename T>
-// void cudafree_delete(T *obj) {
-//     cudaFree(obj);
-// }
-
-// }  // namespace detail
-
-// cudaMalloc(&dev_result, sizeof(decltype(*dev_result)) * num_blocks);
-
 template <typename T>
 auto make_cuda_malloc(size_t num_items = 1) {
     T *obj = nullptr;
