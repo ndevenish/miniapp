@@ -136,18 +136,23 @@ __global__ void do_spotfinding_naive(pixel_t *image,
     int x = block.group_index().x * block.group_dim().x + block.thread_index().x;
     int y = block.group_index().y * block.group_dim().y + block.thread_index().y;
 
-    for (int row = max(0, y - KERNEL_HEIGHT); row < min(y + KERNEL_HEIGHT + 1, height);
-         ++row) {
-        int row_offset = image_pitch * row;
-        int mask_offset = mask_pitch * row;
-        for (int col = max(0, x - KERNEL_WIDTH); col < min(x + KERNEL_WIDTH + 1, width);
-             ++col) {
-            pixel_t pixel = image[row_offset + col];
-            uint8_t mask_pixel = mask[mask_offset + col];
-            if (mask_pixel) {
-                sum += pixel;
-                sumsq += pixel * pixel;
-                n += 1;
+    // Don't calculate for masked pixels
+    if (mask[y * mask_pitch + x]) {
+        for (int row = max(0, y - KERNEL_HEIGHT);
+             row < min(y + KERNEL_HEIGHT + 1, height);
+             ++row) {
+            int row_offset = image_pitch * row;
+            int mask_offset = mask_pitch * row;
+            for (int col = max(0, x - KERNEL_WIDTH);
+                 col < min(x + KERNEL_WIDTH + 1, width);
+                 ++col) {
+                pixel_t pixel = image[row_offset + col];
+                uint8_t mask_pixel = mask[mask_offset + col];
+                if (mask_pixel) {
+                    sum += pixel;
+                    sumsq += pixel * pixel;
+                    n += 1;
+                }
             }
         }
     }
@@ -158,6 +163,128 @@ __global__ void do_spotfinding_naive(pixel_t *image,
         result_n[x + mask_pitch * y] = n;
         result_strong[x + mask_pitch * y] = 0;
     }
+}
+
+/** Calculate a kernel sum, the simplest possible implementation.
+ * 
+ * This is **slow**, even from the perspective of something running
+ * infrequently. It's relatively simple to get the algorithm correct,
+ * however, so is useful for validating other algorithms.
+ **/
+template <typename Tin, typename Tmask>
+auto calculate_kernel_sum_slow(Tin *data,
+                               Tmask *mask,
+                               std::size_t fast,
+                               std::size_t slow) {
+    auto out_d = std::make_unique<size_t[]>(slow * fast);
+    size_t *out = out_d.get();
+    for (int y = 0; y < slow; ++y) {
+        int y0 = std::max(0, y - KERNEL_HEIGHT);
+        int y1 = std::min((int)slow, y + KERNEL_HEIGHT + 1);
+        // std::size_t y1 = std::min((int)slow-1, y + KERNEL_HEIGHT);
+        for (int x = 0; x < fast; ++x) {
+            int x0 = std::max(0, x - KERNEL_WIDTH);
+            int x1 = std::min((int)fast, x + KERNEL_WIDTH + 1);
+            size_t acc{};
+            for (int ky = y0; ky < y1; ++ky) {
+                for (int kx = x0; kx < x1; ++kx) {
+                    if (mask[ky * fast + kx]) {
+                        acc += data[(ky * fast) + kx];
+                    }
+                }
+            }
+            out[(y * fast) + x] = mask[y * fast + x] ? acc : 0;
+        }
+    }
+    return out_d;
+}
+
+/** Calculate a kernel sum, on the host, using an SAT.
+ * 
+ * This is designed for non-offloading calculations for e.g. crosscheck
+ * or precalculation (like the mask).
+ **/
+template <typename Tin, typename Tmask, typename Taccumulator = Tin>
+auto calculate_kernel_sum_sat(Tin *data,
+                              Tmask *mask,
+                              std::size_t fast,
+                              std::size_t slow) -> std::unique_ptr<Tin[]> {
+    auto sat_d = std::make_unique<Taccumulator[]>(slow * fast);
+    Taccumulator *sat = sat_d.get();
+    for (int y = 0; y < slow; ++y) {
+        Taccumulator acc = 0;
+        for (int x = 0; x < fast; ++x) {
+            acc += data[y * fast + x];
+            if (y == 0) {
+                sat[y * fast + x] = acc;
+            } else {
+                sat[y * fast + x] = acc + sat[(y - 1) * fast + x];
+            }
+        }
+    }
+
+    // Now evaluate the (fixed size) kernel across this SAT
+    auto out_d = std::make_unique<Tin[]>(slow * fast);
+    Tin *out = out_d.get();
+    for (int y = 0; y < slow; ++y) {
+        int y0 = y - KERNEL_HEIGHT - 1;
+        int y1 = std::min((int)slow - 1, y + KERNEL_HEIGHT);
+        for (int x = 0; x < fast; ++x) {
+            int x0 = x - KERNEL_WIDTH - 1;
+            int x1 = std::min((int)fast - 1, x + KERNEL_WIDTH);
+
+            Taccumulator tl{}, tr{}, bl{};
+            Taccumulator br = sat[y1 * fast + x1];
+
+            if (y0 >= 0 && x0 >= 0) {
+                // Top left fully inside kernel
+                tl = sat[y0 * fast + x0];
+                tr = sat[y0 * fast + x1];
+                bl = sat[y1 * fast + x0];
+            } else if (x0 >= 0) {
+                // Top rows - y0 outside range
+                bl = sat[y1 * fast + x0];
+            } else if (y0 >= 0) {
+                // Left rows - x0 outside range
+                tr = sat[y0 * fast + x1];
+            }
+            out[y * fast + x] = br - (bl + tr) + tl;
+        }
+    }
+
+    return out_d;
+}
+
+template <typename T, typename U>
+bool compare_results(const T *left,
+                     const size_t left_pitch,
+                     const U *right,
+                     const size_t right_pitch,
+                     std::size_t width,
+                     std::size_t height,
+                     size_t *mismatch_x = nullptr,
+                     size_t *mismatch_y = nullptr) {
+    for (size_t y = 0; y < height; ++y) {
+        for (size_t x = 0; x < width; ++x) {
+            T lval = left[left_pitch * y + x];
+            U rval = right[right_pitch * y + x];
+            if (lval != rval) {
+                if (mismatch_x != nullptr) {
+                    *mismatch_x = x;
+                }
+                if (mismatch_y != nullptr) {
+                    *mismatch_y = y;
+                }
+                print("First mismatch at ({}, {}), Left {} != {} Right\n",
+                      x,
+                      y,
+                      lval,
+                      rval);
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 int main(int argc, char **argv) {
@@ -232,7 +359,7 @@ int main(int argc, char **argv) {
     float memcpy_time = memcpy.elapsed_time(start);
     print("Uploaded mask ({:.2f} Mpx) in {:.2f} ms ({:.1f} GBps)\n",
           static_cast<float>(mask_sum) / 1e6,
-          memcpy_time / 1000,
+          memcpy_time,
           GBps(memcpy_time, width * height));
 
     print("\nProcessing Images\n\n");
@@ -289,7 +416,45 @@ int main(int argc, char **argv) {
         }
         print("       Strong: {} px\n", strong);
         draw_image_data(result_sum, 0, 0, 15, 15, device_pitch, height);
-        draw_image_data(result_n, 0, 0, 15, 15, device_mask_pitch, height);
+        // draw_image_data(result_n, 0, 0, 15, 15, device_mask_pitch, height);
+
+        // Calculate on CPU to compare
+        auto validate_sum = calculate_kernel_sum_slow(
+          host_image.get(), reader.get_mask().value().data(), width, height);
+        size_t mismatch_x = 0, mismatch_y = 0;
+        if (compare_results(validate_sum.get(),
+                            width,
+                            result_sum.get(),
+                            device_pitch,
+                            width,
+                            height,
+                            &mismatch_x,
+                            &mismatch_y)) {
+            print("     Compared: \033[32mMatch\033[0m\n");
+        } else {
+            print("     Compared: \033[1;31mMismatch\033[0m\n");
+            mismatch_x = max(static_cast<int>(mismatch_x) - 8, 0);
+            mismatch_y = max(static_cast<int>(mismatch_y) - 8, 0);
+            print("From Validator:\n");
+            draw_image_data(
+              validate_sum.get(), mismatch_x, mismatch_y, 16, 16, width, height);
+            print("From kernel:\n");
+            draw_image_data(
+              result_sum, mismatch_x, mismatch_y, 16, 16, device_pitch, height);
+            print("Resultant N:\n");
+
+            draw_image_data(
+              result_n, mismatch_x, mismatch_y, 16, 16, device_mask_pitch, height);
+            print("Mask:\n");
+
+            draw_image_data(reader.get_mask().value().data(),
+                            mismatch_x,
+                            mismatch_y,
+                            16,
+                            16,
+                            width,
+                            height);
+        }
         print("\n");
     }
 }
