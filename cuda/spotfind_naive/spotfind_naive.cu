@@ -299,8 +299,8 @@ int main(int argc, char **argv) {
             }
         }
         print("       Strong: {} px\n", strong);
-        draw_image_data(result_sum.get(), 0, 0, 15, 15, device_pitch, height);
-        draw_image_data(result_n.get(), 0, 0, 15, 15, device_mask_pitch, height);
+        draw_image_data(result_sum, 0, 0, 15, 15, device_pitch, height);
+        draw_image_data(result_n, 0, 0, 15, 15, device_mask_pitch, height);
         print("\n");
     }
 }
