@@ -397,10 +397,10 @@ int main(int argc, char **argv) {
         cuda_throw_error();
         cudaDeviceSynchronize();
 
-        print("  Upload Time: \033[1m{:5.2f}\033[0m ms \033[37m({:.1f} GBps)\033[0m\n",
+        print("  Upload Time: \033[1m{:6.2f}\033[0m ms \033[37m({:.1f} GBps)\033[0m\n",
               memcpy.elapsed_time(start),
               GBps<pixel_t>(memcpy.elapsed_time(start), width * height));
-        print("  Kernel Time: \033[1m{:5.2f}\033[0m ms\n", kernel.elapsed_time(memcpy));
+        print("  Kernel Time: \033[1m{:6.2f}\033[0m ms\n", kernel.elapsed_time(memcpy));
         print("               ════════\n");
         print("        Total: \033[1m{:5.2f}\033[0m ms ({:.1f} GBps)\n",
               all.elapsed_time(start),
