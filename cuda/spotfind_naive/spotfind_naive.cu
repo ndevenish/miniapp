@@ -14,6 +14,7 @@
 
 #include <array>
 #include <cassert>
+#include <chrono>
 #include <memory>
 #include <utility>
 
@@ -417,24 +418,37 @@ int main(int argc, char **argv) {
             }
         }
         print("       Strong: {} px\n", strong);
+
+        // Calculate on CPU to compare
+        auto start_time = std::chrono::high_resolution_clock::now();
+        auto validate_sum = calculate_kernel_sum_slow(
+          host_image.get(), reader.get_mask().value().data(), width, height);
+
         draw_image_data(result_sum, 0, 0, 15, 15, device_pitch, height);
         // draw_image_data(result_n, 0, 0, 15, 15, device_mask_pitch, height);
 
-        // Calculate on CPU to compare
-        auto validate_sum = calculate_kernel_sum_slow(
-          host_image.get(), reader.get_mask().value().data(), width, height);
         size_t mismatch_x = 0, mismatch_y = 0;
-        if (compare_results(validate_sum.get(),
-                            width,
-                            result_sum.get(),
-                            device_pitch,
-                            width,
-                            height,
-                            &mismatch_x,
-                            &mismatch_y)) {
-            print("     Compared: \033[32mMatch\033[0m\n");
+        bool validation_matches = compare_results(validate_sum.get(),
+                                                  width,
+                                                  result_sum.get(),
+                                                  device_pitch,
+                                                  width,
+                                                  height,
+                                                  &mismatch_x,
+                                                  &mismatch_y);
+        auto end_time = std::chrono::high_resolution_clock::now();
+        float validation_time =
+          std::chrono::duration_cast<std::chrono::duration<double>>(end_time
+                                                                    - start_time)
+            .count()
+          * 1000;
+
+        if (validation_matches) {
+            print("     Compared: \033[32mMatch\033[0m in {:.0f} ms\n",
+                  validation_time);
         } else {
-            print("     Compared: \033[1;31mMismatch\033[0m\n");
+            print("     Compared: \033[1;31mMismatch\033[0m in {:.0f} ms\n",
+                  validation_time);
             mismatch_x = max(static_cast<int>(mismatch_x) - 8, 0);
             mismatch_y = max(static_cast<int>(mismatch_y) - 8, 0);
             print("From Validator:\n");
@@ -457,6 +471,7 @@ int main(int argc, char **argv) {
                             width,
                             height);
         }
+
         print("\n");
     }
 }
