@@ -177,10 +177,14 @@ __global__ void do_spotfinding_naive(pixel_t *image,
             constexpr float n_sig_s = 3.0f;
             constexpr float n_sig_b = 6.0f;
 
-            float mean = sum / n;
-            float variance = (n * sumsq - (sum * sum)) / (n * (n - 1));
+            float sum_f = static_cast<float>(sum);
+            float sumsq_f = static_cast<float>(sumsq);
+
+            float mean = sum_f / n;
+            float variance = (n * sumsq_f - (sum_f * sum_f)) / (n * (n - 1));
             float dispersion = variance / mean;
-            bool not_background = dispersion > n_sig_b;
+            float background_threshold = 1 + n_sig_b * sqrt(2.0f / (n - 1));
+            bool not_background = dispersion > background_threshold;
             float signal_threshold = mean + n_sig_s * sqrt(mean);
             bool is_signal = this_pixel > signal_threshold;
             bool is_strong_pixel = not_background && is_signal;
