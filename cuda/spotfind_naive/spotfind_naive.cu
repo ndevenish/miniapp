@@ -214,7 +214,9 @@ auto calculate_kernel_sum_sat(Tin *data,
     for (int y = 0; y < slow; ++y) {
         Taccumulator acc = 0;
         for (int x = 0; x < fast; ++x) {
-            acc += data[y * fast + x];
+            if (mask[y * fast + x]) {
+                acc += data[y * fast + x];
+            }
             if (y == 0) {
                 sat[y * fast + x] = acc;
             } else {
