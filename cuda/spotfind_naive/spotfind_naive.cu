@@ -417,7 +417,7 @@ int main(int argc, char **argv) {
           memcpy_time,
           GBps(memcpy_time, width * height));
 
-    print("\nProcessing Images\n\n");
+    print("\nProcessing {} Images\n\n", reader.get_number_of_images());
 
     for (size_t image_id = 0; image_id < reader.get_number_of_images(); ++image_id) {
         print("Image {}:\n", image_id);
