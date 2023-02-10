@@ -189,6 +189,7 @@ FindSpotsDebugOutput::FindSpotsDebugOutput(sycl::queue Q) {
     threshold = nullptr;
 #endif
 }
+
 /** Calculate a kernel sum, the simplest possible implementation.
  * 
  * This is **slow**, even from the perspective of something running
