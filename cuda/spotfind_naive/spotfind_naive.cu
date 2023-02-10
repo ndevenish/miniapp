@@ -170,8 +170,6 @@ __global__ void do_spotfinding_naive(pixel_t *image,
         result_sumsq[x + image_pitch * y] = sumsq;
         result_n[x + mask_pitch * y] = n;
 
-        // if (mask[y * mask_pitch + x]) {
-
         // Calculate the thresholding
         if (px_is_valid) {
             constexpr float n_sig_s = 3.0f;
@@ -189,37 +187,6 @@ __global__ void do_spotfinding_naive(pixel_t *image,
             bool is_signal = this_pixel > signal_threshold;
             bool is_strong_pixel = not_background && is_signal;
             result_strong[x + mask_pitch * y] = is_strong_pixel;
-            // double a = m * y - x * x - x * (m - 1);
-            // double b = m * src[k] - x;
-            // double c = x * nsig_b_ * std::sqrt(2 * (m - 1));
-            // double d = nsig_s_ * std::sqrt(x * m);
-            // dst[k] = a > c && b > d;
-            /*
-
-                            float mean = sum / N;
-                            auto variance = (N * sum_sq - (sum * sum)) / (N * (N - 1));
-                            // std::array<float, BLOCK_SIZE> variance;
-                            // for (size_t i = 0; i < BLOCK_SIZE; ++i) {
-                            // float variance = static_cast<float>(
-                            //   (static_cast<float>(N)
-                            //      * static_cast<float>(kernel_sum_sq[i])
-                            //    - static_cast<float>(kernel_sum[i])
-                            //        * static_cast<float>(kernel_sum[i]))
-                            //   / (static_cast<float>(N) * (static_cast<float>(N) - 1)));
-                            // }
-
-                            auto dispersion = variance / mean;
-                            auto is_background = dispersion > background_threshold;
-
-                            auto signal_threshold = mean + sigma_strong * sqrt(mean);
-                            auto is_signal = kernel_px[i] > signal_threshold;
-
-                            auto is_strong_pixel = is_background && is_signal;
-
-                            if (is_strong_pixel) {
-                                _count += 1;
-                            }
-            */
         } else {
             result_strong[x + mask_pitch * y] = 0;
         }
@@ -538,10 +505,7 @@ int main(int argc, char **argv) {
             print("Sum² From kernel:\n");
             draw_image_data(
               result_sumsq, mismatch_x, mismatch_y, 16, 16, device_pitch, height);
-            // draw_image_data(
-            //   result_n, mismatch_x, mismatch_y, 16, 16, device_mask_pitch, height);
             print("Mask:\n");
-
             draw_image_data(reader.get_mask().value().data(),
                             mismatch_x,
                             mismatch_y,
@@ -555,6 +519,5 @@ int main(int argc, char **argv) {
 #ifdef HAVE_DIALS
         spotfinder_free(spotfinder);
 #endif
-        break;
     }
 }
