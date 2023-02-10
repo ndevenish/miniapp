@@ -480,21 +480,28 @@ int main(int argc, char **argv) {
         auto validate_sum = calculate_kernel_sum_slow(
           host_image.get(), reader.get_mask().value().data(), width, height);
 
-        draw_image_data(result_sum, 0, 0, 15, 15, device_pitch, height);
-        // draw_image_data(result_n, 0, 0, 15, 15, device_mask_pitch, height);
-
         size_t mismatch_x = 0, mismatch_y = 0;
-        bool validation_matches = compare_results(validate_sum.get(),
+
+#ifdef HAVE_DIALS
+        auto spotfinder = spotfinder_create(width, height);
+        image_t image_t_image{.data = host_image.get(),
+                              .mask = reader.get_mask().value().data(),
+                              .slow = static_cast<size_t>(height),
+                              .fast = static_cast<size_t>(width)};
+
+        bool *dials_strong = nullptr;
+        auto dials_results =
+          spotfinder_standard_dispersion(spotfinder, &image_t_image, &dials_strong);
+
+        print("        Dials: {} px\n", dials_results);
+        bool validation_matches = compare_results(dials_strong,
                                                   width,
-                                                  result_sum.get(),
-                                                  device_pitch,
+                                                  result_strong.get(),
+                                                  device_mask_pitch,
                                                   width,
                                                   height,
                                                   &mismatch_x,
                                                   &mismatch_y);
-
-#ifdef HAVE_DIALS
-
 #endif
         auto end_time = std::chrono::high_resolution_clock::now();
         float validation_time_ms =
@@ -511,16 +518,24 @@ int main(int argc, char **argv) {
                   validation_time_ms);
             mismatch_x = max(static_cast<int>(mismatch_x) - 8, 0);
             mismatch_y = max(static_cast<int>(mismatch_y) - 8, 0);
-            print("From Validator:\n");
+            print("Data:\n");
             draw_image_data(
-              validate_sum.get(), mismatch_x, mismatch_y, 16, 16, width, height);
-            print("From kernel:\n");
+              host_image.get(), mismatch_x, mismatch_y, 16, 16, width, height);
+            print("Strong From DIALS:\n");
+            draw_image_data(
+              dials_strong, mismatch_x, mismatch_y, 16, 16, width, height);
+            print("Strong From kernel:\n");
+            draw_image_data(
+              result_strong, mismatch_x, mismatch_y, 16, 16, device_mask_pitch, height);
+            // print("Resultant N:\n");
+            print("Sum From kernel:\n");
             draw_image_data(
               result_sum, mismatch_x, mismatch_y, 16, 16, device_pitch, height);
-            print("Resultant N:\n");
-
+            print("Sum² From kernel:\n");
             draw_image_data(
-              result_n, mismatch_x, mismatch_y, 16, 16, device_mask_pitch, height);
+              result_sumsq, mismatch_x, mismatch_y, 16, 16, device_pitch, height);
+            // draw_image_data(
+            //   result_n, mismatch_x, mismatch_y, 16, 16, device_mask_pitch, height);
             print("Mask:\n");
 
             draw_image_data(reader.get_mask().value().data(),
@@ -532,6 +547,10 @@ int main(int argc, char **argv) {
                             height);
         }
 
-        print("\n");
+        print("\n\n");
+#ifdef HAVE_DIALS
+        spotfinder_free(spotfinder);
+#endif
+        break;
     }
 }
