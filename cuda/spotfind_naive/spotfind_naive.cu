@@ -1,10 +1,7 @@
 /**
- * Basic Summing with CUDA
+ * Basic Naive Kernel
  * 
- * Uses h5read to loop over all images, calculates a pixel sum in host
- * and GPU, and compares the results.
- * 
- * Demonstrates using h5read and GPU reduction.
+ * Does spotfinding in-kernel, without in-depth performance tweaking.
  * 
  */
 
