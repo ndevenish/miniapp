@@ -21,6 +21,10 @@
 #include "common.hpp"
 #include "h5read.h"
 
+#ifdef HAVE_DIALS
+#include "baseline.h"
+#endif
+
 namespace cg = cooperative_groups;
 
 using namespace fmt;
@@ -488,6 +492,10 @@ int main(int argc, char **argv) {
                                                   height,
                                                   &mismatch_x,
                                                   &mismatch_y);
+
+#ifdef HAVE_DIALS
+
+#endif
         auto end_time = std::chrono::high_resolution_clock::now();
         float validation_time_ms =
           std::chrono::duration_cast<std::chrono::duration<double>>(end_time
