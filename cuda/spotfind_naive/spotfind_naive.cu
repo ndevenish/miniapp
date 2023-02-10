@@ -489,7 +489,7 @@ int main(int argc, char **argv) {
                                                   &mismatch_x,
                                                   &mismatch_y);
         auto end_time = std::chrono::high_resolution_clock::now();
-        float validation_time =
+        float validation_time_ms =
           std::chrono::duration_cast<std::chrono::duration<double>>(end_time
                                                                     - start_time)
             .count()
@@ -497,10 +497,10 @@ int main(int argc, char **argv) {
 
         if (validation_matches) {
             print("     Compared: \033[32mMatch\033[0m in {:.0f} ms\n",
-                  validation_time);
+                  validation_time_ms);
         } else {
             print("     Compared: \033[1;31mMismatch\033[0m in {:.0f} ms\n",
-                  validation_time);
+                  validation_time_ms);
             mismatch_x = max(static_cast<int>(mismatch_x) - 8, 0);
             mismatch_y = max(static_cast<int>(mismatch_y) - 8, 0);
             print("From Validator:\n");
