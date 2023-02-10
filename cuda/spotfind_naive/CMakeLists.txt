@@ -18,4 +18,4 @@ add_subdirectory(../../dependencies/argparse argparse)
 
 add_executable(spotfind_naive spotfind_naive.cu)
 target_link_libraries(spotfind_naive fmt h5read argparse)
-target_compile_options(spotfind_naive PRIVATE "$<$<CONFIG:Debug>:-G>")
+target_compile_options(spotfind_naive PRIVATE "$<$<CONFIG:Debug,RelWithDebInfo>:-G>")
