@@ -443,12 +443,8 @@ int main(int argc, char **argv) {
         }
         print("       Strong: {} px\n", strong);
 
-        // Calculate on CPU to compare
-        auto start_time = std::chrono::high_resolution_clock::now();
-        auto validate_sum = calculate_kernel_sum_slow(
-          host_image.get(), reader.get_mask().value().data(), width, height);
-
 #ifdef HAVE_DIALS
+        auto start_time = std::chrono::high_resolution_clock::now();
         size_t mismatch_x = 0, mismatch_y = 0;
         auto spotfinder = spotfinder_create(width, height);
         image_t image_t_image{.data = host_image.get(),
