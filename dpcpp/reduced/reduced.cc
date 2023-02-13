@@ -390,7 +390,7 @@ int main(int argc, char** argv) {
 
         // Launch a module kernel for every module
         event e_module = Q.submit([&](handler& h) {
-            h.single_task<class Module<0>>([=](){
+            h.single_task<class Module<0>>([=]() {
                 auto destination_data_d = device_ptr<uint16_t>(destination_data_device);
 
                 size_t sum_pixels = 0;
@@ -466,7 +466,7 @@ int main(int argc, char** argv) {
                         }
                     }
                 }
-                });
+            });
         });
 
         Q.wait();

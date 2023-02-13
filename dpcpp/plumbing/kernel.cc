@@ -291,120 +291,119 @@ auto run_module(sycl::queue& Q,
 
                 FindSpotsDebugOutput& debug_data) -> sycl::event {
     return Q.submit([&](handler& h) {
-            h.single_task<class Module<0>>([=](){
+        h.single_task<class Module<0>>([=]() {
 #ifdef DEBUG_IMAGES
-                auto debug = const_cast<FindSpotsDebugOutput&>(debug_data);
+            auto debug = const_cast<FindSpotsDebugOutput&>(debug_data);
 #endif
 
-                auto strong_pixels_h = host_ptr<bool>(strong_pixels);
-                size_t sum_pixels = 0;
-                size_t strong_pixels_count = 0;
+            auto strong_pixels_h = host_ptr<bool>(strong_pixels);
+            size_t sum_pixels = 0;
+            size_t strong_pixels_count = 0;
 
-                // Make a buffer for full rows so we can store them as we go
-                ModuleRowStore rows, rows_sq;
+            // Make a buffer for full rows so we can store them as we go
+            ModuleRowStore rows, rows_sq;
 
-                initialise_row_store(rows);
-                initialise_row_store(rows_sq);
+            initialise_row_store(rows);
+            initialise_row_store(rows_sq);
 
-                for (size_t y = 0; y < SLOW; ++y) {
-                    // The per-pixel buffer array to accumulate the blocks
-                    BufferedPipedPixelsArray interim_pixels{};
-                    BufferedPipedPixelsArray interim_pixels_sq{};
+            for (size_t y = 0; y < SLOW; ++y) {
+                // The per-pixel buffer array to accumulate the blocks
+                BufferedPipedPixelsArray interim_pixels{};
+                BufferedPipedPixelsArray interim_pixels_sq{};
 
+                auto pixels = ProducerPipeToModule::read();
+
+                // Read the first block into initial position in the array
+                auto* interim_blocks =
+                  reinterpret_cast<PipedPixelsArray*>(&interim_pixels[KERNEL_WIDTH]);
+                auto* interim_blocks_sq =
+                  reinterpret_cast<std::array<uint32_t, BLOCK_SIZE>*>(
+                    &interim_pixels_sq[KERNEL_WIDTH]);
+                interim_blocks[0] = pixels;
+                interim_blocks_sq[0] = pow2(pixels);
+
+                for (size_t block = 0; block < FULL_BLOCKS - 1; ++block) {
                     auto pixels = ProducerPipeToModule::read();
 
-                    // Read the first block into initial position in the array
-                    auto* interim_blocks = reinterpret_cast<PipedPixelsArray*>(
-                      &interim_pixels[KERNEL_WIDTH]);
-                    auto* interim_blocks_sq =
-                      reinterpret_cast<std::array<uint32_t, BLOCK_SIZE>*>(
-                        &interim_pixels_sq[KERNEL_WIDTH]);
-                    interim_blocks[0] = pixels;
-                    interim_blocks_sq[0] = pow2(pixels);
+                    auto kernel_sum =
+                      calculate_next_block(y, block, rows, interim_pixels, pixels);
+                    auto kernel_sum_sq = calculate_next_block(
+                      y, block, rows_sq, interim_pixels_sq, pow2(pixels));
 
-                    for (size_t block = 0; block < FULL_BLOCKS - 1; ++block) {
-                        auto pixels = ProducerPipeToModule::read();
+                    // Until we reach the kernel height, we aren't ready to calculate anything
+                    if (y < KERNEL_HEIGHT) {
+                        continue;
+                    }
 
-                        auto kernel_sum =
-                          calculate_next_block(y, block, rows, interim_pixels, pixels);
-                        auto kernel_sum_sq = calculate_next_block(
-                          y, block, rows_sq, interim_pixels_sq, pow2(pixels));
+                    // Get the value of the pixels KERNEL_HEIGHT rows ago
+                    auto kernel_px = PixelBufferPipe::read();
 
-                        // Until we reach the kernel height, we aren't ready to calculate anything
-                        if (y < KERNEL_HEIGHT) {
-                            continue;
-                        }
+                    // Calculate the thresholding values for these kernels.
+                    // Let's assume for now that everything is unmasked.
+                    constexpr float N =
+                      (KERNEL_WIDTH * 2 + 1) * (KERNEL_HEIGHT * 2 + 1);
+                    auto background_threshold =
+                      1 + sigma_background * std::sqrt(2 / (N - 1));
 
-                        // Get the value of the pixels KERNEL_HEIGHT rows ago
-                        auto kernel_px = PixelBufferPipe::read();
-
-                        // Calculate the thresholding values for these kernels.
-                        // Let's assume for now that everything is unmasked.
-                        constexpr float N =
-                          (KERNEL_WIDTH * 2 + 1) * (KERNEL_HEIGHT * 2 + 1);
-                        auto background_threshold =
-                          1 + sigma_background * std::sqrt(2 / (N - 1));
-
-                        size_t _count = 0;
-                        // Let's write back to our host for introspection
-                        size_t offset = (y - KERNEL_HEIGHT) * FAST + block * BLOCK_SIZE;
+                    size_t _count = 0;
+                    // Let's write back to our host for introspection
+                    size_t offset = (y - KERNEL_HEIGHT) * FAST + block * BLOCK_SIZE;
 #pragma unroll
-                        for (size_t i = 0; i < BLOCK_SIZE; ++i) {
-                            float sum = kernel_sum[i];
-                            float sum_sq = kernel_sum_sq[i];
+                    for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+                        float sum = kernel_sum[i];
+                        float sum_sq = kernel_sum_sq[i];
 
-                            float mean = sum / N;
-                            auto variance = (N * sum_sq - (sum * sum)) / (N * (N - 1));
-                            // std::array<float, BLOCK_SIZE> variance;
-                            // for (size_t i = 0; i < BLOCK_SIZE; ++i) {
-                            // float variance = static_cast<float>(
-                            //   (static_cast<float>(N)
-                            //      * static_cast<float>(kernel_sum_sq[i])
-                            //    - static_cast<float>(kernel_sum[i])
-                            //        * static_cast<float>(kernel_sum[i]))
-                            //   / (static_cast<float>(N) * (static_cast<float>(N) - 1)));
-                            // }
+                        float mean = sum / N;
+                        auto variance = (N * sum_sq - (sum * sum)) / (N * (N - 1));
+                        // std::array<float, BLOCK_SIZE> variance;
+                        // for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+                        // float variance = static_cast<float>(
+                        //   (static_cast<float>(N)
+                        //      * static_cast<float>(kernel_sum_sq[i])
+                        //    - static_cast<float>(kernel_sum[i])
+                        //        * static_cast<float>(kernel_sum[i]))
+                        //   / (static_cast<float>(N) * (static_cast<float>(N) - 1)));
+                        // }
 
-                            auto dispersion = variance / mean;
-                            auto is_background = dispersion > background_threshold;
+                        auto dispersion = variance / mean;
+                        auto is_background = dispersion > background_threshold;
 
-                            auto signal_threshold = mean + sigma_strong * sqrt(mean);
-                            auto is_signal = kernel_px[i] > signal_threshold;
+                        auto signal_threshold = mean + sigma_strong * sqrt(mean);
+                        auto is_signal = kernel_px[i] > signal_threshold;
 
-                            auto is_strong_pixel = is_background && is_signal;
+                        auto is_strong_pixel = is_background && is_signal;
 
-                            if (is_strong_pixel) {
-                                _count += 1;
-                            }
+                        if (is_strong_pixel) {
+                            _count += 1;
+                        }
 
 // #pragma unroll
 //                         for (size_t i = 0; i < BLOCK_SIZE; ++i) {
 #ifdef DEBUG_IMAGES
-                            if (variance < 0) variance = -1;
-                            if (dispersion < 0) dispersion = -1;
+                        if (variance < 0) variance = -1;
+                        if (dispersion < 0) dispersion = -1;
 
-                            debug.sum[offset + i] = sum;
-                            debug.sumsq[offset + i] = sum_sq;
-                            debug.dispersion[offset + i] = dispersion;
-                            debug.mean[offset + i] = mean;
-                            debug.variance[offset + i] = variance;
+                        debug.sum[offset + i] = sum;
+                        debug.sumsq[offset + i] = sum_sq;
+                        debug.dispersion[offset + i] = dispersion;
+                        debug.mean[offset + i] = mean;
+                        debug.variance[offset + i] = variance;
 #endif
-                            strong_pixels_h[offset + i] = is_strong_pixel;
-                        }
-                        strong_pixels_count += _count;
-                    }  // blocks
-                    // We ignore the last block in the algorithm
-                    if (y >= KERNEL_HEIGHT) {
-                        PixelBufferPipe::read();
+                        strong_pixels_h[offset + i] = is_strong_pixel;
                     }
-                }  // y
-
-                // Drain the pipe - because we don't do the bottom edge of the image,
-                // we have KERNEL_HEIGHT rows of pixel data that has remained unread
-                for (int i = 0; i < FULL_BLOCKS * KERNEL_HEIGHT; ++i) {
+                    strong_pixels_count += _count;
+                }  // blocks
+                // We ignore the last block in the algorithm
+                if (y >= KERNEL_HEIGHT) {
                     PixelBufferPipe::read();
                 }
+            }  // y
 
-    });
+            // Drain the pipe - because we don't do the bottom edge of the image,
+            // we have KERNEL_HEIGHT rows of pixel data that has remained unread
+            for (int i = 0; i < FULL_BLOCKS * KERNEL_HEIGHT; ++i) {
+                PixelBufferPipe::read();
+            }
+        });
     });
 }
