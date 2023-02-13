@@ -17,10 +17,7 @@
 
 #include "common.hpp"
 #include "h5read.h"
-
-#ifdef HAVE_DIALS
-#include "baseline.h"
-#endif
+#include "no_tbx.h"
 
 namespace cg = cooperative_groups;
 
@@ -443,18 +440,17 @@ int main(int argc, char **argv) {
         }
         print("       Strong: {} px\n", strong);
 
-#ifdef HAVE_DIALS
         auto start_time = std::chrono::high_resolution_clock::now();
         size_t mismatch_x = 0, mismatch_y = 0;
-        auto spotfinder = spotfinder_create(width, height);
+        auto spotfinder = no_tbx_spotfinder_create(width, height);
         image_t image_t_image{.data = host_image.get(),
                               .mask = reader.get_mask().value().data(),
                               .slow = static_cast<size_t>(height),
                               .fast = static_cast<size_t>(width)};
 
         bool *dials_strong = nullptr;
-        auto dials_results =
-          spotfinder_standard_dispersion(spotfinder, &image_t_image, &dials_strong);
+        auto dials_results = no_tbx_spotfinder_standard_dispersion(
+          spotfinder, &image_t_image, &dials_strong);
 
         print("        Dials: {} px\n", dials_results);
         bool validation_matches = compare_results(dials_strong,
@@ -506,8 +502,7 @@ int main(int argc, char **argv) {
                             height);
         }
 
-        spotfinder_free(spotfinder);
-#endif
+        no_tbx_spotfinder_free(spotfinder);
         print("\n\n");
     }
 }
