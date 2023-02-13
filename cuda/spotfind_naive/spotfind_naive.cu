@@ -351,8 +351,15 @@ int main(int argc, char **argv) {
     auto result_sumsq = make_cuda_managed_malloc<size_t>(device_pitch * height);
     auto result_n = make_cuda_managed_malloc<uint8_t>(device_mask_pitch * height);
     auto result_strong = make_cuda_managed_malloc<uint8_t>(device_mask_pitch * height);
+    // Make sure to clear these completely
+    cudaMemset(result_sum.get(), 0, sizeof(int) * device_pitch * height);
+    cudaMemset(result_sumsq.get(), 0, sizeof(size_t) * device_pitch * height);
+    cudaMemset(result_n.get(), 0, sizeof(uint8_t) * device_mask_pitch * height);
+    cudaMemset(result_strong.get(), 0, sizeof(uint8_t) * device_mask_pitch * height);
+    cudaDeviceSynchronize();
+    cuda_throw_error();
 
-    CudaEvent start, memcpy, kernel, all;
+    CudaEvent pre_load, start, memcpy, kernel, all;
 
     size_t mask_sum = 0;
     if (reader.get_mask()) {
@@ -387,9 +394,13 @@ int main(int argc, char **argv) {
           GBps(memcpy_time, width * height));
 
     print("\nProcessing {} Images\n\n", reader.get_number_of_images());
+    auto spotfinder = no_tbx_spotfinder_create(width, height);
 
     for (size_t image_id = 0; image_id < reader.get_number_of_images(); ++image_id) {
         print("Image {}:\n", image_id);
+        pre_load.record();
+        pre_load.synchronize();
+
         reader.get_image_into(image_id, host_image.get());
 
         // Copy data to GPU
@@ -421,14 +432,17 @@ int main(int argc, char **argv) {
         cuda_throw_error();
         cudaDeviceSynchronize();
 
+        print("    Read Time: \033[1m{:6.2f}\033[0m ms \033[37m({:.1f} GBps)\033[0m\n",
+              start.elapsed_time(pre_load),
+              GBps<pixel_t>(start.elapsed_time(pre_load), width * height));
         print("  Upload Time: \033[1m{:6.2f}\033[0m ms \033[37m({:.1f} GBps)\033[0m\n",
               memcpy.elapsed_time(start),
               GBps<pixel_t>(memcpy.elapsed_time(start), width * height));
         print("  Kernel Time: \033[1m{:6.2f}\033[0m ms\n", kernel.elapsed_time(memcpy));
         print("               ════════\n");
-        print("        Total: \033[1m{:5.2f}\033[0m ms ({:.1f} GBps)\n",
-              all.elapsed_time(start),
-              GBps<pixel_t>(all.elapsed_time(start), width * height));
+        print("        Total: \033[1m{:6.2f}\033[0m ms ({:.1f} GBps)\n",
+              all.elapsed_time(pre_load),
+              GBps<pixel_t>(all.elapsed_time(pre_load), width * height));
 
         int strong = 0;
         for (size_t row = 0; row < height; ++row) {
@@ -442,7 +456,6 @@ int main(int argc, char **argv) {
 
         auto start_time = std::chrono::high_resolution_clock::now();
         size_t mismatch_x = 0, mismatch_y = 0;
-        auto spotfinder = no_tbx_spotfinder_create(width, height);
         image_t image_t_image{.data = host_image.get(),
                               .mask = reader.get_mask().value().data(),
                               .slow = static_cast<size_t>(height),
@@ -451,6 +464,7 @@ int main(int argc, char **argv) {
         bool *dials_strong = nullptr;
         auto dials_results = no_tbx_spotfinder_standard_dispersion(
           spotfinder, &image_t_image, &dials_strong);
+        auto end_time = std::chrono::high_resolution_clock::now();
 
         print("        Dials: {} px\n", dials_results);
         bool validation_matches = compare_results(dials_strong,
@@ -461,7 +475,6 @@ int main(int argc, char **argv) {
                                                   height,
                                                   &mismatch_x,
                                                   &mismatch_y);
-        auto end_time = std::chrono::high_resolution_clock::now();
         float validation_time_ms =
           std::chrono::duration_cast<std::chrono::duration<double>>(end_time
                                                                     - start_time)
@@ -502,7 +515,7 @@ int main(int argc, char **argv) {
                             height);
         }
 
-        no_tbx_spotfinder_free(spotfinder);
         print("\n\n");
     }
+    no_tbx_spotfinder_free(spotfinder);
 }
