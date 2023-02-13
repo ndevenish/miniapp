@@ -448,9 +448,8 @@ int main(int argc, char **argv) {
         auto validate_sum = calculate_kernel_sum_slow(
           host_image.get(), reader.get_mask().value().data(), width, height);
 
-        size_t mismatch_x = 0, mismatch_y = 0;
-
 #ifdef HAVE_DIALS
+        size_t mismatch_x = 0, mismatch_y = 0;
         auto spotfinder = spotfinder_create(width, height);
         image_t image_t_image{.data = host_image.get(),
                               .mask = reader.get_mask().value().data(),
@@ -470,7 +469,6 @@ int main(int argc, char **argv) {
                                                   height,
                                                   &mismatch_x,
                                                   &mismatch_y);
-#endif
         auto end_time = std::chrono::high_resolution_clock::now();
         float validation_time_ms =
           std::chrono::duration_cast<std::chrono::duration<double>>(end_time
@@ -512,9 +510,8 @@ int main(int argc, char **argv) {
                             height);
         }
 
-        print("\n\n");
-#ifdef HAVE_DIALS
         spotfinder_free(spotfinder);
 #endif
+        print("\n\n");
     }
 }
