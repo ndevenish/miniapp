@@ -1,4 +1,6 @@
-cmake_minimum_required(VERSION 3.25.2 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.20)
+# Constraints on minimum version:
+# - h5read: FindHDF5 only creates interface targets on 3.20+
 
 project(spotfind_naive CXX CUDA)
 set(CMAKE_CXX_STANDARD 20)
