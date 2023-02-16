@@ -17,7 +17,7 @@
 
 #include "common.hpp"
 #include "h5read.h"
-#include "no_tbx.h"
+#include "standalone.h"
 
 namespace cg = cooperative_groups;
 
@@ -187,7 +187,7 @@ int main(int argc, char **argv) {
           GBps(memcpy_time, width * height));
 
     print("\nProcessing {} Images\n\n", reader.get_number_of_images());
-    auto spotfinder = no_tbx_spotfinder_create(width, height);
+    auto spotfinder = StandaloneSpotfinder(width, height);
 
     for (size_t image_id = 0; image_id < reader.get_number_of_images(); ++image_id) {
         print("Image {}:\n", image_id);
@@ -237,30 +237,22 @@ int main(int argc, char **argv) {
               all.elapsed_time(pre_load),
               GBps<pixel_t>(all.elapsed_time(pre_load), width * height));
 
-        int strong = 0;
-        for (size_t row = 0; row < height; ++row) {
-            for (size_t col = 0; col < width; ++col) {
-                if (result_strong.get()[row * device_mask_pitch + col]) {
-                    strong += 1;
-                }
-            }
-        }
+        auto strong =
+          count_nonzero(result_strong.get(), width, height, device_mask_pitch);
         print("       Strong: {} px\n", strong);
 
         auto start_time = std::chrono::high_resolution_clock::now();
         size_t mismatch_x = 0, mismatch_y = 0;
-        image_t image_t_image{.data = host_image.get(),
-                              .mask = reader.get_mask().value().data(),
-                              .slow = static_cast<size_t>(height),
-                              .fast = static_cast<size_t>(width)};
 
-        bool *dials_strong = nullptr;
-        auto dials_results = no_tbx_spotfinder_standard_dispersion(
-          spotfinder, &image_t_image, &dials_strong);
+        auto converted_image =
+          std::vector<double>{host_image.get(), host_image.get() + width * height};
+        auto dials_strong = spotfinder.standard_dispersion(
+          converted_image, reader.get_mask().value_or(span<uint8_t>{}));
         auto end_time = std::chrono::high_resolution_clock::now();
+        size_t dials_results = count_nonzero(dials_strong, width, height, width);
 
         print("        Dials: {} px\n", dials_results);
-        bool validation_matches = compare_results(dials_strong,
+        bool validation_matches = compare_results(dials_strong.data(),
                                                   width,
                                                   result_strong.get(),
                                                   device_mask_pitch,
@@ -283,8 +275,7 @@ int main(int argc, char **argv) {
             mismatch_x = max(static_cast<int>(mismatch_x) - 8, 0);
             mismatch_y = max(static_cast<int>(mismatch_y) - 8, 0);
             print("Data:\n");
-            draw_image_data(
-              host_image.get(), mismatch_x, mismatch_y, 16, 16, width, height);
+            draw_image_data(host_image, mismatch_x, mismatch_y, 16, 16, width, height);
             print("Strong From DIALS:\n");
             draw_image_data(
               dials_strong, mismatch_x, mismatch_y, 16, 16, width, height);
@@ -310,5 +301,4 @@ int main(int argc, char **argv) {
 
         print("\n\n");
     }
-    no_tbx_spotfinder_free(spotfinder);
 }
