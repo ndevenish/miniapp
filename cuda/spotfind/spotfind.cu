@@ -190,6 +190,7 @@ int main(int argc, char **argv) {
     auto spotfinder = StandaloneSpotfinder(width, height);
 
     for (size_t image_id = 0; image_id < reader.get_number_of_images(); ++image_id) {
+        image_id = 5;
         print("Image {}:\n", image_id);
         pre_load.record();
         pre_load.synchronize();
@@ -300,5 +301,6 @@ int main(int argc, char **argv) {
         }
 
         print("\n\n");
+        break;
     }
 }
