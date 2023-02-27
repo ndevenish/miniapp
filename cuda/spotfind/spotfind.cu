@@ -190,6 +190,10 @@ int main(int argc, char **argv) {
     auto spotfinder = StandaloneSpotfinder(width, height);
 
     for (size_t image_id = 0; image_id < reader.get_number_of_images(); ++image_id) {
+        if (args.image_number.has_value() && args.image_number.value() != image_id) {
+            continue;
+        }
+
         print("Image {}:\n", image_id);
         pre_load.record();
         pre_load.synchronize();
