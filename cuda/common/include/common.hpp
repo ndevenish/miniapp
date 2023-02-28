@@ -187,6 +187,63 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
     bool _activated_h5read = false;
 };
 
+namespace detail {
+template <class T>
+struct is_smart_ptr : std::false_type {};
+template <class T>
+struct is_smart_ptr<std::shared_ptr<T>> : std::true_type {};
+template <class T, typename U>
+struct is_smart_ptr<std::unique_ptr<T, U>> : std::true_type {};
+template <class T>
+struct is_smart_ptr<std::unique_ptr<T>> : std::true_type {};
+}  // namespace detail
+
+template <class T>
+struct HostPitchedMemoryArea {
+    static_assert(detail::is_smart_ptr<T>::value);
+
+    using element_type = T::element_type;
+    // typedef T::element_type element_type;
+    // using T::element_type;
+
+    HostPitchedMemoryArea(size_t pitch, size_t width, size_t height, T &&pointer)
+        : pitch(pitch), width(width), height(height), data(pointer) {}
+
+    size_t pitch;
+    size_t width;
+    size_t height;
+
+    T data;
+
+    size_t pitch_bytes() {
+        return sizeof(T::element) * pitch;
+    }
+    size_t bytes() {
+        return sizeof(T::element) * pitch * height;
+    }
+    size_t n_elements() {
+        return pitch * height;
+    }
+    T::element_type *get() {
+        return data.get();
+    }
+};
+
+template <typename T>
+struct PitchedMemoryArea {
+    template <typename U>
+    PitchedMemoryArea(const HostPitchedMemoryArea<U> &host)
+        : pitch(host.pitch),
+          width(host.width),
+          height(host.height),
+          data(host.data.get()) {}
+    size_t pitch;
+    size_t width;
+    size_t height;
+
+    T *data;
+};
+
 template <typename T>
 auto make_cuda_malloc(size_t num_items = 1) {
     using Tb = typename std::remove_extent<T>::type;
@@ -231,8 +288,12 @@ auto make_cuda_pitched_malloc(size_t width, size_t height) {
         throw std::bad_alloc{};
     }
     auto deleter = [](T *ptr) { cudaFree(ptr); };
-    return std::make_pair(std::unique_ptr<T[], decltype(deleter)>{obj, deleter},
-                          pitch / sizeof(T));
+    return HostPitchedMemoryArea(pitch / sizeof(T),
+                                 width,
+                                 height,
+                                 std::unique_ptr<T[], decltype(deleter)>{obj, deleter});
+    // return std::make_pair(,
+    //                       pitch / sizeof(T));
 }
 
 class CudaEvent {
