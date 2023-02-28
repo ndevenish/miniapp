@@ -77,9 +77,9 @@ __global__ void do_spotfinding_naive(pixel_t *image,
     }
 
     if (x < width && y < height) {
-        result_sum[x + image_pitch * y] = sum;
-        result_sumsq[x + image_pitch * y] = sumsq;
-        result_n[x + mask_pitch * y] = n;
+        // result_sum[x + image_pitch * y] = sum;
+        // result_sumsq[x + image_pitch * y] = sumsq;
+        // result_n[x + mask_pitch * y] = n;
 
         // Calculate the thresholding
         if (px_is_valid) {
