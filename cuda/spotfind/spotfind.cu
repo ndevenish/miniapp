@@ -7,6 +7,7 @@
 
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
+#include <cooperative_groups/scan.h>
 #include <fmt/core.h>
 
 #include <array>
@@ -40,8 +41,12 @@ __global__ void do_spotfinding_naive(pixel_t *image,
                                      size_t *result_sumsq,
                                      uint8_t *result_n,
                                      uint8_t *result_strong) {
+    __shared__ uint64_t block_exchange_8[32][32];
+    __shared__ uint32_t block_exchange_4[32][32];
+    __shared__ uint8_t block_exchange_1[32][32];
+
     auto block = cg::this_thread_block();
-    // auto warp = cg::tiled_partition<32>(block);
+    auto warp = cg::tiled_partition<32>(block);
     // int warpId = warp.meta_group_rank();
     // int lane = warp.thread_rank();
 
@@ -49,12 +54,104 @@ __global__ void do_spotfinding_naive(pixel_t *image,
     size_t sumsq = 0;
     uint8_t n = 0;
 
-    int x = block.group_index().x * block.group_dim().x + block.thread_index().x;
-    int y = block.group_index().y * block.group_dim().y + block.thread_index().y;
+    // The target image pixel of this thread
+    int x = block.group_index().x * block.group_dim().x + block.thread_index().x
+            - KERNEL_WIDTH;
+    int y = block.group_index().y * block.group_dim().y + block.thread_index().y
+            - KERNEL_HEIGHT;
 
-    // Don't calculate for masked pixels
-    bool px_is_valid = mask[y * mask_pitch + x] != 0;
-    pixel_t this_pixel = image[y * image_pitch + x];
+    // Make sure this pixel isn't masked or off-image
+    bool px_is_valid = false;
+    pixel_t this_pixel = 0;
+    if (x >= 0 && y >= 0 && x < width && y < height) [[likely]] {
+        px_is_valid = mask[y * mask_pitch + x] != 0;
+        this_pixel = image[y * image_pitch + x];
+    }
+    size_t this_pixel_sq = this_pixel * this_pixel;
+    if (y == 1 && x == 2) {
+        printf("%d, %d: pixel = %d, mask = %s\n",
+               x,
+               y,
+               (int)this_pixel,
+               px_is_valid ? "true" : "false");
+    }
+
+    // Calculate the horizontal prefix sums
+    auto inc_sum = cg::inclusive_scan(warp, this_pixel);
+    auto inc_sumsq = cg::inclusive_scan(warp, this_pixel_sq);
+    auto inc_n = cg::inclusive_scan(warp, px_is_valid ? 1 : 0);
+
+    if (y == 1 && x == 2) {
+        printf("%d, %d: sum = %d, sq = %d, n = %d\n",
+               x,
+               y,
+               (int)inc_sum,
+               (int)inc_sumsq,
+               (int)inc_n);
+    }
+
+    // Broadcast this value to the rest of the block
+    block_exchange_8[block.thread_index().y][block.thread_index().x] = inc_sumsq;
+    block_exchange_4[block.thread_index().y][block.thread_index().x] = inc_sum;
+    block_exchange_1[block.thread_index().y][block.thread_index().x] = inc_n;
+
+    // Wait until we can do block-level exchanges
+    __syncthreads();
+
+    // Transpose the block
+    inc_sumsq = block_exchange_8[block.thread_index().x][block.thread_index().y];
+    inc_sum = block_exchange_4[block.thread_index().x][block.thread_index().y];
+    inc_n = block_exchange_1[block.thread_index().x][block.thread_index().y];
+
+    if (y == 1 && x == 2) {
+        printf("%d, %d: sum = %d, sq = %d, n = %d After reading transpose\n",
+               x,
+               y,
+               (int)inc_sum,
+               (int)inc_sumsq,
+               (int)inc_n);
+    }
+
+    __syncthreads();
+    inc_sumsq = cg::inclusive_scan(warp, inc_sumsq);
+    inc_sum = cg::inclusive_scan(warp, inc_sum);
+    inc_n = cg::inclusive_scan(warp, inc_n);
+
+    if (y == 1 && x == 2) {
+        printf("%d, %d: sum = %d, sq = %d, n = %d After summing transpose\n",
+               x,
+               y,
+               (int)inc_sum,
+               (int)inc_sumsq,
+               (int)inc_n);
+    }
+    // And, write it back
+    block_exchange_8[block.thread_index().y][block.thread_index().x] = inc_sumsq;
+    block_exchange_4[block.thread_index().y][block.thread_index().x] = inc_sum;
+    block_exchange_1[block.thread_index().y][block.thread_index().x] = inc_n;
+
+    __syncthreads();
+    // Now, pull down the incremental sum for this pixel again
+    inc_sumsq = block_exchange_8[block.thread_index().y][block.thread_index().x];
+    inc_sum = block_exchange_4[block.thread_index().y][block.thread_index().x];
+    inc_n = block_exchange_1[block.thread_index().y][block.thread_index().x];
+
+    if (y == 1 && x == 2) {
+        printf("%d, %d: sum = %d, sq = %d, n = %d after reP-reading\n",
+               x,
+               y,
+               (int)inc_sum,
+               (int)inc_sumsq,
+               (int)inc_n);
+    }
+    if (x >= 0 && y >= 0 && x < width && y < height) {
+        result_sum[y * image_pitch + x] = inc_sum;
+        result_sumsq[y * image_pitch + x] = inc_sumsq;
+        result_n[y * mask_pitch + x] = inc_n;
+    } else if (x < 0 || y < 0) {
+        // Don't try to access memory if out-of-bounds
+        return;
+    }
 
     if (px_is_valid) {
         for (int row = max(0, y - KERNEL_HEIGHT);
@@ -76,7 +173,7 @@ __global__ void do_spotfinding_naive(pixel_t *image,
         }
     }
 
-    if (x < width && y < height) {
+    if (x < width && y < height && x >= 0 && y >= 0) {
         // result_sum[x + image_pitch * y] = sum;
         // result_sumsq[x + image_pitch * y] = sumsq;
         // result_n[x + mask_pitch * y] = n;
@@ -116,10 +213,13 @@ int main(int argc, char **argv) {
     int width = reader.image_shape()[1];
 
     // Work out how many blocks this is
-    dim3 thread_block_size{32, 16};
+    dim3 thread_block_size{32, 32};
+    // Make enough blocks to overlap the edges with the kernel
     dim3 blocks_dims{
-      static_cast<unsigned int>(ceilf((float)width / thread_block_size.x)),
-      static_cast<unsigned int>(ceilf((float)height / thread_block_size.y))};
+      static_cast<unsigned int>(
+        ceilf(static_cast<float>(width + KERNEL_WIDTH * 2) / thread_block_size.x)),
+      static_cast<unsigned int>(
+        ceilf(static_cast<float>(height + KERNEL_HEIGHT * 2) / thread_block_size.y))};
     const int num_threads_per_block = thread_block_size.x * thread_block_size.y;
     const int num_blocks = blocks_dims.x * blocks_dims.y;
     print("Image:   {:4d} x {:4d} = {} px\n", width, height, width * height);
@@ -302,6 +402,14 @@ int main(int argc, char **argv) {
                             width,
                             height);
         }
+        print("Image:\n");
+        draw_image_data(host_image, 0, 0, 16, 16, width, height);
+        print("Sum:\n");
+        draw_image_data(result_sum, 0, 0, 16, 16, device_pitch, height);
+        print("SumSq:\n");
+        draw_image_data(result_sumsq, 0, 0, 16, 16, device_pitch, height);
+        print("N:\n");
+        draw_image_data(result_n, 0, 0, 16, 16, device_mask_pitch, height);
 
         print("\n\n");
     }
