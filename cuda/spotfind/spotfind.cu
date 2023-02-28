@@ -43,7 +43,7 @@ __global__ void do_spotfinding_naive(pixel_t *image,
                                      uint8_t *result_strong) {
     __shared__ uint64_t block_exchange_8[32][32];
     __shared__ uint32_t block_exchange_4[32][32];
-    __shared__ uint8_t block_exchange_1[32][32];
+    __shared__ uint16_t block_exchange_2[32][32];
 
     auto block = cg::this_thread_block();
     auto warp = cg::tiled_partition<32>(block);
@@ -68,32 +68,16 @@ __global__ void do_spotfinding_naive(pixel_t *image,
         this_pixel = image[y * image_pitch + x];
     }
     size_t this_pixel_sq = this_pixel * this_pixel;
-    if (y == 1 && x == 2) {
-        printf("%d, %d: pixel = %d, mask = %s\n",
-               x,
-               y,
-               (int)this_pixel,
-               px_is_valid ? "true" : "false");
-    }
 
     // Calculate the horizontal prefix sums
-    auto inc_sum = cg::inclusive_scan(warp, this_pixel);
-    auto inc_sumsq = cg::inclusive_scan(warp, this_pixel_sq);
-    auto inc_n = cg::inclusive_scan(warp, px_is_valid ? 1 : 0);
-
-    if (y == 1 && x == 2) {
-        printf("%d, %d: sum = %d, sq = %d, n = %d\n",
-               x,
-               y,
-               (int)inc_sum,
-               (int)inc_sumsq,
-               (int)inc_n);
-    }
+    auto inc_sum = cg::exclusive_scan(warp, this_pixel);
+    auto inc_sumsq = cg::exclusive_scan(warp, this_pixel_sq);
+    auto inc_n = cg::exclusive_scan(warp, px_is_valid ? 1 : 0);
 
     // Broadcast this value to the rest of the block
     block_exchange_8[block.thread_index().y][block.thread_index().x] = inc_sumsq;
     block_exchange_4[block.thread_index().y][block.thread_index().x] = inc_sum;
-    block_exchange_1[block.thread_index().y][block.thread_index().x] = inc_n;
+    block_exchange_2[block.thread_index().y][block.thread_index().x] = inc_n;
 
     // Wait until we can do block-level exchanges
     __syncthreads();
@@ -101,104 +85,127 @@ __global__ void do_spotfinding_naive(pixel_t *image,
     // Transpose the block
     inc_sumsq = block_exchange_8[block.thread_index().x][block.thread_index().y];
     inc_sum = block_exchange_4[block.thread_index().x][block.thread_index().y];
-    inc_n = block_exchange_1[block.thread_index().x][block.thread_index().y];
-
-    if (y == 1 && x == 2) {
-        printf("%d, %d: sum = %d, sq = %d, n = %d After reading transpose\n",
-               x,
-               y,
-               (int)inc_sum,
-               (int)inc_sumsq,
-               (int)inc_n);
-    }
+    inc_n = block_exchange_2[block.thread_index().x][block.thread_index().y];
 
     __syncthreads();
-    inc_sumsq = cg::inclusive_scan(warp, inc_sumsq);
-    inc_sum = cg::inclusive_scan(warp, inc_sum);
-    inc_n = cg::inclusive_scan(warp, inc_n);
+    inc_sumsq = cg::exclusive_scan(warp, inc_sumsq);
+    inc_sum = cg::exclusive_scan(warp, inc_sum);
+    inc_n = cg::exclusive_scan(warp, inc_n);
 
-    if (y == 1 && x == 2) {
-        printf("%d, %d: sum = %d, sq = %d, n = %d After summing transpose\n",
-               x,
-               y,
-               (int)inc_sum,
-               (int)inc_sumsq,
-               (int)inc_n);
-    }
     // And, write it back
     block_exchange_8[block.thread_index().y][block.thread_index().x] = inc_sumsq;
     block_exchange_4[block.thread_index().y][block.thread_index().x] = inc_sum;
-    block_exchange_1[block.thread_index().y][block.thread_index().x] = inc_n;
+    block_exchange_2[block.thread_index().y][block.thread_index().x] = inc_n;
 
     __syncthreads();
-    // Now, pull down the incremental sum for this pixel again
-    inc_sumsq = block_exchange_8[block.thread_index().y][block.thread_index().x];
-    inc_sum = block_exchange_4[block.thread_index().y][block.thread_index().x];
-    inc_n = block_exchange_1[block.thread_index().y][block.thread_index().x];
 
-    if (y == 1 && x == 2) {
-        printf("%d, %d: sum = %d, sq = %d, n = %d after reP-reading\n",
-               x,
-               y,
-               (int)inc_sum,
-               (int)inc_sumsq,
-               (int)inc_n);
+    // If we aren't in the edge KERNEL pixels, then we calculate and update
+    if (block.thread_index().x >= KERNEL_WIDTH
+        && block.thread_index().y >= KERNEL_HEIGHT
+        && block.thread_index().x < block.dim_threads().x - KERNEL_WIDTH
+        && block.thread_index().y < block.dim_threads().y - KERNEL_HEIGHT) {
+        // Central block x,y coordinates
+        const int bX = block.thread_index().x;
+        const int bY = block.thread_index().y;
+
+        // Locations of four corners for SAT
+        const int l = bX - KERNEL_WIDTH;
+        const int r = bX + KERNEL_WIDTH + 1;
+        const int t = bY - KERNEL_HEIGHT;
+        const int b = bY + KERNEL_HEIGHT + 1;
+
+        // Reading out these coordinates
+        int A = block_exchange_4[b][r];
+        int B = block_exchange_4[t][r];
+        int C = block_exchange_4[b][l];
+        int D = block_exchange_4[t][l];
+
+        sum = A - B - C + D;
+        // if ((x == 3 && y == 3) || (x == 0 && y == 0)) {
+        //     printf(
+        //       "%d, %d = %d\n%3d %-2d     %2d %3d\n %2d ┼───────┼\n    │ %2d,%2d │\n "
+        //       "%2d "
+        //       "┼───────┼\n%3d           %3d\n",
+        //       x,
+        //       y,
+        //       sum,
+        //       D,
+        //       l,
+        //       r,
+        //       B,
+        //       t,
+        //       bX,
+        //       bY,
+        //       b,
+        //       C,
+        //       A);
+        // }
+        // sum = block_exchange_4[bY + KERNEL_HEIGHT + 1][bX + KERNEL_WIDTH + 1]
+        //       + block_exchange_4[bY - KERNEL_HEIGHT][bX - KERNEL_WIDTH]
+        //       - block_exchange_4[bY - KERNEL_HEIGHT][bX + KERNEL_WIDTH + 1]
+        //       - block_exchange_4[bY + KERNEL_HEIGHT + 1][bX - KERNEL_WIDTH];
     }
-    if (x >= 0 && y >= 0 && x < width && y < height) {
-        result_sum[y * image_pitch + x] = inc_sum;
-        result_sumsq[y * image_pitch + x] = inc_sumsq;
-        result_n[y * mask_pitch + x] = inc_n;
-    } else if (x < 0 || y < 0) {
-        // Don't try to access memory if out-of-bounds
-        return;
-    }
+    // if (x >= 0 && y >= 0 && x < width && y < height) {
+    //     // if (x == 2 && y == 2) {
+    //     //     printf("2x2 - writing %d to result\n", (int)sum);
+    //     // }
+    //     // Pull down the incremental sum for this pixel again so we can write to global
+    //     // inc_sumsq = block_exchange_8[block.thread_index().y][block.thread_index().x];
+    //     // inc_sum = block_exchange_4[block.thread_index().y][block.thread_index().x];
+    //     // inc_n = block_exchange_2[block.thread_index().y][block.thread_index().x];
 
-    if (px_is_valid) {
-        for (int row = max(0, y - KERNEL_HEIGHT);
-             row < min(y + KERNEL_HEIGHT + 1, height);
-             ++row) {
-            int row_offset = image_pitch * row;
-            int mask_offset = mask_pitch * row;
-            for (int col = max(0, x - KERNEL_WIDTH);
-                 col < min(x + KERNEL_WIDTH + 1, width);
-                 ++col) {
-                pixel_t pixel = image[row_offset + col];
-                uint8_t mask_pixel = mask[mask_offset + col];
-                if (mask_pixel) {
-                    sum += pixel;
-                    sumsq += pixel * pixel;
-                    n += 1;
-                }
-            }
-        }
-    }
+    //     result_sum[y * image_pitch + x] = sum;
+    //     result_sumsq[y * image_pitch + x] = inc_sum;
+    //     result_n[y * mask_pitch + x] = inc_n;
+    // }
+    // return;
 
-    if (x < width && y < height && x >= 0 && y >= 0) {
-        // result_sum[x + image_pitch * y] = sum;
-        // result_sumsq[x + image_pitch * y] = sumsq;
-        // result_n[x + mask_pitch * y] = n;
+    // if (px_is_valid) {
+    //     for (int row = max(0, y - KERNEL_HEIGHT);
+    //          row < min(y + KERNEL_HEIGHT + 1, height);
+    //          ++row) {
+    //         int row_offset = image_pitch * row;
+    //         int mask_offset = mask_pitch * row;
+    //         for (int col = max(0, x - KERNEL_WIDTH);
+    //              col < min(x + KERNEL_WIDTH + 1, width);
+    //              ++col) {
+    //             pixel_t pixel = image[row_offset + col];
+    //             uint8_t mask_pixel = mask[mask_offset + col];
+    //             if (mask_pixel) {
+    //                 sum += pixel;
+    //                 sumsq += pixel * pixel;
+    //                 n += 1;
+    //             }
+    //         }
+    //     }
+    // }
 
-        // Calculate the thresholding
-        if (px_is_valid) {
-            constexpr float n_sig_s = 3.0f;
-            constexpr float n_sig_b = 6.0f;
+    // if (x < width && y < height && x >= 0 && y >= 0) {
+    //     // result_sum[x + image_pitch * y] = sum;
+    //     // result_sumsq[x + image_pitch * y] = sumsq;
+    //     // result_n[x + mask_pitch * y] = n;
 
-            float sum_f = static_cast<float>(sum);
-            float sumsq_f = static_cast<float>(sumsq);
+    //     // Calculate the thresholding
+    //     if (px_is_valid) {
+    //         constexpr float n_sig_s = 3.0f;
+    //         constexpr float n_sig_b = 6.0f;
 
-            float mean = sum_f / n;
-            float variance = (n * sumsq_f - (sum_f * sum_f)) / (n * (n - 1));
-            float dispersion = variance / mean;
-            float background_threshold = 1 + n_sig_b * sqrt(2.0f / (n - 1));
-            bool not_background = dispersion > background_threshold;
-            float signal_threshold = mean + n_sig_s * sqrt(mean);
-            bool is_signal = this_pixel > signal_threshold;
-            bool is_strong_pixel = not_background && is_signal;
-            result_strong[x + mask_pitch * y] = is_strong_pixel;
-        } else {
-            result_strong[x + mask_pitch * y] = 0;
-        }
-    }
+    //         float sum_f = static_cast<float>(sum);
+    //         float sumsq_f = static_cast<float>(sumsq);
+
+    //         float mean = sum_f / n;
+    //         float variance = (n * sumsq_f - (sum_f * sum_f)) / (n * (n - 1));
+    //         float dispersion = variance / mean;
+    //         float background_threshold = 1 + n_sig_b * sqrt(2.0f / (n - 1));
+    //         bool not_background = dispersion > background_threshold;
+    //         float signal_threshold = mean + n_sig_s * sqrt(mean);
+    //         bool is_signal = this_pixel > signal_threshold;
+    //         bool is_strong_pixel = not_background && is_signal;
+    //         result_strong[x + mask_pitch * y] = is_strong_pixel;
+    //     } else {
+    //         result_strong[x + mask_pitch * y] = 0;
+    //     }
+    // }
 }
 
 int main(int argc, char **argv) {
@@ -299,6 +306,7 @@ int main(int argc, char **argv) {
         pre_load.synchronize();
 
         reader.get_image_into(image_id, host_image.get());
+        host_image.get()[10 + width * 10] = 50;
 
         // Copy data to GPU
         // Copy the image to GPU
@@ -370,46 +378,46 @@ int main(int argc, char **argv) {
             .count()
           * 1000;
 
-        if (validation_matches) {
-            print("     Compared: \033[32mMatch\033[0m in {:.0f} ms\n",
-                  validation_time_ms);
-        } else {
-            print("     Compared: \033[1;31mMismatch\033[0m in {:.0f} ms\n",
-                  validation_time_ms);
-            mismatch_x = max(static_cast<int>(mismatch_x) - 8, 0);
-            mismatch_y = max(static_cast<int>(mismatch_y) - 8, 0);
-            print("Data:\n");
-            draw_image_data(host_image, mismatch_x, mismatch_y, 16, 16, width, height);
-            print("Strong From DIALS:\n");
-            draw_image_data(
-              dials_strong, mismatch_x, mismatch_y, 16, 16, width, height);
-            print("Strong From kernel:\n");
-            draw_image_data(
-              result_strong, mismatch_x, mismatch_y, 16, 16, device_mask_pitch, height);
-            // print("Resultant N:\n");
-            print("Sum From kernel:\n");
-            draw_image_data(
-              result_sum, mismatch_x, mismatch_y, 16, 16, device_pitch, height);
-            print("Sum² From kernel:\n");
-            draw_image_data(
-              result_sumsq, mismatch_x, mismatch_y, 16, 16, device_pitch, height);
-            print("Mask:\n");
-            draw_image_data(reader.get_mask().value().data(),
-                            mismatch_x,
-                            mismatch_y,
-                            16,
-                            16,
-                            width,
-                            height);
-        }
+        // if (validation_matches) {
+        //     print("     Compared: \033[32mMatch\033[0m in {:.0f} ms\n",
+        //           validation_time_ms);
+        // } else {
+        //     print("     Compared: \033[1;31mMismatch\033[0m in {:.0f} ms\n",
+        //           validation_time_ms);
+        //     mismatch_x = max(static_cast<int>(mismatch_x) - 8, 0);
+        //     mismatch_y = max(static_cast<int>(mismatch_y) - 8, 0);
+        //     print("Data:\n");
+        //     draw_image_data(host_image, mismatch_x, mismatch_y, 16, 16, width, height);
+        //     print("Strong From DIALS:\n");
+        //     draw_image_data(
+        //       dials_strong, mismatch_x, mismatch_y, 16, 16, width, height);
+        //     print("Strong From kernel:\n");
+        //     draw_image_data(
+        //       result_strong, mismatch_x, mismatch_y, 16, 16, device_mask_pitch, height);
+        //     // print("Resultant N:\n");
+        //     print("Sum From kernel:\n");
+        //     draw_image_data(
+        //       result_sum, mismatch_x, mismatch_y, 16, 16, device_pitch, height);
+        //     print("Sum² From kernel:\n");
+        //     draw_image_data(
+        //       result_sumsq, mismatch_x, mismatch_y, 16, 16, device_pitch, height);
+        //     print("Mask:\n");
+        //     draw_image_data(reader.get_mask().value().data(),
+        //                     mismatch_x,
+        //                     mismatch_y,
+        //                     16,
+        //                     16,
+        //                     width,
+        //                     height);
+        // }
         print("Image:\n");
-        draw_image_data(host_image, 0, 0, 16, 16, width, height);
+        draw_image_data(host_image, 0, 0, 25, 16, width, height);
         print("Sum:\n");
-        draw_image_data(result_sum, 0, 0, 16, 16, device_pitch, height);
+        draw_image_data(result_sum, 0, 0, 25, 16, device_pitch, height);
         print("SumSq:\n");
-        draw_image_data(result_sumsq, 0, 0, 16, 16, device_pitch, height);
+        draw_image_data(result_sumsq, 0, 0, 25, 16, device_pitch, height);
         print("N:\n");
-        draw_image_data(result_n, 0, 0, 16, 16, device_mask_pitch, height);
+        draw_image_data(result_n, 0, 0, 25, 16, device_mask_pitch, height);
 
         print("\n\n");
     }
