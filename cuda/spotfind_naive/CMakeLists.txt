@@ -22,4 +22,4 @@ add_subdirectory(../../baseline baseline)
 
 add_executable(spotfind_naive spotfind_naive.cu)
 target_link_libraries(spotfind_naive PRIVATE fmt h5read argparse standalone)
-target_compile_options(spotfind_naive PRIVATE "$<$<CONFIG:Debug,RelWithDebInfo>:-G>")
+target_compile_options(spotfind_naive PRIVATE "$<$<CONFIG:Debug>:-G>")
