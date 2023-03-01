@@ -31,6 +31,27 @@ constexpr int KERNEL_WIDTH = 3;
 /// One-direction height of kernel. Total kernel span is (K_H * 2 + 1)
 constexpr int KERNEL_HEIGHT = 3;
 
+template <typename T>
+__device__ T warp_inclusive_scan(int lane_id, T value) {
+    uint sum = value;
+#pragma unroll
+    for (int i = 1; i < warpSize; i *= 2) {
+        unsigned int mask = 0xffffffff;
+        int n = __shfl_up_sync(mask, sum, i);
+        if (lane_id >= i) {
+            // printf("Lane %2d reading from -%2d (%3d) = %3d, sending %3d (%2d, %2d)\n",
+            //        lane_id,
+            //        i,
+            //        lane_id - i,
+            //        n,
+            //        sum,
+            //        x,
+            //        y);
+            sum += n;
+        }
+    }
+    return sum;
+}
 __global__ void do_spotfinding_naive(pixel_t *image,
                                      size_t image_pitch,
                                      uint8_t *mask,
@@ -41,24 +62,22 @@ __global__ void do_spotfinding_naive(pixel_t *image,
                                      size_t *result_sumsq,
                                      uint8_t *result_n,
                                      uint8_t *result_strong) {
-    __shared__ uint64_t block_exchange_8[32][32];
-    __shared__ uint32_t block_exchange_4[32][32];
-    __shared__ uint16_t block_exchange_2[32][32];
+    // __shared__ uint64_t block_exchange_8[32][32];
+    // __shared__ uint32_t block_exchange_4[32][32];
+    // __shared__ uint16_t block_exchange_2[32][32];
 
-    auto block = cg::this_thread_block();
-    auto warp = cg::tiled_partition<32>(block);
+    // auto block = cg::this_thread_block();
+    // auto warp = cg::tiled_partition<32>(block);
+
     // int warpId = warp.meta_group_rank();
     // int lane = warp.thread_rank();
 
-    uint sum = 0;
-    size_t sumsq = 0;
-    uint8_t n = 0;
+    // size_t sumsq = 0;
+    // uint8_t n = 0;
 
     // The target image pixel of this thread
-    int x = block.group_index().x * block.group_dim().x + block.thread_index().x
-            - KERNEL_WIDTH;
-    int y = block.group_index().y * block.group_dim().y + block.thread_index().y
-            - KERNEL_HEIGHT;
+    int x = blockIdx.x * blockDim.x + threadIdx.x - KERNEL_WIDTH;
+    int y = blockIdx.y * blockDim.y + threadIdx.y - KERNEL_HEIGHT;
 
     // Make sure this pixel isn't masked or off-image
     bool px_is_valid = false;
@@ -67,97 +86,114 @@ __global__ void do_spotfinding_naive(pixel_t *image,
         px_is_valid = mask[y * mask_pitch + x] != 0;
         this_pixel = image[y * image_pitch + x];
     }
-    size_t this_pixel_sq = this_pixel * this_pixel;
+    size_t sumsq = this_pixel * this_pixel;
+
+    // if (blockIdx.x > 0 || blockIdx.y > 0 || threadIdx.y != 3) {
+    //     return;
+    // }
+
+    // Calculate an in-warp scan
+    int lane_id = threadIdx.x % warpSize;
+    int sum = warp_inclusive_scan(lane_id, this_pixel);
+    sumsq = warp_inclusive_scan(lane_id, sumsq);
+    uint8_t n = warp_inclusive_scan(lane_id, this_pixel ? 1 : 0);
+
+    // for (int i = 0; i < warpSize; ++i) {
+    //     __syncwarp();
+    //     if (lane_id == i) {
+    //         printf("Lane %2d: %3d (%d)\n", lane_id, sum, threadIdx.x);
+    //     }
+    // }
 
     // Calculate the horizontal prefix sums
-    auto inc_sum = cg::exclusive_scan(warp, this_pixel);
-    auto inc_sumsq = cg::exclusive_scan(warp, this_pixel_sq);
-    auto inc_n = cg::exclusive_scan(warp, px_is_valid ? 1 : 0);
+    // auto inc_sum = cg::exclusive_scan(warp, this_pixel);
+    // auto inc_sumsq = cg::exclusive_scan(warp, this_pixel_sq);
+    // auto inc_n = cg::exclusive_scan(warp, px_is_valid ? 1 : 0);
 
     // Broadcast this value to the rest of the block
-    block_exchange_8[block.thread_index().y][block.thread_index().x] = inc_sumsq;
-    block_exchange_4[block.thread_index().y][block.thread_index().x] = inc_sum;
-    block_exchange_2[block.thread_index().y][block.thread_index().x] = inc_n;
+    // block_exchange_8[block.thread_index().y][block.thread_index().x] = inc_sumsq;
+    // block_exchange_4[block.thread_index().y][block.thread_index().x] = inc_sum;
+    // block_exchange_2[block.thread_index().y][block.thread_index().x] = inc_n;
 
-    // Wait until we can do block-level exchanges
-    __syncthreads();
+    // // Wait until we can do block-level exchanges
+    // __syncthreads();
 
-    // Transpose the block
-    inc_sumsq = block_exchange_8[block.thread_index().x][block.thread_index().y];
-    inc_sum = block_exchange_4[block.thread_index().x][block.thread_index().y];
-    inc_n = block_exchange_2[block.thread_index().x][block.thread_index().y];
+    // // Transpose the block
+    // inc_sumsq = block_exchange_8[block.thread_index().x][block.thread_index().y];
+    // inc_sum = block_exchange_4[block.thread_index().x][block.thread_index().y];
+    // inc_n = block_exchange_2[block.thread_index().x][block.thread_index().y];
 
-    __syncthreads();
-    inc_sumsq = cg::exclusive_scan(warp, inc_sumsq);
-    inc_sum = cg::exclusive_scan(warp, inc_sum);
-    inc_n = cg::exclusive_scan(warp, inc_n);
+    // __syncthreads();
+    // inc_sumsq = cg::exclusive_scan(warp, inc_sumsq);
+    // inc_sum = cg::exclusive_scan(warp, inc_sum);
+    // inc_n = cg::exclusive_scan(warp, inc_n);
 
-    // And, write it back
-    block_exchange_8[block.thread_index().y][block.thread_index().x] = inc_sumsq;
-    block_exchange_4[block.thread_index().y][block.thread_index().x] = inc_sum;
-    block_exchange_2[block.thread_index().y][block.thread_index().x] = inc_n;
+    // // And, write it back
+    // block_exchange_8[block.thread_index().y][block.thread_index().x] = inc_sumsq;
+    // block_exchange_4[block.thread_index().y][block.thread_index().x] = inc_sum;
+    // block_exchange_2[block.thread_index().y][block.thread_index().x] = inc_n;
 
-    __syncthreads();
+    // __syncthreads();
 
-    // If we aren't in the edge KERNEL pixels, then we calculate and update
-    if (block.thread_index().x >= KERNEL_WIDTH
-        && block.thread_index().y >= KERNEL_HEIGHT
-        && block.thread_index().x < block.dim_threads().x - KERNEL_WIDTH
-        && block.thread_index().y < block.dim_threads().y - KERNEL_HEIGHT) {
-        // Central block x,y coordinates
-        const int bX = block.thread_index().x;
-        const int bY = block.thread_index().y;
+    // // If we aren't in the edge KERNEL pixels, then we calculate and update
+    // if (block.thread_index().x >= KERNEL_WIDTH
+    //     && block.thread_index().y >= KERNEL_HEIGHT
+    //     && block.thread_index().x < block.dim_threads().x - KERNEL_WIDTH
+    //     && block.thread_index().y < block.dim_threads().y - KERNEL_HEIGHT) {
+    //     // Central block x,y coordinates
+    //     const int bX = block.thread_index().x;
+    //     const int bY = block.thread_index().y;
 
-        // Locations of four corners for SAT
-        const int l = bX - KERNEL_WIDTH;
-        const int r = bX + KERNEL_WIDTH + 1;
-        const int t = bY - KERNEL_HEIGHT;
-        const int b = bY + KERNEL_HEIGHT + 1;
+    //     // Locations of four corners for SAT
+    //     const int l = bX - KERNEL_WIDTH;
+    //     const int r = bX + KERNEL_WIDTH + 1;
+    //     const int t = bY - KERNEL_HEIGHT;
+    //     const int b = bY + KERNEL_HEIGHT + 1;
 
-        // Reading out these coordinates
-        int A = block_exchange_4[b][r];
-        int B = block_exchange_4[t][r];
-        int C = block_exchange_4[b][l];
-        int D = block_exchange_4[t][l];
+    //     // Reading out these coordinates
+    //     int A = block_exchange_4[b][r];
+    //     int B = block_exchange_4[t][r];
+    //     int C = block_exchange_4[b][l];
+    //     int D = block_exchange_4[t][l];
 
-        sum = A - B - C + D;
-        // if ((x == 3 && y == 3) || (x == 0 && y == 0)) {
-        //     printf(
-        //       "%d, %d = %d\n%3d %-2d     %2d %3d\n %2d ┼───────┼\n    │ %2d,%2d │\n "
-        //       "%2d "
-        //       "┼───────┼\n%3d           %3d\n",
-        //       x,
-        //       y,
-        //       sum,
-        //       D,
-        //       l,
-        //       r,
-        //       B,
-        //       t,
-        //       bX,
-        //       bY,
-        //       b,
-        //       C,
-        //       A);
-        // }
-        // sum = block_exchange_4[bY + KERNEL_HEIGHT + 1][bX + KERNEL_WIDTH + 1]
-        //       + block_exchange_4[bY - KERNEL_HEIGHT][bX - KERNEL_WIDTH]
-        //       - block_exchange_4[bY - KERNEL_HEIGHT][bX + KERNEL_WIDTH + 1]
-        //       - block_exchange_4[bY + KERNEL_HEIGHT + 1][bX - KERNEL_WIDTH];
-    }
-    // if (x >= 0 && y >= 0 && x < width && y < height) {
-    //     // if (x == 2 && y == 2) {
-    //     //     printf("2x2 - writing %d to result\n", (int)sum);
+    //     sum = A - B - C + D;
+    //     // if ((x == 3 && y == 3) || (x == 0 && y == 0)) {
+    //     //     printf(
+    //     //       "%d, %d = %d\n%3d %-2d     %2d %3d\n %2d ┼───────┼\n    │ %2d,%2d │\n "
+    //     //       "%2d "
+    //     //       "┼───────┼\n%3d           %3d\n",
+    //     //       x,
+    //     //       y,
+    //     //       sum,
+    //     //       D,
+    //     //       l,
+    //     //       r,
+    //     //       B,
+    //     //       t,
+    //     //       bX,
+    //     //       bY,
+    //     //       b,
+    //     //       C,
+    //     //       A);
     //     // }
-    //     // Pull down the incremental sum for this pixel again so we can write to global
-    //     // inc_sumsq = block_exchange_8[block.thread_index().y][block.thread_index().x];
-    //     // inc_sum = block_exchange_4[block.thread_index().y][block.thread_index().x];
-    //     // inc_n = block_exchange_2[block.thread_index().y][block.thread_index().x];
-
-    //     result_sum[y * image_pitch + x] = sum;
-    //     result_sumsq[y * image_pitch + x] = inc_sum;
-    //     result_n[y * mask_pitch + x] = inc_n;
+    //     // sum = block_exchange_4[bY + KERNEL_HEIGHT + 1][bX + KERNEL_WIDTH + 1]
+    //     //       + block_exchange_4[bY - KERNEL_HEIGHT][bX - KERNEL_WIDTH]
+    //     //       - block_exchange_4[bY - KERNEL_HEIGHT][bX + KERNEL_WIDTH + 1]
+    //     //       - block_exchange_4[bY + KERNEL_HEIGHT + 1][bX - KERNEL_WIDTH];
     // }
+    if (x >= 0 && y >= 0 && x < width && y < height) {
+        //     // if (x == 2 && y == 2) {
+        //     //     printf("2x2 - writing %d to result\n", (int)sum);
+        //     // }
+        //     // Pull down the incremental sum for this pixel again so we can write to global
+        //     // inc_sumsq = block_exchange_8[block.thread_index().y][block.thread_index().x];
+        //     // inc_sum = block_exchange_4[block.thread_index().y][block.thread_index().x];
+        //     // inc_n = block_exchange_2[block.thread_index().y][block.thread_index().x];
+
+        result_sum[y * image_pitch + x] = sum;
+        result_sumsq[y * image_pitch + x] = sumsq;
+        result_n[y * mask_pitch + x] = n;
+    }
     // return;
 
     // if (px_is_valid) {

@@ -23,7 +23,7 @@ add_subdirectory(../../baseline baseline)
 add_executable(spotfind spotfind.cu)
 target_link_libraries(spotfind PRIVATE fmt h5read argparse standalone)
 target_compile_options(spotfind PRIVATE "$<$<CONFIG:Debug,RelWithDebInfo>:-G>")
-target_compile_options(spotfind PRIVATE -maxrregcount 64)
+# target_compile_options(spotfind PRIVATE -maxrregcount 64)
 
 # Verbose output from ptxasm e.g. local memory usage
-# target_compile_options(spotfind PRIVATE -Xptxas -v)
+target_compile_options(spotfind PRIVATE -Xptxas -v)
