@@ -87,7 +87,6 @@ __global__ void do_spotfinding_naive(pixel_t *image,
     inc_sum = block_exchange_4[block.thread_index().x][block.thread_index().y];
     inc_n = block_exchange_2[block.thread_index().x][block.thread_index().y];
 
-    __syncthreads();
     inc_sumsq = cg::exclusive_scan(warp, inc_sumsq);
     inc_sum = cg::exclusive_scan(warp, inc_sum);
     inc_n = cg::exclusive_scan(warp, inc_n);
@@ -121,91 +120,40 @@ __global__ void do_spotfinding_naive(pixel_t *image,
         int D = block_exchange_4[t][l];
 
         sum = A - B - C + D;
-        // if ((x == 3 && y == 3) || (x == 0 && y == 0)) {
-        //     printf(
-        //       "%d, %d = %d\n%3d %-2d     %2d %3d\n %2d ┼───────┼\n    │ %2d,%2d │\n "
-        //       "%2d "
-        //       "┼───────┼\n%3d           %3d\n",
-        //       x,
-        //       y,
-        //       sum,
-        //       D,
-        //       l,
-        //       r,
-        //       B,
-        //       t,
-        //       bX,
-        //       bY,
-        //       b,
-        //       C,
-        //       A);
-        // }
-        // sum = block_exchange_4[bY + KERNEL_HEIGHT + 1][bX + KERNEL_WIDTH + 1]
-        //       + block_exchange_4[bY - KERNEL_HEIGHT][bX - KERNEL_WIDTH]
-        //       - block_exchange_4[bY - KERNEL_HEIGHT][bX + KERNEL_WIDTH + 1]
-        //       - block_exchange_4[bY + KERNEL_HEIGHT + 1][bX - KERNEL_WIDTH];
     }
-    // if (x >= 0 && y >= 0 && x < width && y < height) {
-    //     // if (x == 2 && y == 2) {
-    //     //     printf("2x2 - writing %d to result\n", (int)sum);
-    //     // }
-    //     // Pull down the incremental sum for this pixel again so we can write to global
-    //     // inc_sumsq = block_exchange_8[block.thread_index().y][block.thread_index().x];
-    //     // inc_sum = block_exchange_4[block.thread_index().y][block.thread_index().x];
-    //     // inc_n = block_exchange_2[block.thread_index().y][block.thread_index().x];
 
+    // if (x >= 0 && y >= 0 && x < width && y < height) {
+    //     // Pull down the incremental sum for this pixel again so we can write to global
+    //     inc_sumsq = block_exchange_8[block.thread_index().y][block.thread_index().x];
+    //     inc_sum = block_exchange_4[block.thread_index().y][block.thread_index().x];
+    //     inc_n = block_exchange_2[block.thread_index().y][block.thread_index().x];
     //     result_sum[y * image_pitch + x] = sum;
     //     result_sumsq[y * image_pitch + x] = inc_sum;
     //     result_n[y * mask_pitch + x] = inc_n;
     // }
-    // return;
 
-    // if (px_is_valid) {
-    //     for (int row = max(0, y - KERNEL_HEIGHT);
-    //          row < min(y + KERNEL_HEIGHT + 1, height);
-    //          ++row) {
-    //         int row_offset = image_pitch * row;
-    //         int mask_offset = mask_pitch * row;
-    //         for (int col = max(0, x - KERNEL_WIDTH);
-    //              col < min(x + KERNEL_WIDTH + 1, width);
-    //              ++col) {
-    //             pixel_t pixel = image[row_offset + col];
-    //             uint8_t mask_pixel = mask[mask_offset + col];
-    //             if (mask_pixel) {
-    //                 sum += pixel;
-    //                 sumsq += pixel * pixel;
-    //                 n += 1;
-    //             }
-    //         }
-    //     }
-    // }
+    if (x < width && y < height && x >= 0 && y >= 0) {
+        // Calculate the thresholding
+        if (px_is_valid) {
+            constexpr float n_sig_s = 3.0f;
+            constexpr float n_sig_b = 6.0f;
 
-    // if (x < width && y < height && x >= 0 && y >= 0) {
-    //     // result_sum[x + image_pitch * y] = sum;
-    //     // result_sumsq[x + image_pitch * y] = sumsq;
-    //     // result_n[x + mask_pitch * y] = n;
+            float sum_f = static_cast<float>(sum);
+            float sumsq_f = static_cast<float>(sumsq);
 
-    //     // Calculate the thresholding
-    //     if (px_is_valid) {
-    //         constexpr float n_sig_s = 3.0f;
-    //         constexpr float n_sig_b = 6.0f;
-
-    //         float sum_f = static_cast<float>(sum);
-    //         float sumsq_f = static_cast<float>(sumsq);
-
-    //         float mean = sum_f / n;
-    //         float variance = (n * sumsq_f - (sum_f * sum_f)) / (n * (n - 1));
-    //         float dispersion = variance / mean;
-    //         float background_threshold = 1 + n_sig_b * sqrt(2.0f / (n - 1));
-    //         bool not_background = dispersion > background_threshold;
-    //         float signal_threshold = mean + n_sig_s * sqrt(mean);
-    //         bool is_signal = this_pixel > signal_threshold;
-    //         bool is_strong_pixel = not_background && is_signal;
-    //         result_strong[x + mask_pitch * y] = is_strong_pixel;
-    //     } else {
-    //         result_strong[x + mask_pitch * y] = 0;
-    //     }
-    // }
+            float mean = sum_f / n;
+            float variance = (n * sumsq_f - (sum_f * sum_f)) / (n * (n - 1));
+            float dispersion = variance / mean;
+            float background_threshold = 1 + n_sig_b * sqrt(2.0f / (n - 1));
+            bool not_background = dispersion > background_threshold;
+            float signal_threshold = mean + n_sig_s * sqrt(mean);
+            bool is_signal = this_pixel > signal_threshold;
+            bool is_strong_pixel = not_background && is_signal;
+            result_strong[x + mask_pitch * y] = is_strong_pixel;
+        } else {
+            result_strong[x + mask_pitch * y] = 0;
+        }
+    }
 }
 
 int main(int argc, char **argv) {
