@@ -200,18 +200,16 @@ int main(int argc, char **argv) {
 
         reader.get_image_into(image_id, host_image.get());
 
-        // Copy data to GPU
         // Copy the image to GPU
         start.record();
-        cudaMemcpy2D(dev_image.get(),
-                     device_pitch * sizeof(pixel_t),
-                     host_image.get(),
-                     width * sizeof(pixel_t),
-                     width * sizeof(pixel_t),
-                     height,
-                     cudaMemcpyHostToDevice);
+        cudaMemcpy2DAsync(dev_image.get(),
+                          device_pitch * sizeof(pixel_t),
+                          host_image.get(),
+                          width * sizeof(pixel_t),
+                          width * sizeof(pixel_t),
+                          height,
+                          cudaMemcpyHostToDevice);
         memcpy.record();
-        cudaDeviceSynchronize();
         cuda_throw_error();
 
         do_spotfinding_naive<<<blocks_dims, thread_block_size>>>(dev_image.get(),
@@ -229,17 +227,22 @@ int main(int argc, char **argv) {
         cuda_throw_error();
         cudaDeviceSynchronize();
 
-        print("    Read Time: \033[1m{:6.2f}\033[0m ms \033[37m({:.1f} GBps)\033[0m\n",
+        print("    Read Time: \033[1m{:6.2f}\033[0m ms \033[37m{:>11}\033[0m\n",
               start.elapsed_time(pre_load),
-              GBps<pixel_t>(start.elapsed_time(pre_load), width * height));
-        print("  Upload Time: \033[1m{:6.2f}\033[0m ms \033[37m({:.1f} GBps)\033[0m\n",
+              format("({:4.1f} GBps)",
+                     GBps<pixel_t>(start.elapsed_time(pre_load), width * height)));
+        print("  Upload Time: \033[1m{:6.2f}\033[0m ms \033[37m({:4.1f} GBps)\033[0m\n",
               memcpy.elapsed_time(start),
               GBps<pixel_t>(memcpy.elapsed_time(start), width * height));
-        print("  Kernel Time: \033[1m{:6.2f}\033[0m ms\n", kernel.elapsed_time(memcpy));
+        print("  Kernel Time: \033[1m{:6.2f}\033[0m ms \033[37m{:>11}\033[0m\n",
+              kernel.elapsed_time(memcpy),
+              format("({:.1f} GBps)",
+                     GBps<pixel_t>(kernel.elapsed_time(memcpy), width * height)));
         print("               ════════\n");
-        print("        Total: \033[1m{:6.2f}\033[0m ms ({:.1f} GBps)\n",
+        print("        Total: \033[1m{:6.2f}\033[0m ms {:>11}\n",
               all.elapsed_time(pre_load),
-              GBps<pixel_t>(all.elapsed_time(pre_load), width * height));
+              format("({:.1f} GBps)",
+                     GBps<pixel_t>(all.elapsed_time(pre_load), width * height)));
 
         auto strong =
           count_nonzero(result_strong.get(), width, height, device_mask_pitch);
@@ -254,8 +257,14 @@ int main(int argc, char **argv) {
           converted_image, reader.get_mask().value_or(span<uint8_t>{}));
         auto end_time = std::chrono::high_resolution_clock::now();
         size_t dials_results = count_nonzero(dials_strong, width, height, width);
-
-        print("        Dials: {} px\n", dials_results);
+        float validation_time_ms =
+          std::chrono::duration_cast<std::chrono::duration<double>>(end_time
+                                                                    - start_time)
+            .count()
+          * 1000;
+        print("        Dials: {} px in {:.0f} ms CPU time\n",
+              dials_results,
+              validation_time_ms);
         bool validation_matches = compare_results(dials_strong.data(),
                                                   width,
                                                   result_strong.get(),
@@ -264,20 +273,15 @@ int main(int argc, char **argv) {
                                                   height,
                                                   &mismatch_x,
                                                   &mismatch_y);
-        float validation_time_ms =
-          std::chrono::duration_cast<std::chrono::duration<double>>(end_time
-                                                                    - start_time)
-            .count()
-          * 1000;
 
         if (validation_matches) {
-            print("     Compared: \033[32mMatch\033[0m in {:.0f} ms\n",
-                  validation_time_ms);
+            print("     Compared: \033[32mMatch\033[0m\n");
         } else {
-            print("     Compared: \033[1;31mMismatch\033[0m in {:.0f} ms\n",
-                  validation_time_ms);
+            print("     Compared: \033[1;31mMismatch\033[0m\n");
+
             mismatch_x = max(static_cast<int>(mismatch_x) - 8, 0);
             mismatch_y = max(static_cast<int>(mismatch_y) - 8, 0);
+
             print("Data:\n");
             draw_image_data(host_image, mismatch_x, mismatch_y, 16, 16, width, height);
             print("Strong From DIALS:\n");
@@ -302,7 +306,6 @@ int main(int argc, char **argv) {
                             width,
                             height);
         }
-
         print("\n\n");
     }
 }
