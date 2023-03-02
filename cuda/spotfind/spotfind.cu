@@ -270,13 +270,13 @@ int main(int argc, char **argv) {
             }
         }
         start.record();
-        cudaMemcpy2D(dev_mask.get(),
-                     device_mask_pitch,
-                     reader.get_mask()->data(),
-                     width,
-                     width,
-                     height,
-                     cudaMemcpyHostToDevice);
+        cudaMemcpy2DAsync(dev_mask.get(),
+                          device_mask_pitch,
+                          reader.get_mask()->data(),
+                          width,
+                          width,
+                          height,
+                          cudaMemcpyHostToDevice);
         cuda_throw_error();
     } else {
         mask_sum = width * height;
@@ -337,18 +337,22 @@ int main(int argc, char **argv) {
         cuda_throw_error();
         cudaDeviceSynchronize();
 
-        print("    Read Time: \033[1m{:6.2f}\033[0m ms \033[37m({:.1f} GBps)\033[0m\n",
+        print("    Read Time: \033[1m{:6.2f}\033[0m ms \033[37m{:>11}\033[0m\n",
               start.elapsed_time(pre_load),
-              GBps<pixel_t>(start.elapsed_time(pre_load), width * height));
-        print("  Upload Time: \033[1m{:6.2f}\033[0m ms \033[37m({:.1f} GBps)\033[0m\n",
+              format("({:4.1f} GBps)",
+                     GBps<pixel_t>(start.elapsed_time(pre_load), width * height)));
+        print("  Upload Time: \033[1m{:6.2f}\033[0m ms \033[37m({:4.1f} GBps)\033[0m\n",
               memcpy.elapsed_time(start),
               GBps<pixel_t>(memcpy.elapsed_time(start), width * height));
-        print("  Kernel Time: \033[1m{:6.2f}\033[0m ms\n", kernel.elapsed_time(memcpy));
+        print("  Kernel Time: \033[1m{:6.2f}\033[0m ms \033[37m{:>11}\033[0m\n",
+              kernel.elapsed_time(memcpy),
+              format("({:.1f} GBps)",
+                     GBps<pixel_t>(kernel.elapsed_time(memcpy), width * height)));
         print("               ════════\n");
-        print("        Total: \033[1m{:6.2f}\033[0m ms ({:.1f} GBps)\n",
+        print("        Total: \033[1m{:6.2f}\033[0m ms {:>11}\n",
               all.elapsed_time(pre_load),
-              GBps<pixel_t>(all.elapsed_time(pre_load), width * height));
-
+              format("({:.1f} GBps)",
+                     GBps<pixel_t>(all.elapsed_time(pre_load), width * height)));
         auto strong =
           count_nonzero(result_strong.get(), width, height, device_mask_pitch);
         print("       Strong: {} px\n", strong);
@@ -363,7 +367,15 @@ int main(int argc, char **argv) {
         auto end_time = std::chrono::high_resolution_clock::now();
         size_t dials_results = count_nonzero(dials_strong, width, height, width);
 
-        print("        Dials: {} px\n", dials_results);
+        float validation_time_ms =
+          std::chrono::duration_cast<std::chrono::duration<double>>(end_time
+                                                                    - start_time)
+            .count()
+          * 1000;
+        print("        Dials: {} px in {:.0f} ms CPU time\n",
+              dials_results,
+              validation_time_ms);
+
         bool validation_matches = compare_results(dials_strong.data(),
                                                   width,
                                                   result_strong.get(),
@@ -372,18 +384,11 @@ int main(int argc, char **argv) {
                                                   height,
                                                   &mismatch_x,
                                                   &mismatch_y);
-        float validation_time_ms =
-          std::chrono::duration_cast<std::chrono::duration<double>>(end_time
-                                                                    - start_time)
-            .count()
-          * 1000;
 
         // if (validation_matches) {
-        //     print("     Compared: \033[32mMatch\033[0m in {:.0f} ms\n",
-        //           validation_time_ms);
+        //     print("     Compared: \033[32mMatch\033[0m\n");
         // } else {
-        //     print("     Compared: \033[1;31mMismatch\033[0m in {:.0f} ms\n",
-        //           validation_time_ms);
+        //     print("     Compared: \033[1;31mMismatch\033[0m\n");
         //     mismatch_x = max(static_cast<int>(mismatch_x) - 8, 0);
         //     mismatch_y = max(static_cast<int>(mismatch_y) - 8, 0);
         //     print("Data:\n");
