@@ -31,6 +31,35 @@ constexpr int KERNEL_WIDTH = 3;
 /// One-direction height of kernel. Total kernel span is (K_H * 2 + 1)
 constexpr int KERNEL_HEIGHT = 3;
 
+template <typename T, typename Sum = T>
+__device__ auto calculate_area_sum(T exchange_block[32][32],
+                                   const cg::thread_block &block) -> Sum {
+    Sum sum = 0;
+    // If we aren't in the edge KERNEL pixels, then we calculate and update
+    if (block.thread_index().x >= KERNEL_WIDTH
+        && block.thread_index().y >= KERNEL_HEIGHT
+        && block.thread_index().x < block.dim_threads().x - KERNEL_WIDTH
+        && block.thread_index().y < block.dim_threads().y - KERNEL_HEIGHT) {
+        // Central block x,y coordinates
+        const int bX = block.thread_index().x;
+        const int bY = block.thread_index().y;
+
+        // Locations of four corners for SAT
+        const int l = bX - KERNEL_WIDTH;
+        const int r = bX + KERNEL_WIDTH + 1;
+        const int t = bY - KERNEL_HEIGHT;
+        const int b = bY + KERNEL_HEIGHT + 1;
+
+        // Reading out these coordinates
+        int A = exchange_block[b][r];
+        int B = exchange_block[t][r];
+        int C = exchange_block[b][l];
+        int D = exchange_block[t][l];
+
+        sum = A - B - C + D;
+    }
+    return sum;
+}
 __global__ void do_spotfinding_naive(pixel_t *image,
                                      size_t image_pitch,
                                      uint8_t *mask,
@@ -98,38 +127,18 @@ __global__ void do_spotfinding_naive(pixel_t *image,
 
     __syncthreads();
 
-    // If we aren't in the edge KERNEL pixels, then we calculate and update
-    if (block.thread_index().x >= KERNEL_WIDTH
-        && block.thread_index().y >= KERNEL_HEIGHT
-        && block.thread_index().x < block.dim_threads().x - KERNEL_WIDTH
-        && block.thread_index().y < block.dim_threads().y - KERNEL_HEIGHT) {
-        // Central block x,y coordinates
-        const int bX = block.thread_index().x;
-        const int bY = block.thread_index().y;
-
-        // Locations of four corners for SAT
-        const int l = bX - KERNEL_WIDTH;
-        const int r = bX + KERNEL_WIDTH + 1;
-        const int t = bY - KERNEL_HEIGHT;
-        const int b = bY + KERNEL_HEIGHT + 1;
-
-        // Reading out these coordinates
-        int A = block_exchange_4[b][r];
-        int B = block_exchange_4[t][r];
-        int C = block_exchange_4[b][l];
-        int D = block_exchange_4[t][l];
-
-        sum = A - B - C + D;
-    }
+    sumsq = calculate_area_sum(block_exchange_8, block);
+    sum = calculate_area_sum(block_exchange_4, block);
+    n = calculate_area_sum(block_exchange_2, block);
 
     // if (x >= 0 && y >= 0 && x < width && y < height) {
-    //     // Pull down the incremental sum for this pixel again so we can write to global
-    //     inc_sumsq = block_exchange_8[block.thread_index().y][block.thread_index().x];
-    //     inc_sum = block_exchange_4[block.thread_index().y][block.thread_index().x];
-    //     inc_n = block_exchange_2[block.thread_index().y][block.thread_index().x];
+    //     // // Pull down the incremental sum for this pixel again so we can write to global
+    //     // inc_sumsq = block_exchange_8[block.thread_index().y][block.thread_index().x];
+    //     // inc_sum = block_exchange_4[block.thread_index().y][block.thread_index().x];
+    //     // inc_n = block_exchange_2[block.thread_index().y][block.thread_index().x];
     //     result_sum[y * image_pitch + x] = sum;
-    //     result_sumsq[y * image_pitch + x] = inc_sum;
-    //     result_n[y * mask_pitch + x] = inc_n;
+    //     result_sumsq[y * image_pitch + x] = sumsq;
+    //     result_n[y * mask_pitch + x] = n;
     // }
 
     if (x < width && y < height && x >= 0 && y >= 0) {
