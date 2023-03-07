@@ -38,8 +38,8 @@ __device__ auto calculate_area_sum(T exchange_block[32][32],
     // If we aren't in the edge KERNEL pixels, then we calculate and update
     if (block.thread_index().x >= KERNEL_WIDTH
         && block.thread_index().y >= KERNEL_HEIGHT
-        && block.thread_index().x < block.dim_threads().x - KERNEL_WIDTH
-        && block.thread_index().y < block.dim_threads().y - KERNEL_HEIGHT) {
+        && block.thread_index().x < block.dim_threads().x - KERNEL_WIDTH - 1
+        && block.thread_index().y < block.dim_threads().y - KERNEL_HEIGHT - 1) {
         // Central block x,y coordinates
         const int bX = block.thread_index().x;
         const int bY = block.thread_index().y;
@@ -50,6 +50,9 @@ __device__ auto calculate_area_sum(T exchange_block[32][32],
         const int t = bY - KERNEL_HEIGHT;
         const int b = bY + KERNEL_HEIGHT + 1;
 
+        if (block.thread_index().y == 28) {
+            printf("t: %d, l: %d\n", t, l);
+        }
         // Reading out these coordinates
         int A = exchange_block[b][r];
         int B = exchange_block[t][r];
@@ -131,15 +134,15 @@ __global__ void do_spotfinding_naive(pixel_t *image,
     sum = calculate_area_sum(block_exchange_4, block);
     n = calculate_area_sum(block_exchange_2, block);
 
-    // if (x >= 0 && y >= 0 && x < width && y < height) {
-    //     // // Pull down the incremental sum for this pixel again so we can write to global
-    //     // inc_sumsq = block_exchange_8[block.thread_index().y][block.thread_index().x];
-    //     // inc_sum = block_exchange_4[block.thread_index().y][block.thread_index().x];
-    //     // inc_n = block_exchange_2[block.thread_index().y][block.thread_index().x];
-    //     result_sum[y * image_pitch + x] = sum;
-    //     result_sumsq[y * image_pitch + x] = sumsq;
-    //     result_n[y * mask_pitch + x] = n;
-    // }
+    if (x >= 0 && y >= 0 && x < width && y < height) {
+        // // Pull down the incremental sum for this pixel again so we can write to global
+        // inc_sumsq = block_exchange_8[block.thread_index().y][block.thread_index().x];
+        // inc_sum = block_exchange_4[block.thread_index().y][block.thread_index().x];
+        // inc_n = block_exchange_2[block.thread_index().y][block.thread_index().x];
+        result_sum[y * image_pitch + x] = sum;
+        result_sumsq[y * image_pitch + x] = sumsq;
+        result_n[y * mask_pitch + x] = n;
+    }
 
     if (x < width && y < height && x >= 0 && y >= 0) {
         // Calculate the thresholding
