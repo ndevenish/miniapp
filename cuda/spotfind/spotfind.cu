@@ -102,7 +102,7 @@ __global__ void do_spotfinding_sat(pixel_t *image,
             + block.thread_index().y - KERNEL_HEIGHT;
 
     bool px_is_valid = false;
-    pixel_t this_pixel = 0;
+    uint32_t this_pixel = 0;
     // Only read if this pixel isn't off the edge of the image
     if (x >= 0 && y >= 0 && x < width && y < height) [[likely]] {
         px_is_valid = mask[y * mask_pitch + x] != 0;
