@@ -74,8 +74,13 @@ __global__ void do_spotfinding_sat(pixel_t *image,
                                    uint8_t *result_n,
                                    uint8_t *result_strong) {
     __shared__ uint64_t block_exchange_8[32][32];
-    __shared__ uint32_t block_exchange_4[32][32];
-    __shared__ uint16_t block_exchange_2[32][32];
+    auto block_exchange_4 = reinterpret_cast<uint32_t(*)[32]>(block_exchange_8);
+    auto block_exchange_2 = reinterpret_cast<uint16_t(*)[32]>(block_exchange_8);
+    // uint32_t block_exchange_4[32][32] = (uint32_t[32][32])block_exchange_8;
+    // uint16_t *block_exchange_2 = (uint16_t *)block_exchange_8;
+
+    // __shared__ uint32_t block_exchange_4[32][32];
+    // __shared__ uint16_t block_exchange_2[32][32];
 
     auto block = cg::this_thread_block();
     auto warp = cg::tiled_partition<32>(block);
@@ -112,47 +117,54 @@ __global__ void do_spotfinding_sat(pixel_t *image,
 
     // Calculate the horizontal prefix sums
     auto inc_sum = cg::exclusive_scan(warp, this_pixel);
-    auto inc_sumsq = cg::exclusive_scan(warp, this_pixel_sq);
-    auto inc_n = cg::exclusive_scan(warp, px_is_valid ? 1 : 0);
-
-    // Broadcast this value to the rest of the block
-    block_exchange_8[block.thread_index().y][block.thread_index().x] = inc_sumsq;
     block_exchange_4[block.thread_index().y][block.thread_index().x] = inc_sum;
-    block_exchange_2[block.thread_index().y][block.thread_index().x] = inc_n;
-
     // Wait until we can do block-level exchanges
     __syncthreads();
-
     // Transpose the block
-    inc_sumsq = block_exchange_8[block.thread_index().x][block.thread_index().y];
     inc_sum = block_exchange_4[block.thread_index().x][block.thread_index().y];
-    inc_n = block_exchange_2[block.thread_index().x][block.thread_index().y];
-
     // Calculate the vertical prefix-sum for this transposed column
-    inc_sumsq = cg::exclusive_scan(warp, inc_sumsq);
     inc_sum = cg::exclusive_scan(warp, inc_sum);
-    inc_n = cg::exclusive_scan(warp, inc_n);
-
     // And, write it back
-    block_exchange_8[block.thread_index().x][block.thread_index().y] = inc_sumsq;
     block_exchange_4[block.thread_index().x][block.thread_index().y] = inc_sum;
-    block_exchange_2[block.thread_index().x][block.thread_index().y] = inc_n;
-
     __syncthreads();
-
     // Now we have the SAT, we can sum the areas
-    sumsq = calculate_area_sum(block_exchange_8, block);
     sum = calculate_area_sum(block_exchange_4, block);
-    n = calculate_area_sum(block_exchange_2, block);
+    if (is_real_pixel && x < width && y < height) {
+        result_sum[y * image_pitch + x] = inc_sum;
+    }
+    auto inc_sumsq = cg::exclusive_scan(warp, this_pixel_sq);
+    block_exchange_8[block.thread_index().y][block.thread_index().x] = inc_sumsq;
+    __syncthreads();
+    inc_sumsq = block_exchange_8[block.thread_index().x][block.thread_index().y];
+    inc_sumsq = cg::exclusive_scan(warp, inc_sumsq);
+    block_exchange_8[block.thread_index().x][block.thread_index().y] = inc_sumsq;
+    __syncthreads();
+    sumsq = calculate_area_sum(block_exchange_8, block);
+    if (is_real_pixel && x < width && y < height) {
+        result_sumsq[y * image_pitch + x] = inc_sumsq;
+    }
 
+    auto inc_n = cg::exclusive_scan(warp, px_is_valid ? 1 : 0);
+    block_exchange_2[block.thread_index().y][block.thread_index().x] = inc_n;
+    __syncthreads();
+    inc_n = block_exchange_2[block.thread_index().x][block.thread_index().y];
+    inc_n = cg::exclusive_scan(warp, inc_n);
+    block_exchange_2[block.thread_index().x][block.thread_index().y] = inc_n;
+    __syncthreads();
+    n = calculate_area_sum(block_exchange_2, block);
+    if (is_real_pixel && x < width && y < height) {
+        result_n[y * mask_pitch + x] = inc_n;
+    }
     if (is_real_pixel && x < width && y < height) {
         // Pull down the incremental sum for this pixel again so we can write to global
-        inc_sumsq = block_exchange_8[block.thread_index().y][block.thread_index().x];
-        inc_sum = block_exchange_4[block.thread_index().y][block.thread_index().x];
-        inc_n = block_exchange_2[block.thread_index().y][block.thread_index().x];
-        result_sum[y * image_pitch + x] = inc_sum;
-        result_sumsq[y * image_pitch + x] = inc_sumsq;
-        result_n[y * mask_pitch + x] = inc_n;
+        // inc_sumsq = block_exchange_8[block.thread_index().y][block.thread_index().x];
+        // inc_sum = block_exchange_4[block.thread_index().y][block.thread_index().x];
+        // inc_n = block_exchange_2[block.thread_index().y][block.thread_index().x];
+        // if (is_real_pixel && x < width && y < height) {
+        //     result_sum[y * image_pitch + x] = inc_sum;
+        // }
+        // result_sumsq[y * image_pitch + x] = inc_sumsq;
+        // result_n[y * mask_pitch + x] = inc_n;
 
         // Calculate the thresholding
         if (px_is_valid) {
