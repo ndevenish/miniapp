@@ -63,16 +63,16 @@ __device__ auto calculate_area_sum(T exchange_block[32][32],
     }
     return sum;
 }
-__global__ void do_spotfinding_naive(pixel_t *image,
-                                     size_t image_pitch,
-                                     uint8_t *mask,
-                                     size_t mask_pitch,
-                                     int width,
-                                     int height,
-                                     int *result_sum,
-                                     size_t *result_sumsq,
-                                     uint8_t *result_n,
-                                     uint8_t *result_strong) {
+__global__ void do_spotfinding_sat(pixel_t *image,
+                                   size_t image_pitch,
+                                   uint8_t *mask,
+                                   size_t mask_pitch,
+                                   int width,
+                                   int height,
+                                   int *result_sum,
+                                   size_t *result_sumsq,
+                                   uint8_t *result_n,
+                                   uint8_t *result_strong) {
     __shared__ uint64_t block_exchange_8[32][32];
     __shared__ uint32_t block_exchange_4[32][32];
     __shared__ uint16_t block_exchange_2[32][32];
@@ -282,16 +282,16 @@ int main(int argc, char **argv) {
         cudaDeviceSynchronize();
         cuda_throw_error();
 
-        do_spotfinding_naive<<<blocks_dims, thread_block_size>>>(dev_image.get(),
-                                                                 device_pitch,
-                                                                 dev_mask.get(),
-                                                                 device_mask_pitch,
-                                                                 width,
-                                                                 height,
-                                                                 result_sum.get(),
-                                                                 result_sumsq.get(),
-                                                                 result_n.get(),
-                                                                 result_strong.get());
+        do_spotfinding_sat<<<blocks_dims, thread_block_size>>>(dev_image.get(),
+                                                               device_pitch,
+                                                               dev_mask.get(),
+                                                               device_mask_pitch,
+                                                               width,
+                                                               height,
+                                                               result_sum.get(),
+                                                               result_sumsq.get(),
+                                                               result_n.get(),
+                                                               result_strong.get());
         kernel.record();
         all.record();
         cuda_throw_error();
