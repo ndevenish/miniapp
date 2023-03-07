@@ -80,21 +80,30 @@ __global__ void do_spotfinding_sat(pixel_t *image,
     auto block = cg::this_thread_block();
     auto warp = cg::tiled_partition<32>(block);
     // int warpId = warp.meta_group_rank();
-    // int lane = warp.thread_rank();
+    int lane = warp.thread_rank();
 
     uint sum = 0;
     size_t sumsq = 0;
     uint8_t n = 0;
 
-    // The target image pixel of this thread
-    int x = block.group_index().x * block.group_dim().x + block.thread_index().x
-            - KERNEL_WIDTH;
-    int y = block.group_index().y * block.group_dim().y + block.thread_index().y
-            - KERNEL_HEIGHT;
+    // Are we a "Real" or a "Virtual" pixel. Only real pixels have enough
+    // data within the thread block to calculate their full kernel sums.
+    // Everything else is on the edges of the block, and exist to make
+    // the data available for real pixels.
+    bool is_real_pixel = block.thread_index().x >= KERNEL_WIDTH
+                         && block.thread_index().x < 32 - KERNEL_WIDTH - 1
+                         && block.thread_index().y >= KERNEL_HEIGHT
+                         && block.thread_index().y < 32 - KERNEL_HEIGHT - 1;
 
-    // Make sure this pixel isn't masked or off-image
+    // The source and target indices of this pixel
+    int x = block.group_index().x * (block.group_dim().x - KERNEL_WIDTH * 2 - 1)
+            + block.thread_index().x - KERNEL_WIDTH;
+    int y = block.group_index().y * (block.group_dim().y - KERNEL_HEIGHT * 2 - 1)
+            + block.thread_index().y - KERNEL_HEIGHT;
+
     bool px_is_valid = false;
     pixel_t this_pixel = 0;
+    // Only read if this pixel isn't off the edge of the image
     if (x >= 0 && y >= 0 && x < width && y < height) [[likely]] {
         px_is_valid = mask[y * mask_pitch + x] != 0;
         this_pixel = image[y * image_pitch + x];
@@ -119,32 +128,32 @@ __global__ void do_spotfinding_sat(pixel_t *image,
     inc_sum = block_exchange_4[block.thread_index().x][block.thread_index().y];
     inc_n = block_exchange_2[block.thread_index().x][block.thread_index().y];
 
+    // Calculate the vertical prefix-sum for this transposed column
     inc_sumsq = cg::exclusive_scan(warp, inc_sumsq);
     inc_sum = cg::exclusive_scan(warp, inc_sum);
     inc_n = cg::exclusive_scan(warp, inc_n);
 
     // And, write it back
-    block_exchange_8[block.thread_index().y][block.thread_index().x] = inc_sumsq;
-    block_exchange_4[block.thread_index().y][block.thread_index().x] = inc_sum;
-    block_exchange_2[block.thread_index().y][block.thread_index().x] = inc_n;
+    block_exchange_8[block.thread_index().x][block.thread_index().y] = inc_sumsq;
+    block_exchange_4[block.thread_index().x][block.thread_index().y] = inc_sum;
+    block_exchange_2[block.thread_index().x][block.thread_index().y] = inc_n;
 
     __syncthreads();
 
+    // Now we have the SAT, we can sum the areas
     sumsq = calculate_area_sum(block_exchange_8, block);
     sum = calculate_area_sum(block_exchange_4, block);
     n = calculate_area_sum(block_exchange_2, block);
 
-    if (x >= 0 && y >= 0 && x < width && y < height) {
-        // // Pull down the incremental sum for this pixel again so we can write to global
-        // inc_sumsq = block_exchange_8[block.thread_index().y][block.thread_index().x];
-        // inc_sum = block_exchange_4[block.thread_index().y][block.thread_index().x];
-        // inc_n = block_exchange_2[block.thread_index().y][block.thread_index().x];
-        result_sum[y * image_pitch + x] = sum;
-        result_sumsq[y * image_pitch + x] = sumsq;
-        result_n[y * mask_pitch + x] = n;
-    }
+    if (is_real_pixel && x < width && y < height) {
+        // Pull down the incremental sum for this pixel again so we can write to global
+        inc_sumsq = block_exchange_8[block.thread_index().y][block.thread_index().x];
+        inc_sum = block_exchange_4[block.thread_index().y][block.thread_index().x];
+        inc_n = block_exchange_2[block.thread_index().y][block.thread_index().x];
+        result_sum[y * image_pitch + x] = inc_sum;
+        result_sumsq[y * image_pitch + x] = inc_sumsq;
+        result_n[y * mask_pitch + x] = inc_n;
 
-    if (x < width && y < height && x >= 0 && y >= 0) {
         // Calculate the thresholding
         if (px_is_valid) {
             constexpr float n_sig_s = 3.0f;
@@ -183,10 +192,11 @@ int main(int argc, char **argv) {
     dim3 thread_block_size{32, 32};
     // Make enough blocks to overlap the edges with the kernel
     dim3 blocks_dims{
-      static_cast<unsigned int>(
-        ceilf(static_cast<float>(width + KERNEL_WIDTH * 2) / thread_block_size.x)),
-      static_cast<unsigned int>(
-        ceilf(static_cast<float>(height + KERNEL_HEIGHT * 2) / thread_block_size.y))};
+      static_cast<unsigned int>(ceilf(static_cast<float>(width)
+                                      / (thread_block_size.x - KERNEL_WIDTH * 2 - 1))),
+      static_cast<unsigned int>(ceilf(
+        static_cast<float>(height) / (thread_block_size.y - KERNEL_HEIGHT * 2 - 1)))};
+
     const int num_threads_per_block = thread_block_size.x * thread_block_size.y;
     const int num_blocks = blocks_dims.x * blocks_dims.y;
     print("Image:   {:4d} x {:4d} = {} px\n", width, height, width * height);
@@ -345,44 +355,46 @@ int main(int argc, char **argv) {
                                                   &mismatch_x,
                                                   &mismatch_y);
 
-        // if (validation_matches) {
-        //     print("     Compared: \033[32mMatch\033[0m\n");
-        // } else {
-        //     print("     Compared: \033[1;31mMismatch\033[0m\n");
-        //     mismatch_x = max(static_cast<int>(mismatch_x) - 8, 0);
-        //     mismatch_y = max(static_cast<int>(mismatch_y) - 8, 0);
-        //     print("Data:\n");
-        //     draw_image_data(host_image, mismatch_x, mismatch_y, 16, 16, width, height);
-        //     print("Strong From DIALS:\n");
-        //     draw_image_data(
-        //       dials_strong, mismatch_x, mismatch_y, 16, 16, width, height);
-        //     print("Strong From kernel:\n");
-        //     draw_image_data(
-        //       result_strong, mismatch_x, mismatch_y, 16, 16, device_mask_pitch, height);
-        //     // print("Resultant N:\n");
-        //     print("Sum From kernel:\n");
-        //     draw_image_data(
-        //       result_sum, mismatch_x, mismatch_y, 16, 16, device_pitch, height);
-        //     print("Sum² From kernel:\n");
-        //     draw_image_data(
-        //       result_sumsq, mismatch_x, mismatch_y, 16, 16, device_pitch, height);
-        //     print("Mask:\n");
-        //     draw_image_data(reader.get_mask().value().data(),
-        //                     mismatch_x,
-        //                     mismatch_y,
-        //                     16,
-        //                     16,
-        //                     width,
-        //                     height);
-        // }
-        print("Image:\n");
-        draw_image_data(host_image, 0, 0, 25, 16, width, height);
-        print("Sum:\n");
-        draw_image_data(result_sum, 0, 0, 25, 16, device_pitch, height);
-        print("SumSq:\n");
-        draw_image_data(result_sumsq, 0, 0, 25, 16, device_pitch, height);
-        print("N:\n");
-        draw_image_data(result_n, 0, 0, 25, 16, device_mask_pitch, height);
+        if (validation_matches) {
+            print("     Compared: \033[32mMatch\033[0m\n");
+        } else {
+            print("     Compared: \033[1;31mMismatch\033[0m\n");
+            mismatch_x = max(static_cast<int>(mismatch_x) - 8, 0);
+            mismatch_y = max(static_cast<int>(mismatch_y) - 8, 0);
+            print("Data:\n");
+            draw_image_data(host_image, mismatch_x, mismatch_y, 16, 16, width, height);
+            print("Strong From DIALS:\n");
+            draw_image_data(
+              dials_strong, mismatch_x, mismatch_y, 16, 16, width, height);
+            print("Strong From kernel:\n");
+            draw_image_data(
+              result_strong, mismatch_x, mismatch_y, 16, 16, device_mask_pitch, height);
+            // print("Resultant N:\n");
+            print("Sum From kernel:\n");
+            draw_image_data(
+              result_sum, mismatch_x, mismatch_y, 16, 16, device_pitch, height);
+            print("Sum² From kernel:\n");
+            draw_image_data(
+              result_sumsq, mismatch_x, mismatch_y, 16, 16, device_pitch, height);
+            print("Mask:\n");
+            draw_image_data(reader.get_mask().value().data(),
+                            mismatch_x,
+                            mismatch_y,
+                            16,
+                            16,
+                            width,
+                            height);
+        }
+
+        // int x = 0, y = 0, w = 32, h = 32;
+        // print("Image:\n");
+        // draw_image_data(host_image, x, y, w, h, width, height);
+        // print("Sum:\n");
+        // draw_image_data(result_sum, x, y, w, h, device_pitch, height);
+        // print("SumSq:\n");
+        // draw_image_data(result_sumsq, x, y, w, h, device_pitch, height);
+        // print("N:\n");
+        // draw_image_data(result_n, x, y, w, h, device_mask_pitch, height);
 
         print("\n\n");
     }
