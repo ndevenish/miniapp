@@ -119,6 +119,10 @@ int main(int argc, char **argv) {
       .default_value<uint32_t>(1)
       .metavar("NUM")
       .scan<'u', uint32_t>();
+    parser.add_argument("--validate")
+      .help("Run DIALS standalone validation")
+      .default_value(false)
+      .implicit_value(true);
 
     auto args = parser.parse_args(argc, argv);
     uint32_t batch_size = parser.get<uint32_t>("batch");
@@ -126,6 +130,7 @@ int main(int argc, char **argv) {
         print("Error: Batch size must be >= 1\n");
         std::exit(1);
     }
+    bool do_validate = parser.get<bool>("validate");
 
     auto reader = args.file.empty() ? H5Read() : H5Read(args.file);
 
@@ -301,99 +306,103 @@ int main(int argc, char **argv) {
                                     device_mask_pitch);
         print("       Strong: {} px\n", strong);
 
-        auto start_time = std::chrono::high_resolution_clock::now();
-        size_t mismatch_x = 0, mismatch_y = 0;
+        if (do_validate) {
+            auto start_time = std::chrono::high_resolution_clock::now();
+            size_t mismatch_x = 0, mismatch_y = 0;
 
-        for (size_t offset_id = 0; offset_id < num_images; ++offset_id) {
-            size_t offset_plain = width * height * offset_id;
-            size_t offset_image = device_pitch * height * offset_id;
-            size_t offset_mask = device_mask_pitch * height * offset_id;
+            for (size_t offset_id = 0; offset_id < num_images; ++offset_id) {
+                size_t offset_plain = width * height * offset_id;
+                size_t offset_image = device_pitch * height * offset_id;
+                size_t offset_mask = device_mask_pitch * height * offset_id;
 
-            if (batch_size > 1) {
-                print("  Image {}:\n", image_id + offset_id);
-            }
-            // Read the image into a vector
-            auto converted_image =
-              std::vector<double>{host_image.get() + width * height * offset_id,
-                                  host_image.get() + width * height * (offset_id + 1)};
-            auto dials_strong = spotfinder.standard_dispersion(
-              converted_image, reader.get_mask().value_or(span<uint8_t>{}));
-            auto end_time = std::chrono::high_resolution_clock::now();
-            size_t dials_results = count_nonzero(dials_strong, width, height, width);
-            float validation_time_ms =
-              std::chrono::duration_cast<std::chrono::duration<double>>(end_time
-                                                                        - start_time)
-                .count()
-              * 1000;
-            print("        Dials: {} px in {:.0f} ms CPU time\n",
-                  dials_results,
-                  validation_time_ms);
-            bool validation_matches = compare_results(dials_strong.data(),
-                                                      width,
-                                                      result_strong.get() + offset_mask,
-                                                      device_mask_pitch,
-                                                      width,
-                                                      height,
-                                                      &mismatch_x,
-                                                      &mismatch_y);
+                if (batch_size > 1) {
+                    print("  Image {}:\n", image_id + offset_id);
+                }
+                // Read the image into a vector
+                auto converted_image = std::vector<double>{
+                  host_image.get() + width * height * offset_id,
+                  host_image.get() + width * height * (offset_id + 1)};
+                auto dials_strong = spotfinder.standard_dispersion(
+                  converted_image, reader.get_mask().value_or(span<uint8_t>{}));
+                auto end_time = std::chrono::high_resolution_clock::now();
+                size_t dials_results =
+                  count_nonzero(dials_strong, width, height, width);
+                float validation_time_ms =
+                  std::chrono::duration_cast<std::chrono::duration<double>>(
+                    end_time - start_time)
+                    .count()
+                  * 1000;
+                print("        Dials: {} px in {:.0f} ms CPU time\n",
+                      dials_results,
+                      validation_time_ms);
+                bool validation_matches =
+                  compare_results(dials_strong.data(),
+                                  width,
+                                  result_strong.get() + offset_mask,
+                                  device_mask_pitch,
+                                  width,
+                                  height,
+                                  &mismatch_x,
+                                  &mismatch_y);
 
-            if (validation_matches) {
-                print("     Compared: \033[32mMatch\033[0m\n");
-            } else {
-                print("     Compared: \033[1;31mMismatch\033[0m\n");
+                if (validation_matches) {
+                    print("     Compared: \033[32mMatch\033[0m\n");
+                } else {
+                    print("     Compared: \033[1;31mMismatch\033[0m\n");
 
-                mismatch_x = max(static_cast<int>(mismatch_x) - 8, 0);
-                mismatch_y = max(static_cast<int>(mismatch_y) - 8, 0);
+                    mismatch_x = max(static_cast<int>(mismatch_x) - 8, 0);
+                    mismatch_y = max(static_cast<int>(mismatch_y) - 8, 0);
 
-                print("Data:\n");
-                draw_image_data(host_image.get() + offset_plain,
-                                mismatch_x,
-                                mismatch_y,
-                                16,
-                                16,
-                                width,
-                                height);
-                print("Strong From DIALS:\n");
-                draw_image_data(dials_strong.data() + offset_plain,
-                                mismatch_x,
-                                mismatch_y,
-                                16,
-                                16,
-                                width,
-                                height);
-                print("Strong From kernel:\n");
-                draw_image_data(result_strong.get() + offset_mask,
-                                mismatch_x,
-                                mismatch_y,
-                                16,
-                                16,
-                                device_mask_pitch,
-                                height);
-                // print("Resultant N:\n");
-                print("Sum From kernel:\n");
-                draw_image_data(result_sum.get() + offset_image,
-                                mismatch_x,
-                                mismatch_y,
-                                16,
-                                16,
-                                device_pitch,
-                                height);
-                print("Sum² From kernel:\n");
-                draw_image_data(result_sumsq.get() + offset_image,
-                                mismatch_x,
-                                mismatch_y,
-                                16,
-                                16,
-                                device_pitch,
-                                height);
-                print("Mask:\n");
-                draw_image_data(reader.get_mask().value().data(),
-                                mismatch_x,
-                                mismatch_y,
-                                16,
-                                16,
-                                width,
-                                height);
+                    print("Data:\n");
+                    draw_image_data(host_image.get() + offset_plain,
+                                    mismatch_x,
+                                    mismatch_y,
+                                    16,
+                                    16,
+                                    width,
+                                    height);
+                    print("Strong From DIALS:\n");
+                    draw_image_data(dials_strong.data() + offset_plain,
+                                    mismatch_x,
+                                    mismatch_y,
+                                    16,
+                                    16,
+                                    width,
+                                    height);
+                    print("Strong From kernel:\n");
+                    draw_image_data(result_strong.get() + offset_mask,
+                                    mismatch_x,
+                                    mismatch_y,
+                                    16,
+                                    16,
+                                    device_mask_pitch,
+                                    height);
+                    // print("Resultant N:\n");
+                    print("Sum From kernel:\n");
+                    draw_image_data(result_sum.get() + offset_image,
+                                    mismatch_x,
+                                    mismatch_y,
+                                    16,
+                                    16,
+                                    device_pitch,
+                                    height);
+                    print("Sum² From kernel:\n");
+                    draw_image_data(result_sumsq.get() + offset_image,
+                                    mismatch_x,
+                                    mismatch_y,
+                                    16,
+                                    16,
+                                    device_pitch,
+                                    height);
+                    print("Mask:\n");
+                    draw_image_data(reader.get_mask().value().data(),
+                                    mismatch_x,
+                                    mismatch_y,
+                                    16,
+                                    16,
+                                    width,
+                                    height);
+                }
             }
         }
         print("\n\n");
