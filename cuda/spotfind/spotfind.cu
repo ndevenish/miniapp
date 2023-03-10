@@ -73,6 +73,7 @@ __global__ void do_spotfinding_sat(pixel_t *image,
                                    size_t *result_sumsq,
                                    uint8_t *result_n,
                                    uint8_t *result_strong) {
+    assert(blockDim.x == 32 && blockDim.y == 32. "Expect 32x32 block operation area");
     __shared__ uint64_t block_exchange_8[32][32];
     auto block_exchange_4 = reinterpret_cast<uint32_t(*)[32]>(block_exchange_8);
     auto block_exchange_2 = reinterpret_cast<uint16_t(*)[32]>(block_exchange_8);
