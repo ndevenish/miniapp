@@ -40,6 +40,12 @@ __global__ void do_spotfinding_naive(pixel_t *image,
                                      size_t *result_sumsq,
                                      uint8_t *result_n,
                                      uint8_t *result_strong) {
+    image = image + (image_pitch * height * blockIdx.z);
+    result_sum = result_sum + (image_pitch * height * blockIdx.z);
+    result_sumsq = result_sumsq + (image_pitch * height * blockIdx.z);
+    result_n = result_n + (mask_pitch * height * blockIdx.z);
+    result_strong = result_strong + (mask_pitch * height * blockIdx.z);
+
     auto block = cg::this_thread_block();
     // auto warp = cg::tiled_partition<32>(block);
     // int warpId = warp.meta_group_rank();
@@ -299,14 +305,16 @@ int main(int argc, char **argv) {
         size_t mismatch_x = 0, mismatch_y = 0;
 
         for (size_t offset_id = 0; offset_id < num_images; ++offset_id) {
-            size_t offset = width * height * offset_id;
+            size_t offset_plain = width * height * offset_id;
+            size_t offset_image = device_pitch * height * offset_id;
+            size_t offset_mask = device_mask_pitch * height * offset_id;
 
             if (batch_size > 1) {
                 print("  Image {}:\n", image_id + offset_id);
             }
             // Read the image into a vector
             auto converted_image =
-              std::vector<double>{host_image.get() + offset,
+              std::vector<double>{host_image.get() + width * height * offset_id,
                                   host_image.get() + width * height * (offset_id + 1)};
             auto dials_strong = spotfinder.standard_dispersion(
               converted_image, reader.get_mask().value_or(span<uint8_t>{}));
@@ -322,7 +330,7 @@ int main(int argc, char **argv) {
                   validation_time_ms);
             bool validation_matches = compare_results(dials_strong.data(),
                                                       width,
-                                                      result_strong.get() + offset,
+                                                      result_strong.get() + offset_mask,
                                                       device_mask_pitch,
                                                       width,
                                                       height,
@@ -338,13 +346,23 @@ int main(int argc, char **argv) {
                 mismatch_y = max(static_cast<int>(mismatch_y) - 8, 0);
 
                 print("Data:\n");
-                draw_image_data(
-                  host_image, mismatch_x, mismatch_y, 16, 16, width, height);
+                draw_image_data(host_image.get() + offset_plain,
+                                mismatch_x,
+                                mismatch_y,
+                                16,
+                                16,
+                                width,
+                                height);
                 print("Strong From DIALS:\n");
-                draw_image_data(
-                  dials_strong, mismatch_x, mismatch_y, 16, 16, width, height);
+                draw_image_data(dials_strong.data() + offset_plain,
+                                mismatch_x,
+                                mismatch_y,
+                                16,
+                                16,
+                                width,
+                                height);
                 print("Strong From kernel:\n");
-                draw_image_data(result_strong,
+                draw_image_data(result_strong.get() + offset_mask,
                                 mismatch_x,
                                 mismatch_y,
                                 16,
@@ -353,11 +371,21 @@ int main(int argc, char **argv) {
                                 height);
                 // print("Resultant N:\n");
                 print("Sum From kernel:\n");
-                draw_image_data(
-                  result_sum, mismatch_x, mismatch_y, 16, 16, device_pitch, height);
+                draw_image_data(result_sum.get() + offset_image,
+                                mismatch_x,
+                                mismatch_y,
+                                16,
+                                16,
+                                device_pitch,
+                                height);
                 print("Sum² From kernel:\n");
-                draw_image_data(
-                  result_sumsq, mismatch_x, mismatch_y, 16, 16, device_pitch, height);
+                draw_image_data(result_sumsq.get() + offset_image,
+                                mismatch_x,
+                                mismatch_y,
+                                16,
+                                16,
+                                device_pitch,
+                                height);
                 print("Mask:\n");
                 draw_image_data(reader.get_mask().value().data(),
                                 mismatch_x,
