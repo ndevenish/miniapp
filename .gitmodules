@@ -11,3 +11,6 @@
 [submodule "dependencies/TinyTIFF"]
     path = dependencies/TinyTIFF
     url = https://github.com/jkriege2/TinyTIFF
+[submodule "dependencies/lodepng"]
+	path = dependencies/lodepng
+	url = https://github.com/lvandeve/lodepng.git
