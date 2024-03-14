@@ -231,6 +231,10 @@ int main(int argc, char **argv) {
       .metavar("S")
       .default_value<float>(30)
       .scan<'f', float>();
+    parser.add_argument("pipe_fd")
+      .help("File descriptor for the pipe to send data through")
+      .metavar("FD")
+      .scan<'i', uint8_t>();
 
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
@@ -314,6 +318,8 @@ int main(int argc, char **argv) {
     auto png_write_mutex = std::mutex{};
 
     double time_waiting_for_images = 0.0;
+    
+    pipeHandler = PipeHandler(pipe_fd);
 
     // Spawn the reader threads
     std::vector<std::jthread> threads;
@@ -705,7 +711,7 @@ int main(int argc, char **argv) {
  */
 class PipeHandler {
 private:
-    int pipe_fd; // File descriptor for the pipe
+    uint8_t pipe_fd; // File descriptor for the pipe
     std::mutex mtx; // Mutex for synchronization
     
 public:
@@ -713,7 +719,7 @@ public:
      * @brief Constructor to initialize the PipeHandler object.
      * @param pipe_fd The file descriptor for the pipe.
      */
-    PipeHandler(int pipe_fd) : pipe_fd(pipe_fd) {
+    PipeHandler(uint8_t pipe_fd) : pipe_fd(pipe_fd) {
         // Constructor to initialize the pipe handler
     }
     
