@@ -698,3 +698,23 @@ int main(int argc, char **argv) {
               time_waiting_for_images);
     }
 }
+
+class PipeHandler {
+private:
+    int pipe_fd; // File descriptor for the pipe
+    std::mutex mtx; // Mutex for synchronization
+    
+public:
+    PipeHandler(int pipe_fd) : pipe_fd(pipe_fd) {
+        // Constructor to initialize the pipe handler
+    }
+    
+    void sendData(const std::string& data) {
+        // Lock the mutex, to ensure that only one thread writes to the pipe at a time
+        // This unlocks the mutex when the function returns
+        std::lock_guard<std::mutex> lock(mtx);
+        
+        // Write data to the pipe
+        write(pipe_fd, data.c_str(), data.size());
+    }
+};
