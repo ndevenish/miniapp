@@ -730,3 +730,17 @@ public:
         write(pipe_fd, data.c_str(), data.size());
     }
 };
+
+std::string constructJSONLine(int n_spots_4A, int n_spots_no_ice, int n_spots_total, double total_intensity, double estimated_d_min, const std::string& file, int file_number) {
+    std::ostringstream oss;
+    oss << "{";
+    oss << "\"n_spots_4A\": " << n_spots_4A << ", ";
+    oss << "\"n_spots_no_ice\": " << n_spots_no_ice << ", ";
+    oss << "\"n_spots_total\": " << n_spots_total << ", ";
+    oss << "\"total_intensity\": " << total_intensity << ", ";
+    oss << "\"estimated_d_min\": " << estimated_d_min << ", ";
+    oss << "\"file\": \"" << file << "\", ";
+    oss << "\"file-number\": " << file_number;
+    oss << "}";
+    return oss.str();
+}
