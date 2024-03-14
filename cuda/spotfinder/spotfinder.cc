@@ -699,16 +699,28 @@ int main(int argc, char **argv) {
     }
 }
 
+
+/**
+ * @brief Class for handling a pipe and sending data through it in a thread-safe manner.
+ */
 class PipeHandler {
 private:
     int pipe_fd; // File descriptor for the pipe
     std::mutex mtx; // Mutex for synchronization
     
 public:
+    /**
+     * @brief Constructor to initialize the PipeHandler object.
+     * @param pipe_fd The file descriptor for the pipe.
+     */
     PipeHandler(int pipe_fd) : pipe_fd(pipe_fd) {
         // Constructor to initialize the pipe handler
     }
     
+    /**
+     * @brief Sends data through the pipe in a thread-safe manner.
+     * @param data The data to be sent.
+     */
     void sendData(const std::string& data) {
         // Lock the mutex, to ensure that only one thread writes to the pipe at a time
         // This unlocks the mutex when the function returns
