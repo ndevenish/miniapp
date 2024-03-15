@@ -231,14 +231,15 @@ int main(int argc, char **argv) {
       .metavar("S")
       .default_value<float>(30)
       .scan<'f', float>();
-    parser.add_argument("pipe_fd")
-      .help("File descriptor for the pipe to send data through")
+    parser.add_argument("-fd", "--pipe_fd")
+      .help("File descriptor for the pipe to output data through")
       .metavar("FD")
       .scan<'i', uint8_t>();
 
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
     bool do_writeout = parser.get<bool>("writeout");
+    bool do_pipe = parser.is_used("pipe_fd");
     float wait_timeout = parser.get<float>("timeout");
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
@@ -600,23 +601,26 @@ int main(int argc, char **argv) {
                                     LCT_RGB);
                 }
                 
-                /*
-                * Construct a JSON line with the results 
-                * and send it through the pipe
-                * @note Only num_strong_pixels, file and file-number are 
-                * used for now.
-                */
-                char* json_line = constructJSONLine(
-                    num_strong_pixels,        // n_spots_4A
-                    0, // n_spots_no_ice
-                    0, // n_spots_total
-                    0, // total_intensity
-                    0, // estimated_d_min
-                    reader.get_file(),          // file
-                    image_num// file-number
-                );
-                // Send the JSON line through the pipe
-                pipeHandler.sendData(json_line);
+                // Check if output pipe was provided
+                if (do_pipe) {
+                    /*
+                    * Construct a JSON line with the results 
+                    * and send it through the pipe
+                    * @note Only num_strong_pixels, file and file-number are 
+                    * used for now.
+                    */
+                    char* json_line = constructJSONLine(
+                        num_strong_pixels,        // n_spots_4A
+                        0, // n_spots_no_ice
+                        0, // n_spots_total
+                        0, // total_intensity
+                        0, // estimated_d_min
+                        reader.get_file(),          // file
+                        image_num// file-number
+                    );
+                    // Send the JSON line through the pipe
+                    pipeHandler.sendData(json_line);
+                }
 
                 if (do_validate) {
                     // Count the number of pixels
