@@ -200,7 +200,7 @@ void wait_for_ready_for_read(const std::string &path,
  */
 class PipeHandler {
 private:
-    int8_t pipe_fd; // File descriptor for the pipe
+    int pipe_fd; // File descriptor for the pipe
     std::mutex mtx; // Mutex for synchronization
     
 public:
@@ -208,21 +208,38 @@ public:
      * @brief Constructor to initialize the PipeHandler object.
      * @param pipe_fd The file descriptor for the pipe.
      */
-    PipeHandler(int8_t pipe_fd) : pipe_fd(pipe_fd) {
+    PipeHandler(int pipe_fd) : pipe_fd(pipe_fd) {
         // Constructor to initialize the pipe handler
+        print("PipeHandler initialized with pipe_fd: {}\n", pipe_fd);
+    }
+
+    /**
+     * @brief Destructor to close the pipe.
+     */
+    ~PipeHandler() {
+        print("PipeHandler destructor called\n");
+        // Close the pipe
+        close(pipe_fd);
     }
     
     /**
      * @brief Sends data through the pipe in a thread-safe manner.
      * @param data The data to be sent.
      */
-    void sendData(const std::string& data) {
+    void sendData(const char* data) {
+        print("Sending data through the pipe");
         // Lock the mutex, to ensure that only one thread writes to the pipe at a time
         // This unlocks the mutex when the function returns
         std::lock_guard<std::mutex> lock(mtx);
         
-        // Write data to the pipe
-        write(pipe_fd, data.c_str(), data.size());
+        ssize_t bytes_written = write(pipe_fd, data, strlen(data));
+
+        if (bytes_written == -1) {
+            std::cerr << "Error writing to pipe." << std::endl;
+            // Handle error, maybe throw an exception or return an error code.
+        } else {
+            print("Data sent through the pipe: {}\n", data);
+        }
     }
 };
 
@@ -286,13 +303,13 @@ int main(int argc, char **argv) {
     parser.add_argument("-fd", "--pipe_fd")
       .help("File descriptor for the pipe to output data through")
       .metavar("FD")
-      .default_value<int8_t>(-1)
-      .scan<'i', int8_t>();
+      .default_value<int>(-1)
+      .scan<'i', int>();
 
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
     bool do_writeout = parser.get<bool>("writeout");
-    bool do_pipe = parser.get<int8_t>("pipe_fd") > -1; // Check if output pipe was provided
+    bool do_pipe = parser.get<int>("pipe_fd") > -1; // Check if output pipe was provided
     float wait_timeout = parser.get<float>("timeout");
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
@@ -373,7 +390,7 @@ int main(int argc, char **argv) {
 
     double time_waiting_for_images = 0.0;
 
-    int8_t pipe_fd = parser.get<int8_t>("pipe_fd");
+    int pipe_fd = parser.get<int>("pipe_fd");
     auto pipeHandler = PipeHandler(pipe_fd);
 
     // Spawn the reader threads
@@ -780,4 +797,5 @@ int main(int argc, char **argv) {
         print("Total time waiting for images to appear: {:.2f} s\n",
               time_waiting_for_images);
     }
+    
 }
