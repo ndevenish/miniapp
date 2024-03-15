@@ -230,7 +230,7 @@ public:
  * @brief Constructs a JSON line with the given parameters.
  * @return The constructed JSON line as a string.
  */
-std::string constructJSONLine(int n_spots_4A, int n_spots_no_ice, int n_spots_total, double total_intensity, double estimated_d_min, const std::string& file, int file_number) {
+char* constructJSONLine(int n_spots_4A, int n_spots_no_ice, int n_spots_total, double total_intensity, double estimated_d_min, const std::string& file, int file_number) {
     std::ostringstream oss;
     oss << "{";
     oss << "\"n_spots_4A\": " << n_spots_4A << ", ";
@@ -241,7 +241,10 @@ std::string constructJSONLine(int n_spots_4A, int n_spots_no_ice, int n_spots_to
     oss << "\"file\": \"" << file << "\", ";
     oss << "\"file-number\": " << file_number;
     oss << "}";
-    return oss.str();
+    std::string jsonLine = oss.str();
+    char* jsonLineChar = new char[jsonLine.length() + 1];
+    strcpy(jsonLineChar, jsonLine.c_str());
+    return jsonLineChar;
 }
 
 int main(int argc, char **argv) {
