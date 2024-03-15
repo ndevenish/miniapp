@@ -737,6 +737,10 @@ public:
     }
 };
 
+/**
+ * @brief Constructs a JSON line with the given parameters.
+ * @return The constructed JSON line as a string.
+ */
 std::string constructJSONLine(int n_spots_4A, int n_spots_no_ice, int n_spots_total, double total_intensity, double estimated_d_min, const std::string& file, int file_number) {
     std::ostringstream oss;
     oss << "{";
