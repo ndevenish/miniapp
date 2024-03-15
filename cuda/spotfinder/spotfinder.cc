@@ -195,6 +195,55 @@ void wait_for_ready_for_read(const std::string &path,
     }
 }
 
+/**
+ * @brief Class for handling a pipe and sending data through it in a thread-safe manner.
+ */
+class PipeHandler {
+private:
+    uint8_t pipe_fd; // File descriptor for the pipe
+    std::mutex mtx; // Mutex for synchronization
+    
+public:
+    /**
+     * @brief Constructor to initialize the PipeHandler object.
+     * @param pipe_fd The file descriptor for the pipe.
+     */
+    PipeHandler(uint8_t pipe_fd) : pipe_fd(pipe_fd) {
+        // Constructor to initialize the pipe handler
+    }
+    
+    /**
+     * @brief Sends data through the pipe in a thread-safe manner.
+     * @param data The data to be sent.
+     */
+    void sendData(const std::string& data) {
+        // Lock the mutex, to ensure that only one thread writes to the pipe at a time
+        // This unlocks the mutex when the function returns
+        std::lock_guard<std::mutex> lock(mtx);
+        
+        // Write data to the pipe
+        write(pipe_fd, data.c_str(), data.size());
+    }
+};
+
+/**
+ * @brief Constructs a JSON line with the given parameters.
+ * @return The constructed JSON line as a string.
+ */
+std::string constructJSONLine(int n_spots_4A, int n_spots_no_ice, int n_spots_total, double total_intensity, double estimated_d_min, const std::string& file, int file_number) {
+    std::ostringstream oss;
+    oss << "{";
+    oss << "\"n_spots_4A\": " << n_spots_4A << ", ";
+    oss << "\"n_spots_no_ice\": " << n_spots_no_ice << ", ";
+    oss << "\"n_spots_total\": " << n_spots_total << ", ";
+    oss << "\"total_intensity\": " << total_intensity << ", ";
+    oss << "\"estimated_d_min\": " << estimated_d_min << ", ";
+    oss << "\"file\": \"" << file << "\", ";
+    oss << "\"file-number\": " << file_number;
+    oss << "}";
+    return oss.str();
+}
+
 int main(int argc, char **argv) {
     // Parse arguments and get our H5Reader
     auto parser = CUDAArgumentParser();
@@ -319,8 +368,10 @@ int main(int argc, char **argv) {
     auto png_write_mutex = std::mutex{};
 
     double time_waiting_for_images = 0.0;
+
+    uint8_t pipe_fd = parser.get<uint8_t>("pipe_fd");
     
-    pipeHandler = PipeHandler(pipe_fd);
+    auto pipeHandler = PipeHandler(pipe_fd);
 
     // Spawn the reader threads
     std::vector<std::jthread> threads;
@@ -726,54 +777,4 @@ int main(int argc, char **argv) {
         print("Total time waiting for images to appear: {:.2f} s\n",
               time_waiting_for_images);
     }
-}
-
-
-/**
- * @brief Class for handling a pipe and sending data through it in a thread-safe manner.
- */
-class PipeHandler {
-private:
-    uint8_t pipe_fd; // File descriptor for the pipe
-    std::mutex mtx; // Mutex for synchronization
-    
-public:
-    /**
-     * @brief Constructor to initialize the PipeHandler object.
-     * @param pipe_fd The file descriptor for the pipe.
-     */
-    PipeHandler(uint8_t pipe_fd) : pipe_fd(pipe_fd) {
-        // Constructor to initialize the pipe handler
-    }
-    
-    /**
-     * @brief Sends data through the pipe in a thread-safe manner.
-     * @param data The data to be sent.
-     */
-    void sendData(const std::string& data) {
-        // Lock the mutex, to ensure that only one thread writes to the pipe at a time
-        // This unlocks the mutex when the function returns
-        std::lock_guard<std::mutex> lock(mtx);
-        
-        // Write data to the pipe
-        write(pipe_fd, data.c_str(), data.size());
-    }
-};
-
-/**
- * @brief Constructs a JSON line with the given parameters.
- * @return The constructed JSON line as a string.
- */
-std::string constructJSONLine(int n_spots_4A, int n_spots_no_ice, int n_spots_total, double total_intensity, double estimated_d_min, const std::string& file, int file_number) {
-    std::ostringstream oss;
-    oss << "{";
-    oss << "\"n_spots_4A\": " << n_spots_4A << ", ";
-    oss << "\"n_spots_no_ice\": " << n_spots_no_ice << ", ";
-    oss << "\"n_spots_total\": " << n_spots_total << ", ";
-    oss << "\"total_intensity\": " << total_intensity << ", ";
-    oss << "\"estimated_d_min\": " << estimated_d_min << ", ";
-    oss << "\"file\": \"" << file << "\", ";
-    oss << "\"file-number\": " << file_number;
-    oss << "}";
-    return oss.str();
 }
