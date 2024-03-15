@@ -200,7 +200,7 @@ void wait_for_ready_for_read(const std::string &path,
  */
 class PipeHandler {
 private:
-    uint8_t pipe_fd; // File descriptor for the pipe
+    int8_t pipe_fd; // File descriptor for the pipe
     std::mutex mtx; // Mutex for synchronization
     
 public:
@@ -208,7 +208,7 @@ public:
      * @brief Constructor to initialize the PipeHandler object.
      * @param pipe_fd The file descriptor for the pipe.
      */
-    PipeHandler(uint8_t pipe_fd) : pipe_fd(pipe_fd) {
+    PipeHandler(int8_t pipe_fd) : pipe_fd(pipe_fd) {
         // Constructor to initialize the pipe handler
     }
     
@@ -286,12 +286,13 @@ int main(int argc, char **argv) {
     parser.add_argument("-fd", "--pipe_fd")
       .help("File descriptor for the pipe to output data through")
       .metavar("FD")
-      .scan<'i', uint8_t>();
+      .default_value<int8_t>(-1)
+      .scan<'i', int8_t>();
 
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
     bool do_writeout = parser.get<bool>("writeout");
-    bool do_pipe = parser.is_used("pipe_fd");
+    bool do_pipe = parser.get<int8_t>("pipe_fd") > -1; // Check if output pipe was provided
     float wait_timeout = parser.get<float>("timeout");
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
@@ -372,8 +373,7 @@ int main(int argc, char **argv) {
 
     double time_waiting_for_images = 0.0;
 
-    uint8_t pipe_fd = parser.get<uint8_t>("pipe_fd");
-    
+    int8_t pipe_fd = parser.get<int8_t>("pipe_fd");
     auto pipeHandler = PipeHandler(pipe_fd);
 
     // Spawn the reader threads
