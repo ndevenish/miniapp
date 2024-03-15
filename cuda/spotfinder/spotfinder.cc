@@ -240,8 +240,12 @@ public:
             dataLine += '\n';
         }
         
+        // Write the data to the pipe
+        // Returns the number of bytes written to the pipe
+        // Returns -1 if an error occurs
         ssize_t bytes_written = write(pipe_fd, dataLine.c_str(), dataLine.length());
 
+        // Check if an error occurred while writing to the pipe
         if (bytes_written == -1) {
             std::cerr << "Error writing to pipe." << std::endl;
             // Handle error, maybe throw an exception or return an error code.
