@@ -217,28 +217,36 @@ public:
      * @brief Destructor to close the pipe.
      */
     ~PipeHandler() {
-        print("PipeHandler destructor called\n");
-        // Close the pipe
-        close(pipe_fd);
+        // Close the pipe by sending EOF
+        sendData("EOF");
     }
     
     /**
      * @brief Sends data through the pipe in a thread-safe manner.
      * @param data The data to be sent.
      */
-    void sendData(const char* data) {
-        print("Sending data through the pipe");
+    void sendData(const std::string& data) {
         // Lock the mutex, to ensure that only one thread writes to the pipe at a time
         // This unlocks the mutex when the function returns
         std::lock_guard<std::mutex> lock(mtx);
         
-        ssize_t bytes_written = write(pipe_fd, data, strlen(data));
+        /* 
+        * Append a newline character to the data if it is not present
+        * This is to ensure that the data is sent as a line
+        * Otherwise, the data might not be read properly from the pipe
+        */ 
+        std::string dataLine = data;
+        if (!dataLine.empty() && dataLine.back() != '\n') {
+            dataLine += '\n';
+        }
+        
+        ssize_t bytes_written = write(pipe_fd, dataLine.c_str(), dataLine.length());
 
         if (bytes_written == -1) {
             std::cerr << "Error writing to pipe." << std::endl;
             // Handle error, maybe throw an exception or return an error code.
         } else {
-            print("Data sent through the pipe: {}\n", data);
+            // print("Data sent through the pipe: {}\n", dataLine);
         }
     }
 };
@@ -247,7 +255,7 @@ public:
  * @brief Constructs a JSON line with the given parameters.
  * @return The constructed JSON line as a string.
  */
-char* constructJSONLine(int n_spots_4A, int n_spots_no_ice, int n_spots_total, double total_intensity, double estimated_d_min, const std::string& file, int file_number) {
+std::string constructJSONLine(int n_spots_4A, int n_spots_no_ice, int n_spots_total, double total_intensity, double estimated_d_min, const std::string& file, int file_number) {
     std::ostringstream oss;
     oss << "{";
     oss << "\"n_spots_4A\": " << n_spots_4A << ", ";
@@ -257,11 +265,8 @@ char* constructJSONLine(int n_spots_4A, int n_spots_no_ice, int n_spots_total, d
     oss << "\"estimated_d_min\": " << estimated_d_min << ", ";
     oss << "\"file\": \"" << file << "\", ";
     oss << "\"file-number\": " << file_number;
-    oss << "}";
-    std::string jsonLine = oss.str();
-    char* jsonLineChar = new char[jsonLine.length() + 1];
-    strcpy(jsonLineChar, jsonLine.c_str());
-    return jsonLineChar;
+    oss << "}\n";
+    return oss.str();
 }
 
 int main(int argc, char **argv) {
@@ -680,7 +685,7 @@ int main(int argc, char **argv) {
                     * @note Only num_strong_pixels, file and file-number are 
                     * used for now.
                     */
-                    char* json_line = constructJSONLine(
+                    std::string json_line = constructJSONLine(
                         num_strong_pixels,        // n_spots_4A
                         0, // n_spots_no_ice
                         0, // n_spots_total
