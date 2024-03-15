@@ -666,7 +666,7 @@ int main(int argc, char **argv) {
                         0, // n_spots_total
                         0, // total_intensity
                         0, // estimated_d_min
-                        reader.get_file(),          // file
+                        args.file, // file
                         image_num// file-number
                     );
                     // Send the JSON line through the pipe
