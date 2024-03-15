@@ -599,6 +599,25 @@ int main(int argc, char **argv) {
                                     height,
                                     LCT_RGB);
                 }
+                
+                /*
+                * Construct a JSON line with the results 
+                * and send it through the pipe
+                * @note Only num_strong_pixels, file and file-number are 
+                * used for now.
+                */
+                char* json_line = constructJSONLine(
+                    num_strong_pixels,        // n_spots_4A
+                    0, // n_spots_no_ice
+                    0, // n_spots_total
+                    0, // total_intensity
+                    0, // estimated_d_min
+                    reader.get_file(),          // file
+                    image_num// file-number
+                );
+                // Send the JSON line through the pipe
+                pipeHandler.sendData(json_line);
+
                 if (do_validate) {
                     // Count the number of pixels
                     size_t num_strong_pixels = 0;
