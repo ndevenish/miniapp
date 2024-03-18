@@ -1,4 +1,5 @@
 import unittest
+import os
 from unittest.mock import Mock
 from service import GPUPerImageAnalysis
 
@@ -19,8 +20,8 @@ class TestGPUPerImageAnalysis(unittest.TestCase):
         # Calling the method with the mocked parameters
         service.gpu_per_image_analysis(mock_rw, mock_header, mock_message)
 
-        # Asserting that the transport.ack method was called on the RecipeWrapper
-        self.assertTrue(mock_rw.transport.ack.called)
+        # Asserting that a JSON output file was created
+        self.assertTrue(os.path.exists("output.json"))
 
 if __name__ == '__main__':
     unittest.main()

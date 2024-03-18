@@ -13,9 +13,10 @@ from workflows.services.common_service import CommonService
 
 DEFAULT_QUEUE_NAME = "per_image_analysis.gpu"
 
-SPOTFINDER = Path(
-    "/dls/science/users/mep23677/cuda/miniapp/cuda/spotfinder/_build/spotfinder"
-)
+# SPOTFINDER = Path(
+#     "/dls/science/users/mep23677/cuda/miniapp/cuda/spotfinder/_build/spotfinder"
+# )
+SPOTFINDER = Path("build/spotfinder")
 
 
 def _setup_rich_logging(level=logging.DEBUG):
