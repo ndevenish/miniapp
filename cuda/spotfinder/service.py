@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import subprocess
 import time
+import os
 from pathlib import Path
 from pprint import pformat
 
@@ -51,6 +52,19 @@ class GPUPerImageAnalysis(CommonService):
             log_extender=self.extend_log,
         )
 
+    def write_lines_to_json(self, fd, output_file):
+        # Open the output file for writing JSON data
+        with open(output_file, 'w') as json_file:
+            while True:
+                # Read a line from the file descriptor
+                line = os.read(fd, 4096).decode('utf-8').strip()
+                if line == "EOF":
+                    break
+                # Write the line to the JSON file
+                json_file.write(line + '\n')
+        
+        os.close(fd)
+
     def gpu_per_image_analysis(
         self, rw: workflows.recipe.RecipeWrapper, header: dict, message: dict
     ):
@@ -84,13 +98,23 @@ class GPUPerImageAnalysis(CommonService):
         expected_path = f"/dev/shm/eiger/{parameters['filename']}"
 
         # Create a pipe for comms
-        # TODO: Set up pipes for communication back from process
-        # (pipe_r, pipe_w) = os.pipe()
+        read_fd, write_fd = os.pipe()
 
         # Now run the spotfinder
-        command = [SPOTFINDER, str(expected_path)]
+        command = [SPOTFINDER, str(expected_path), "--file_fd", str(write_fd)]
         self.log.info(f"Running: {' '.join(str(x) for x in command)}")
         start_time = time.monotonic()
+
+        # Define the output file path
+        output_file = "output.json"
+
+        # Start a subprocess to record output data from the pipe
+        subprocess.Popen(['python', '-c', f'import sys; GPUPerImageAnalysis().write_lines_to_json({read_fd}, "{output_file}")'])
+
+        # Close the write end of the pipe
+        os.close(read_fd)
+
+        # Run the spotfinder
         _result = subprocess.run(command)
 
         duration = time.monotonic() - start_time
