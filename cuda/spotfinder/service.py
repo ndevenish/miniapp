@@ -66,7 +66,8 @@ class GPUPerImageAnalysis(CommonService):
         os.close(fd)
 
     def gpu_per_image_analysis(
-        self, rw: workflows.recipe.RecipeWrapper, header: dict, message: dict
+        self, rw: workflows.recipe.RecipeWrapper, header: dict, message: dict,
+        base_path="/dev/shm/eiger"
     ):
         parameters = rw.recipe_step["parameters"]
 
@@ -95,7 +96,8 @@ class GPUPerImageAnalysis(CommonService):
         rw.transport.ack(header)
 
         # Form the expected path for this dataset
-        expected_path = f"/dev/shm/eiger/{parameters['filename']}"
+        #expected_path = f"/dev/shm/eiger/{parameters['filename']}"
+        expected_path = f"{base_path}/{parameters['filename']}"
 
         # Create a pipe for comms
         read_fd, write_fd = os.pipe()
