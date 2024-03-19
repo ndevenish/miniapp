@@ -217,7 +217,13 @@ public:
      * @brief Destructor to close the pipe.
      */
     ~PipeHandler() {
-        // Close the pipe by sending EOF
+       /*
+       * Close the pipe by sending 'EOF' through it.
+       * We do not close the file descriptor here, as it was launched by
+       * a parent process and should be closed by the parent process.
+       * This signals the parent process that processing is complete and that
+       * it is safe to close the pipe.
+       */ 
         sendData("EOF");
     }
     
