@@ -112,7 +112,9 @@ class GPUPerImageAnalysis(CommonService):
         output_file = "output.json"
 
         # Start a subprocess to record output data from the pipe
-        subprocess.Popen(['build/spotfinder', '/dls/mx-scratch/gw56/i04-1-ins-huge/Insulin_6/Insulin_6_1.nxs', '--pipe_fd', str(write_fd), '--images', '40', '--threads', '40'])
+        subprocess.Popen([SPOTFINDER, '/dls/mx-scratch/gw56/i04-1-ins-huge/Insulin_6/Insulin_6_1.nxs', '--pipe_fd', str(write_fd), '--images', '40', '--threads', '40'])
+
+        self.write_lines_to_json(read_fd, output_file)
 
         # Close the write end of the pipe
         os.close(read_fd)
