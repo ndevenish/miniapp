@@ -9,7 +9,6 @@ def run_executable(executable_path, data_filepath, num_threads, num_images):
 
     # Command to run the executable
     command = [
-        #executable_path,
         "--sample",
         data_filepath,
         "--images",
@@ -22,7 +21,7 @@ def run_executable(executable_path, data_filepath, num_threads, num_images):
 
     # Run the executable
     print("Running:", " ".join(command))
-    process = subprocess.Popen(command, executable=executable_path)
+    process = subprocess.Popen(command, executable=executable_path, pass_fds=[write_fd])
     
     # Read from the pipe
     with os.fdopen(read_fd, 'r') as pipe_in_file:
