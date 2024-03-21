@@ -61,9 +61,9 @@ class GPUPerImageAnalysis(CommonService):
                 if line.strip() == "EOF":
                     self.log.info("End of output")
                     break
-                # TODO: Do something with the output
-                # self.log.info(f"Received: {line.strip()}")
-                print(f"Received: {line.strip()}")
+
+                self.log.info(f"Received: {line.strip()}") # Change log level to debug?
+                yield line.strip()
 
     def gpu_per_image_analysis(
         self, rw: workflows.recipe.RecipeWrapper, header: dict, message: dict,
@@ -118,8 +118,10 @@ class GPUPerImageAnalysis(CommonService):
 
         # Run the spotfinder
         process = subprocess.Popen(command, executable=SPOTFINDER, pass_fds=[write_fd])
-
-        self.read_pipe_output(read_fd)
+        
+        # Read from the pipe and send to the result queue
+        for line in self.read_pipe_output(read_fd):
+            rw.send_to("result", line)
 
         # Wait for the process to finish
         process.wait()
