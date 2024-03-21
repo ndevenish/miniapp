@@ -1,4 +1,4 @@
-from __future__ import annotation
+from __future__ import annotations
 
 import logging
 import subprocess
@@ -62,7 +62,6 @@ class GPUPerImageAnalysis(CommonService):
                     self.log.info("End of output")
                     break
 
-                self.log.info(f"Received: {line.strip()}") # Change log level to debug?
                 yield line.strip()
 
     def gpu_per_image_analysis(
@@ -118,11 +117,15 @@ class GPUPerImageAnalysis(CommonService):
         self.log.info(f"Running: {' '.join(str(x) for x in command)}")
         start_time = time.monotonic()
 
+        # Set the default channel for the result
+        rw.set_default_channel("result")
+
         # Run the spotfinder
         process = subprocess.Popen(command, executable=SPOTFINDER, pass_fds=[write_fd])
         
         # Read from the pipe and send to the result queue
         for line in self.read_pipe_output(read_fd):
+            self.log.info(f"Received: {line.strip()}") # Change log level to debug?
             rw.send_to("result", line)
 
         # Wait for the process to finish
