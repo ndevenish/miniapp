@@ -53,18 +53,17 @@ class GPUPerImageAnalysis(CommonService):
             log_extender=self.extend_log,
         )
 
-    def write_lines_to_json(self, fd, output_file):
-        # Open the output file for writing JSON data
-        with open(output_file, 'w') as json_file:
-            while True:
-                # Read a line from the file descriptor
-                line = os.read(fd, 4096).decode('utf-8').strip()
-                if line == "EOF":
+    def read_pipe_output(self, read_fd):
+        with os.fdopen(read_fd, 'r') as pipe_in_file:
+            # Process each line of JSON output
+            for line in pipe_in_file:
+                # Guard against EOF
+                if line.strip() == "EOF":
+                    self.log.info("End of output")
                     break
-                # Write the line to the JSON file
-                json_file.write(line + '\n')
-        
-        os.close(fd)
+                # TODO: Do something with the output
+                # self.log.info(f"Received: {line.strip()}")
+                print(f"Received: {line.strip()}")
 
     def gpu_per_image_analysis(
         self, rw: workflows.recipe.RecipeWrapper, header: dict, message: dict,
@@ -104,23 +103,26 @@ class GPUPerImageAnalysis(CommonService):
         read_fd, write_fd = os.pipe()
 
         # Now run the spotfinder
-        command = [SPOTFINDER, str(expected_path), "--file_fd", str(write_fd)]
+        command = [
+        "--sample",
+        str(expected_path),
+        "--images",
+        str(40),
+        "--threads",
+        str(40),
+        "--pipe_fd",
+        str(write_fd)
+        ]
         self.log.info(f"Running: {' '.join(str(x) for x in command)}")
         start_time = time.monotonic()
 
-        # Define the output file path
-        output_file = "output.json"
-
-        # Start a subprocess to record output data from the pipe
-        subprocess.Popen([SPOTFINDER, '/dls/mx-scratch/gw56/i04-1-ins-huge/Insulin_6/Insulin_6_1.nxs', '--pipe_fd', str(write_fd), '--images', '40', '--threads', '40'])
-
-        self.write_lines_to_json(read_fd, output_file)
-
-        # Close the write end of the pipe
-        os.close(read_fd)
-
         # Run the spotfinder
-        _result = subprocess.run(command)
+        process = subprocess.Popen(command, executable=SPOTFINDER, pass_fds=[write_fd])
+
+        self.read_pipe_output(read_fd)
+
+        # Wait for the process to finish
+        process.wait()
 
         duration = time.monotonic() - start_time
         self.log.info(f"Analysis complete in {duration:.1f} s")
