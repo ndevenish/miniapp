@@ -13,9 +13,6 @@ from workflows.services.common_service import CommonService
 
 DEFAULT_QUEUE_NAME = "per_image_analysis.gpu"
 
-# SPOTFINDER = Path(
-#     "/dls/science/users/mep23677/cuda/miniapp/cuda/spotfinder/_build/spotfinder"
-# )
 SPOTFINDER = Path("build/spotfinder")
 
 
@@ -95,7 +92,6 @@ class GPUPerImageAnalysis(CommonService):
         rw.transport.ack(header)
 
         # Form the expected path for this dataset
-        #expected_path = f"/dev/shm/eiger/{parameters['filename']}"
         expected_path = f"{base_path}/{parameters['filename']}"
 
         # Create a pipe for comms
@@ -114,7 +110,7 @@ class GPUPerImageAnalysis(CommonService):
         "--pipe_fd",
         str(write_fd)
         ]
-        self.log.info(f"Running: {' '.join(str(x) for x in command)}")
+        self.log.info(f"Running: {SPOTFINDER} {' '.join(str(x) for x in command)}")
         start_time = time.monotonic()
 
         # Set the default channel for the result
