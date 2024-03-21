@@ -4,6 +4,7 @@ import logging
 import subprocess
 import time
 import os
+import threading
 from pathlib import Path
 from pprint import pformat
 
@@ -116,16 +117,29 @@ class GPUPerImageAnalysis(CommonService):
         # Set the default channel for the result
         rw.set_default_channel("result")
 
+        # Helper function to read and send the output
+        def read_and_send():
+            # Read from the pipe and send to the result queue
+            for line in self.read_pipe_output(read_fd):
+                self.log.info(f"Received: {line.strip()}") # Change log level to debug?
+                rw.send_to("result", line)
+
+        # Create a thread to read and send the output
+        read_thread = threading.Thread(target=read_and_send)
+
         # Run the spotfinder
-        process = subprocess.Popen(command, executable=SPOTFINDER, pass_fds=[write_fd])
-        
-        # Read from the pipe and send to the result queue
-        for line in self.read_pipe_output(read_fd):
-            self.log.info(f"Received: {line.strip()}") # Change log level to debug?
-            rw.send_to("result", line)
+        spotfind_process = subprocess.Popen(command, executable=SPOTFINDER, pass_fds=[write_fd])
+
+        # Start the read thread
+        read_thread.start()
 
         # Wait for the process to finish
-        process.wait()
+        spotfind_process.wait()
 
+        # Log the duration
         duration = time.monotonic() - start_time
         self.log.info(f"Analysis complete in {duration:.1f} s")
+
+        # Wait for the read thread to finish
+        read_thread.join()
+        self.log.info("Results sent")
