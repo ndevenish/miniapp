@@ -52,6 +52,23 @@ class GPUPerImageAnalysis(CommonService):
         )
 
     def read_pipe_output(self, read_fd):
+        '''
+        Read from the pipe and yield the output
+
+        ----------------
+        Parameters
+        ----------------
+        read_fd : int
+            The file descriptor for the pipe
+        timeout : int
+            The timeout in seconds
+
+        ----------------
+        Yields
+        ----------------
+        str
+            A line of JSON output
+        '''
         with os.fdopen(read_fd, 'r') as pipe_in_file:
             # Process each line of JSON output
             for line in pipe_in_file:
@@ -60,6 +77,7 @@ class GPUPerImageAnalysis(CommonService):
                     self.log.info("End of output")
                     break
 
+                # Yield the line
                 yield line.strip()
 
     def gpu_per_image_analysis(
