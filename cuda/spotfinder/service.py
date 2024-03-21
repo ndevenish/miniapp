@@ -5,6 +5,7 @@ import subprocess
 import time
 import os
 import threading
+import queue
 from pathlib import Path
 from pprint import pformat
 
@@ -51,7 +52,7 @@ class GPUPerImageAnalysis(CommonService):
             log_extender=self.extend_log,
         )
 
-    def read_pipe_output(self, read_fd):
+    def read_pipe_output(self, read_fd, timeout=10):
         '''
         Read from the pipe and yield the output
 
@@ -69,16 +70,31 @@ class GPUPerImageAnalysis(CommonService):
         str
             A line of JSON output
         '''
-        with os.fdopen(read_fd, 'r') as pipe_in_file:
-            # Process each line of JSON output
-            for line in pipe_in_file:
-                # Guard against EOF
-                if line.strip() == "EOF":
-                    self.log.info("End of output")
-                    break
+        # Reader function
+        def reader(q, read_fd):
+            with os.fdopen(read_fd, 'r') as pipe_in_file:
+                # Process each line of JSON output
+                for line in pipe_in_file:
+                    # Guard against EOF
+                    if line.strip() == "EOF":
+                        self.log.info("End of output")
+                        break # Exit the loop when "EOF" is received
+                    
+                    # Put the line into the queue
+                    q.put(line.strip())
 
-                # Yield the line
-                yield line.strip()
+        # Create a queue as a buffer for the output
+        # This allows us to measure time between outputs and timeout
+        q = queue.Queue()
+        reader_thread = threading.Thread(target=reader, args=(q, read_fd))
+        reader_thread.start()
+
+        while True:
+            try:
+                yield q.get(timeout=timeout)
+            except queue.Empty:
+                self.log.warning("Timeout waiting for output")
+                break # Exit the loop after timeout
 
     def gpu_per_image_analysis(
         self, rw: workflows.recipe.RecipeWrapper, header: dict, message: dict,
@@ -143,13 +159,13 @@ class GPUPerImageAnalysis(CommonService):
                 rw.send_to("result", line)
 
         # Create a thread to read and send the output
-        read_thread = threading.Thread(target=read_and_send)
+        read_pipe_output_thread = threading.Thread(target=read_and_send)
 
         # Run the spotfinder
         spotfind_process = subprocess.Popen(command, executable=SPOTFINDER, pass_fds=[write_fd])
 
         # Start the read thread
-        read_thread.start()
+        read_pipe_output_thread.start()
 
         # Wait for the process to finish
         spotfind_process.wait()
@@ -159,5 +175,5 @@ class GPUPerImageAnalysis(CommonService):
         self.log.info(f"Analysis complete in {duration:.1f} s")
 
         # Wait for the read thread to finish
-        read_thread.join()
+        read_pipe_output_thread.join()
         self.log.info("Results sent")
