@@ -218,18 +218,19 @@ public:
      */
     ~PipeHandler() {
        /*
-       * Close the pipe by sending 'EOF' through it.
-       * We do not close the file descriptor here, as it was launched by
-       * a parent process and should be closed by the parent process.
-       * This signals the parent process that processing is complete and that
-       * it is safe to close the pipe.
+        * Signal the end of the data stream by sending "EOF" through the pipe
+        * and then close the pipe
+        * This is to ensure that the reader knows when the data stream has ended
        */ 
         sendData("EOF");
+        close(pipe_fd);        
     }
     
     /**
      * @brief Sends data through the pipe in a thread-safe manner.
      * @param data The data to be sent.
+     * @warning Sending "EOF" through the pipe signals the end of the data stream.
+     * @note The data is sent as a line, i.e., a newline character is appended to the data if it is not already present.
      */
     void sendData(const std::string& data) {
         // Lock the mutex, to ensure that only one thread writes to the pipe at a time
