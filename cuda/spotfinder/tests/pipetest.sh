@@ -27,7 +27,7 @@ exec {PIPE_FD}<>$PIPE
 echo "File descriptor for the named pipe: $PIPE_FD"
 
 # Run your C++ executable with the file descriptor of the pipe
-./build/spotfinder --images 40 --threads 40 --pipe_fd $PIPE_FD "$DATA_PATH" &
+./../build/spotfinder --images 40 --threads 40 --pipe_fd $PIPE_FD "$DATA_PATH" &
 
 if [ $? -eq 0 ]; then
     echo "C++ program started successfully."

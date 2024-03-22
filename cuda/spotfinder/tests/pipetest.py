@@ -36,7 +36,7 @@ def run_executable(executable_path, data_filepath, num_threads, num_images):
     process.wait()
 
 if __name__ == "__main__":
-    executable_path = "build/spotfinder"
+    executable_path = "../build/spotfinder"
     data_filepath = "/dls/mx-scratch/gw56/i04-1-ins-huge/Insulin_6/Insulin_6_1.nxs"
     num_threads = 40  # Set the number of threads as needed
     num_images = 40  # Set the number of images as needed
