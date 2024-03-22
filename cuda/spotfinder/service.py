@@ -89,6 +89,10 @@ class GPUPerImageAnalysis(CommonService):
         reader_thread = threading.Thread(target=reader, args=(q, read_fd))
         reader_thread.start()
 
+        # Loop to yield the output
+        # It continually checks the queue for new output
+        # If the queue is empty, it will wait for the timeout
+        # If the timeout is reached, it will break the loop
         while True:
             try:
                 yield q.get(timeout=timeout)
