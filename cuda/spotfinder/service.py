@@ -171,6 +171,7 @@ class GPUPerImageAnalysis(CommonService):
             for line in self.read_pipe_output(read_fd):
                 self.log.info(f"Received: {line.strip()}") # Change log level to debug?
                 rw.send_to("result", line)
+            self.log.info("Results finished sending")
 
         # Create a thread to read and send the output
         read_pipe_output_thread = threading.Thread(target=read_and_send)
@@ -190,4 +191,3 @@ class GPUPerImageAnalysis(CommonService):
 
         # Wait for the read thread to finish
         read_pipe_output_thread.join()
-        self.log.info("Results sent")
