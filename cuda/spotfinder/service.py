@@ -54,7 +54,7 @@ class GPUPerImageAnalysis(CommonService):
 
     def read_pipe_output(self, read_fd, timeout=10):
         '''
-        Read from the pipe and yield the output
+        Generator to read from the pipe and yield the output
 
         ----------------
         Parameters
