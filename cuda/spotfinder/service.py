@@ -75,13 +75,15 @@ class GPUPerImageAnalysis(CommonService):
             with os.fdopen(read_fd, 'r') as pipe_in_file:
                 # Process each line of JSON output
                 for line in pipe_in_file:
-                    # Guard against EOF
-                    if line.strip() == "EOF":
+                    line = line.strip()
+
+                    # Put the line into the queue
+                    q.put(line)
+
+                    # Detect the end of the output
+                    if line == "EOF":
                         self.log.info("End of output")
                         break # Exit the loop when "EOF" is received
-                    
-                    # Put the line into the queue
-                    q.put(line.strip())
 
         # Create a queue as a buffer for the output
         # This allows us to measure time between outputs and timeout
@@ -95,10 +97,18 @@ class GPUPerImageAnalysis(CommonService):
         # If the timeout is reached, it will break the loop
         while True:
             try:
-                yield q.get(timeout=timeout)
+                item = q.get(timeout=timeout)
+                # Check for the end of the output
+                if item == "EOF":
+                    break # Exit the loop when "EOF" is received
+                # Otherwise, yield the item
+                yield item
             except queue.Empty:
                 self.log.warning("Timeout waiting for output")
                 break # Exit the loop after timeout
+
+        # Wait for the reader thread to finish
+        reader_thread.join()
 
     def gpu_per_image_analysis(
         self, rw: workflows.recipe.RecipeWrapper, header: dict, message: dict,
