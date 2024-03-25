@@ -406,8 +406,12 @@ int main(int argc, char **argv) {
 
     double time_waiting_for_images = 0.0;
 
-    int pipe_fd = parser.get<int>("pipe_fd");
-    auto pipeHandler = PipeHandler(pipe_fd);
+    // Create a PipeHandler object if the pipe file descriptor is provided
+    std::unique_ptr<PipeHandler> pipeHandler = nullptr;
+    if (do_pipe) {
+        int pipe_fd = parser.get<int>("pipe_fd");
+        pipeHandler = std::make_unique<PipeHandler>(pipe_fd);
+    }
 
     // Spawn the reader threads
     std::vector<std::jthread> threads;
@@ -706,7 +710,7 @@ int main(int argc, char **argv) {
                         image_num// file-number
                     );
                     // Send the JSON line through the pipe
-                    pipeHandler.sendData(json_line);
+                    pipeHandler->sendData(json_line);
                 }
 
                 if (do_validate) {
