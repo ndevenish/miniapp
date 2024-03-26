@@ -817,5 +817,4 @@ int main(int argc, char **argv) {
         print("Total time waiting for images to appear: {:.2f} s\n",
               time_waiting_for_images);
     }
-    
 }
