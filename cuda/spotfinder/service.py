@@ -3,6 +3,9 @@ from __future__ import annotations
 import logging
 import subprocess
 import time
+import os
+import threading
+import queue
 from pathlib import Path
 from pprint import pformat
 
@@ -12,9 +15,7 @@ from workflows.services.common_service import CommonService
 
 DEFAULT_QUEUE_NAME = "per_image_analysis.gpu"
 
-SPOTFINDER = Path(
-    "/dls/science/users/mep23677/cuda/miniapp/cuda/spotfinder/_build/spotfinder"
-)
+SPOTFINDER = Path("build/spotfinder")
 
 
 def _setup_rich_logging(level=logging.DEBUG):
@@ -51,8 +52,67 @@ class GPUPerImageAnalysis(CommonService):
             log_extender=self.extend_log,
         )
 
+    def read_pipe_output(self, read_fd, timeout=10):
+        '''
+        Generator to read from the pipe and yield the output
+
+        ----------------
+        Parameters
+        ----------------
+        read_fd : int
+            The file descriptor for the pipe
+        timeout : int
+            The timeout in seconds
+
+        ----------------
+        Yields
+        ----------------
+        str
+            A line of JSON output
+        '''
+        # Reader function
+        def reader(q, read_fd):
+            with os.fdopen(read_fd, 'r') as pipe_in_file:
+                # Process each line of JSON output
+                for line in pipe_in_file:
+                    line = line.strip()
+
+                    # Put the line into the queue
+                    q.put(line)
+
+                    # Detect the end of the output
+                    if line == "EOF":
+                        self.log.info("End of output")
+                        break # Exit the loop when "EOF" is received
+
+        # Create a queue as a buffer for the output
+        # This allows us to measure time between outputs and timeout
+        q = queue.Queue()
+        reader_thread = threading.Thread(target=reader, args=(q, read_fd))
+        reader_thread.start()
+
+        # Loop to yield the output
+        # It continually checks the queue for new output
+        # If the queue is empty, it will wait for the timeout
+        # If the timeout is reached, it will break the loop
+        while True:
+            try:
+                item = q.get(timeout=timeout)
+                # Check for the end of the output
+                if item == "EOF":
+                    break # Exit the loop when "EOF" is received
+                # Otherwise, yield the item
+                yield item
+            except queue.Empty:
+                self.log.warning("Timeout waiting for output")
+                break # Exit the loop after timeout
+
+        # Wait for the reader thread to finish
+        reader_thread.join()
+
     def gpu_per_image_analysis(
-        self, rw: workflows.recipe.RecipeWrapper, header: dict, message: dict
+        self, rw: workflows.recipe.RecipeWrapper, header: dict, message: dict,
+        base_path="/dev/shm/eiger"
     ):
         parameters = rw.recipe_step["parameters"]
 
@@ -81,25 +141,53 @@ class GPUPerImageAnalysis(CommonService):
         rw.transport.ack(header)
 
         # Form the expected path for this dataset
-        expected_path = f"/dev/shm/eiger/{parameters['filename']}"
+        expected_path = f"{base_path}/{parameters['filename']}"
 
         # Create a pipe for comms
-        # TODO: Set up pipes for communication back from process
-        # (pipe_r, pipe_w) = os.pipe()
+        read_fd, write_fd = os.pipe()
 
         # Now run the spotfinder
         command = [
-            SPOTFINDER,
-            "--threads=20",
-            str(expected_path),
-            "--images",
-            parameters["number_of_frames"],
-            "--start-index",
-            parameters["start_index"],
+        "--sample",
+        str(expected_path),
+        "--images",
+        parameters["number_of_frames"],
+        "--start-index",
+        parameters["start_index"],
+        "--threads",
+        str(40),
+        "--pipe_fd",
+        str(write_fd)
         ]
-        self.log.info(f"Running: {' '.join(str(x) for x in command)}")
+        self.log.info(f"Running: {SPOTFINDER} {' '.join(str(x) for x in command)}")
         start_time = time.monotonic()
-        _result = subprocess.run(command)
 
+        # Set the default channel for the result
+        rw.set_default_channel("result")
+
+        # Helper function to read and send the output
+        def read_and_send():
+            # Read from the pipe and send to the result queue
+            for line in self.read_pipe_output(read_fd):
+                self.log.info(f"Received: {line.strip()}") # Change log level to debug?
+                rw.send_to("result", line)
+            self.log.info("Results finished sending")
+
+        # Create a thread to read and send the output
+        read_pipe_output_thread = threading.Thread(target=read_and_send)
+
+        # Run the spotfinder
+        spotfind_process = subprocess.Popen(command, executable=SPOTFINDER, pass_fds=[write_fd])
+
+        # Start the read thread
+        read_pipe_output_thread.start()
+
+        # Wait for the process to finish
+        spotfind_process.wait()
+
+        # Log the duration
         duration = time.monotonic() - start_time
         self.log.info(f"Analysis complete in {duration:.1f} s")
+
+        # Wait for the read thread to finish
+        read_pipe_output_thread.join()

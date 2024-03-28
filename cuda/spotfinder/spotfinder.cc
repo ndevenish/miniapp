@@ -195,6 +195,91 @@ void wait_for_ready_for_read(const std::string &path,
     }
 }
 
+/**
+ * @brief Class for handling a pipe and sending data through it in a thread-safe manner.
+ */
+class PipeHandler {
+private:
+    int pipe_fd; // File descriptor for the pipe
+    std::mutex mtx; // Mutex for synchronization
+    
+public:
+    /**
+     * @brief Constructor to initialize the PipeHandler object.
+     * @param pipe_fd The file descriptor for the pipe.
+     */
+    PipeHandler(int pipe_fd) : pipe_fd(pipe_fd) {
+        // Constructor to initialize the pipe handler
+        print("PipeHandler initialized with pipe_fd: {}\n", pipe_fd);
+    }
+
+    /**
+     * @brief Destructor to close the pipe.
+     */
+    ~PipeHandler() {
+       /*
+        * Signal the end of the data stream by sending "EOF" through the pipe
+        * and then close the pipe
+        * This is to ensure that the reader knows when the data stream has ended
+       */ 
+        sendData("EOF");
+        close(pipe_fd);        
+    }
+    
+    /**
+     * @brief Sends data through the pipe in a thread-safe manner.
+     * @param data The data to be sent.
+     * @warning Sending "EOF" through the pipe signals the end of the data stream. This should not be done as it is handled in the destructor.
+     * @note The data is sent as a line, i.e., a newline character is appended to the data if it is not already present.
+     */
+    void sendData(const std::string& data) {
+        // Lock the mutex, to ensure that only one thread writes to the pipe at a time
+        // This unlocks the mutex when the function returns
+        std::lock_guard<std::mutex> lock(mtx);
+        
+        /* 
+        * Append a newline character to the data if it is not present
+        * This is to ensure that the data is sent as a line
+        * Otherwise, the data might not be read properly from the pipe
+        */ 
+        std::string dataLine = data;
+        if (!dataLine.empty() && dataLine.back() != '\n') {
+            dataLine += '\n';
+        }
+        
+        // Write the data to the pipe
+        // Returns the number of bytes written to the pipe
+        // Returns -1 if an error occurs
+        ssize_t bytes_written = write(pipe_fd, dataLine.c_str(), dataLine.length());
+
+        // Check if an error occurred while writing to the pipe
+        if (bytes_written == -1) {
+            std::cerr << "Error writing to pipe: " << strerror(errno) << std::endl;
+            // Handle error, maybe throw an exception or return an error code.
+        } else {
+            // print("Data sent through the pipe: {}\n", dataLine);
+        }
+    }
+};
+
+/**
+ * @brief Constructs a JSON line with the given parameters.
+ * @return The constructed JSON line as a string.
+ */
+std::string constructJSONLine(int n_spots_4A, int n_spots_no_ice, int n_spots_total, double total_intensity, double estimated_d_min, const std::string& file, int file_number) {
+    std::ostringstream oss;
+    oss << "{";
+    oss << "\"n_spots_4A\": " << n_spots_4A << ", ";
+    oss << "\"n_spots_no_ice\": " << n_spots_no_ice << ", ";
+    oss << "\"n_spots_total\": " << n_spots_total << ", ";
+    oss << "\"total_intensity\": " << total_intensity << ", ";
+    oss << "\"estimated_d_min\": " << estimated_d_min << ", ";
+    oss << "\"file\": \"" << file << "\", ";
+    oss << "\"file-number\": " << file_number;
+    oss << "}\n";
+    return oss.str();
+}
+
 int main(int argc, char **argv) {
     // Parse arguments and get our H5Reader
     auto parser = CUDAArgumentParser();
@@ -231,10 +316,16 @@ int main(int argc, char **argv) {
       .metavar("S")
       .default_value<float>(30)
       .scan<'f', float>();
+    parser.add_argument("-fd", "--pipe_fd")
+      .help("File descriptor for the pipe to output data through")
+      .metavar("FD")
+      .default_value<int>(-1)
+      .scan<'i', int>();
 
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
     bool do_writeout = parser.get<bool>("writeout");
+    bool do_pipe = parser.get<int>("pipe_fd") > -1; // Check if output pipe was provided
     float wait_timeout = parser.get<float>("timeout");
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
@@ -314,6 +405,13 @@ int main(int argc, char **argv) {
     auto png_write_mutex = std::mutex{};
 
     double time_waiting_for_images = 0.0;
+
+    // Create a PipeHandler object if the pipe file descriptor is provided
+    std::unique_ptr<PipeHandler> pipeHandler = nullptr;
+    if (do_pipe) {
+        int pipe_fd = parser.get<int>("pipe_fd");
+        pipeHandler = std::make_unique<PipeHandler>(pipe_fd);
+    }
 
     // Spawn the reader threads
     std::vector<std::jthread> threads;
@@ -593,6 +691,28 @@ int main(int argc, char **argv) {
                                     height,
                                     LCT_RGB);
                 }
+                
+                // Check if output pipe was provided
+                if (do_pipe) {
+                    /*
+                    * Construct a JSON line with the results 
+                    * and send it through the pipe
+                    * @note Only num_strong_pixels, file and file-number are 
+                    * used for now.
+                    */
+                    std::string json_line = constructJSONLine(
+                        num_strong_pixels,        // n_spots_4A
+                        0, // n_spots_no_ice
+                        0, // n_spots_total
+                        0, // total_intensity
+                        0, // estimated_d_min
+                        args.file, // file
+                        image_num// file-number
+                    );
+                    // Send the JSON line through the pipe
+                    pipeHandler->sendData(json_line);
+                }
+
                 if (do_validate) {
                     // Count the number of pixels
                     size_t num_strong_pixels = 0;
