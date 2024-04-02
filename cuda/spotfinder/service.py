@@ -62,7 +62,7 @@ class GPUPerImageAnalysis(CommonService):
         read_fd : int
             The file descriptor for the pipe
         timeout : int
-            The timeout in seconds
+            The timeout in seconds (default 10)
 
         ----------------
         Yields
