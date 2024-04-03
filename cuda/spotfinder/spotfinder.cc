@@ -217,19 +217,12 @@ public:
      * @brief Destructor to close the pipe.
      */
     ~PipeHandler() {
-       /*
-        * Signal the end of the data stream by sending "EOF" through the pipe
-        * and then close the pipe
-        * This is to ensure that the reader knows when the data stream has ended
-       */ 
-        sendData("EOF");
         close(pipe_fd);        
     }
     
     /**
      * @brief Sends data through the pipe in a thread-safe manner.
      * @param data The data to be sent.
-     * @warning Sending "EOF" through the pipe signals the end of the data stream. This should not be done as it is handled in the destructor.
      * @note The data is sent as a line, i.e., a newline character is appended to the data if it is not already present.
      */
     void sendData(const std::string& data) {

@@ -8,6 +8,7 @@ import threading
 import queue
 from pathlib import Path
 from pprint import pformat
+from typing import Iterator
 
 import workflows.recipe
 from rich.logging import RichHandler
@@ -51,64 +52,6 @@ class GPUPerImageAnalysis(CommonService):
             acknowledgement=True,
             log_extender=self.extend_log,
         )
-
-    def read_pipe_output(self, read_fd, timeout=10):
-        '''
-        Generator to read from the pipe and yield the output
-
-        ----------------
-        Parameters
-        ----------------
-        read_fd : int
-            The file descriptor for the pipe
-        timeout : int
-            The timeout in seconds (default 10)
-
-        ----------------
-        Yields
-        ----------------
-        str
-            A line of JSON output
-        '''
-        # Reader function
-        def reader(q, read_fd):
-            with os.fdopen(read_fd, 'r') as pipe_in_file:
-                # Process each line of JSON output
-                for line in pipe_in_file:
-                    line = line.strip()
-
-                    # Put the line into the queue
-                    q.put(line)
-
-                    # Detect the end of the output
-                    if line == "EOF":
-                        self.log.info("End of output")
-                        break # Exit the loop when "EOF" is received
-
-        # Create a queue as a buffer for the output
-        # This allows us to measure time between outputs and timeout
-        q = queue.Queue()
-        reader_thread = threading.Thread(target=reader, args=(q, read_fd))
-        reader_thread.start()
-
-        # Loop to yield the output
-        # It continually checks the queue for new output
-        # If the queue is empty, it will wait for the timeout
-        # If the timeout is reached, it will break the loop
-        while True:
-            try:
-                item = q.get(timeout=timeout)
-                # Check for the end of the output
-                if item == "EOF":
-                    break # Exit the loop when "EOF" is received
-                # Otherwise, yield the item
-                yield item
-            except queue.Empty:
-                self.log.warning("Timeout waiting for output")
-                break # Exit the loop after timeout
-
-        # Wait for the reader thread to finish
-        reader_thread.join()
 
     def gpu_per_image_analysis(
         self, rw: workflows.recipe.RecipeWrapper, header: dict, message: dict,
@@ -165,22 +108,52 @@ class GPUPerImageAnalysis(CommonService):
         # Set the default channel for the result
         rw.set_default_channel("result")
 
-        # Helper function to read and send the output
-        def read_and_send():
+        def read_pipe_output(read_fd:int)->Iterator[str]:
+            """
+            Generator to read from the pipe and yield the output
+
+            Args:
+                read_fd: The file descriptor for the pipe
+
+            Yields:
+                str: A line of JSON output
+            """
+            # Reader function
+            with os.fdopen(read_fd, 'r') as pipe_in_file:
+                # Process each line of JSON output
+                for line in pipe_in_file:
+                    line = line.strip()
+                    yield line
+
+        def read_and_send()->None:
+            """
+            Read from the pipe and send the output to the result queue
+
+            This function is intended to be run in a separate thread
+
+            Returns:
+                None
+            """
             # Read from the pipe and send to the result queue
-            for line in self.read_pipe_output(read_fd):
+            for line in read_pipe_output(read_fd):
                 self.log.info(f"Received: {line.strip()}") # Change log level to debug?
                 rw.send_to("result", line)
+
             self.log.info("Results finished sending")
 
         # Create a thread to read and send the output
-        read_pipe_output_thread = threading.Thread(target=read_and_send)
+        read_and_send_data = threading.Thread(target=read_and_send)
 
         # Run the spotfinder
         spotfind_process = subprocess.Popen(command, executable=SPOTFINDER, pass_fds=[write_fd])
 
+        # Close the write end of the pipe (for this process)
+        # SPOTFINDER will hold the write end open until it is done
+        # This will allow the read end to detect the end of the output
+        os.close(write_fd)
+
         # Start the read thread
-        read_pipe_output_thread.start()
+        read_and_send_data.start()
 
         # Wait for the process to finish
         spotfind_process.wait()
@@ -190,4 +163,4 @@ class GPUPerImageAnalysis(CommonService):
         self.log.info(f"Analysis complete in {duration:.1f} s")
 
         # Wait for the read thread to finish
-        read_pipe_output_thread.join()
+        read_and_send_data.join()
