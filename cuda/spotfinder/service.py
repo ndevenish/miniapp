@@ -119,9 +119,9 @@ class GPUPerImageAnalysis(CommonService):
                 str: A line of JSON output
             """
             # Reader function
-            with os.fdopen(read_fd, 'r') as pipe_in_file:
+            with os.fdopen(read_fd, 'r') as pipe_data:
                 # Process each line of JSON output
-                for line in pipe_in_file:
+                for line in pipe_data:
                     line = line.strip()
                     yield line
 
