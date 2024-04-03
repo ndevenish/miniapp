@@ -108,7 +108,7 @@ class GPUPerImageAnalysis(CommonService):
         # Set the default channel for the result
         rw.set_default_channel("result")
 
-        def read_pipe_output(read_fd:int)->Iterator[str]:
+        def pipe_output(read_fd:int)->Iterator[str]:
             """
             Generator to read from the pipe and yield the output
 
@@ -135,7 +135,7 @@ class GPUPerImageAnalysis(CommonService):
                 None
             """
             # Read from the pipe and send to the result queue
-            for line in read_pipe_output(read_fd):
+            for line in pipe_output(read_fd):
                 self.log.info(f"Received: {line.strip()}") # Change log level to debug?
                 rw.send_to("result", line)
 
