@@ -168,7 +168,7 @@ class GPUPerImageAnalysis(CommonService):
             """
             # Read from the pipe and send to the result queue
             for line in pipe_output(read_fd):
-                self.log.info(f"Received: {line.strip()}") # Change log level to debug?
+                self.log.info(f"Received: {line}") # Change log level to debug?
                 rw.send_to("result", line)
 
             self.log.info("Results finished sending")
