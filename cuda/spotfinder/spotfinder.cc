@@ -241,7 +241,6 @@ public:
         // Check if an error occurred while writing to the pipe
         if (bytes_written == -1) {
             std::cerr << "Error writing to pipe: " << strerror(errno) << std::endl;
-            // Handle error, maybe throw an exception or return an error code.
         } else {
             // print("Data sent through the pipe: {}\n", stringified_json);
         }
