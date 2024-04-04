@@ -223,7 +223,7 @@ public:
     
     /**
      * @brief Sends data through the pipe in a thread-safe manner.
-     * @param json_data A map containing the data to be sent through the pipe.
+     * @param json_data A json object containing the data to be sent.
      */
     void sendData(const nlohmann::json& json_data) {
         // Lock the mutex, to ensure that only one thread writes to the pipe at a time
