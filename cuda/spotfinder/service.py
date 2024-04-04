@@ -5,7 +5,6 @@ import subprocess
 import time
 import os
 import threading
-import queue
 from pathlib import Path
 from pprint import pformat
 from typing import Iterator
