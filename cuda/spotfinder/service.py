@@ -174,7 +174,7 @@ class GPUPerImageAnalysis(CommonService):
             self.log.info("Results finished sending")
 
         # Create a thread to read and send the output
-        read_and_send_data = threading.Thread(target=read_and_send)
+        read_and_send_data_thread = threading.Thread(target=read_and_send)
 
         # Run the spotfinder
         self._spotfind_proc = subprocess.Popen(command, pass_fds=[write_fd])
@@ -185,7 +185,7 @@ class GPUPerImageAnalysis(CommonService):
         os.close(write_fd)
 
         # Start the read thread
-        read_and_send_data.start()
+        read_and_send_data_thread.start()
 
         # Wait for the process to finish
         self._spotfind_proc.wait()
@@ -195,4 +195,4 @@ class GPUPerImageAnalysis(CommonService):
         self.log.info(f"Analysis complete in {duration:.1f} s")
 
         # Wait for the read thread to finish
-        read_and_send_data.join()
+        read_and_send_data_thread.join()
