@@ -123,6 +123,7 @@ class GPUPerImageAnalysis(CommonService):
 
         # Now run the spotfinder
         command = [
+        self._spotfinder_executable,
         str(expected_path),
         "--images",
         parameters["number_of_frames"],
@@ -133,7 +134,7 @@ class GPUPerImageAnalysis(CommonService):
         "--pipe_fd",
         str(write_fd)
         ]
-        self.log.info(f"Running: {self._spotfinder_executable} {' '.join(str(x) for x in command)}")
+        self.log.info(f"Running: {' '.join(str(x) for x in command)}")
         start_time = time.monotonic()
 
         # Set the default channel for the result
@@ -176,7 +177,7 @@ class GPUPerImageAnalysis(CommonService):
         read_and_send_data = threading.Thread(target=read_and_send)
 
         # Run the spotfinder
-        spotfind_process = subprocess.Popen(command, executable=self._spotfinder_executable, pass_fds=[write_fd])
+        spotfind_process = subprocess.Popen(command, pass_fds=[write_fd])
 
         # Close the write end of the pipe (for this process)
         # spotfind_process will hold the write end open until it is done
