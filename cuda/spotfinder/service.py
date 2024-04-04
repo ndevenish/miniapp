@@ -91,7 +91,6 @@ class GPUPerImageAnalysis(CommonService):
 
         # Now run the spotfinder
         command = [
-        "--sample",
         str(expected_path),
         "--images",
         parameters["number_of_frames"],
