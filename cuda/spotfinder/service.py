@@ -15,9 +15,6 @@ from workflows.services.common_service import CommonService
 
 DEFAULT_QUEUE_NAME = "per_image_analysis.gpu"
 
-SPOTFINDER = Path("build/spotfinder")
-
-
 def _setup_rich_logging(level=logging.DEBUG):
     """Setup a rich-based logging output. Using for debug running."""
     rootLogger = logging.getLogger()
@@ -37,7 +34,7 @@ def _setup_rich_logging(level=logging.DEBUG):
 class GPUPerImageAnalysis(CommonService):
     _service_name = "GPU Per-Image-Analysis"
     _logger_name = "spotfinder.service"
-
+    _spotfinder_executable: Path | None = None
     _spotfind_proc: subprocess.Popen | None = None
 
     def initializing(self):
@@ -51,6 +48,40 @@ class GPUPerImageAnalysis(CommonService):
             acknowledgement=True,
             log_extender=self.extend_log,
         )
+        self._spotfinder_executable = self._find_spotfinder()
+
+    def _find_spotfinder(self)->Path:
+        """
+        Finds and sets the path to the spotfinder executable
+
+        Returns:
+            Path: The path to the spotfinder executable
+        """
+        # Try to get the path from the environment
+        spotfinder_path = os.getenv('SPOTFINDER')
+
+        # If environment variable is not set, check for directories
+        if spotfinder_path is None:
+            self.log.warn("SPOTFINDER environment variable not set")
+
+            # Check for the spotfinder executable in the build directories
+            if Path('build').exists():
+                self.log.info("SPOTFINDER found in build directory")
+                spotfinder_path = 'build/spotfinder'
+            elif Path('_build').exists():
+                self.log.info("SPOTFINDER found in _build directory")
+                spotfinder_path = '_build/spotfinder'
+            else:
+                spotfinder_path = None
+                # Failing to find the executable is handled in the main function
+                # wherein we will nack the message and return.
+                # Hence we leave the spotfinder_path as the default None
+
+        # Convert to Path object
+        if spotfinder_path is not None:
+            spotfinder_path = Path(spotfinder_path)
+
+        return spotfinder_path
 
     def gpu_per_image_analysis(
         self, rw: workflows.recipe.RecipeWrapper, header: dict, message: dict,
@@ -74,10 +105,12 @@ class GPUPerImageAnalysis(CommonService):
         )
 
         # Do sanity checks, then launch spotfinder
-        if not SPOTFINDER.is_file():
-            self.log.error("Could not find spotfinder executable: %s", SPOTFINDER)
+        if not self._spotfinder_executable.is_file():
+            self.log.error("Could not find spotfinder executable: %s", self._spotfinder_executable)
             rw.transport.nack(header)
             return
+        else:
+            self.log.info(f"Using SPOTFINDER: {self._spotfinder_executable}")
 
         # Otherwise, assume that this will work for now and nack the message
         rw.transport.ack(header)
@@ -100,7 +133,7 @@ class GPUPerImageAnalysis(CommonService):
         "--pipe_fd",
         str(write_fd)
         ]
-        self.log.info(f"Running: {SPOTFINDER} {' '.join(str(x) for x in command)}")
+        self.log.info(f"Running: {self._spotfinder_executable} {' '.join(str(x) for x in command)}")
         start_time = time.monotonic()
 
         # Set the default channel for the result
@@ -143,10 +176,10 @@ class GPUPerImageAnalysis(CommonService):
         read_and_send_data = threading.Thread(target=read_and_send)
 
         # Run the spotfinder
-        spotfind_process = subprocess.Popen(command, executable=SPOTFINDER, pass_fds=[write_fd])
+        spotfind_process = subprocess.Popen(command, executable=self._spotfinder_executable, pass_fds=[write_fd])
 
         # Close the write end of the pipe (for this process)
-        # SPOTFINDER will hold the write end open until it is done
+        # spotfind_process will hold the write end open until it is done
         # This will allow the read end to detect the end of the output
         os.close(write_fd)
 
