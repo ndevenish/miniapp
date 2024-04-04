@@ -21,6 +21,7 @@
 #include <stop_token>
 #include <thread>
 #include <utility>
+#include <nlohmann/json.hpp>
 
 #include "cbfread.hpp"
 #include "common.hpp"
@@ -222,56 +223,30 @@ public:
     
     /**
      * @brief Sends data through the pipe in a thread-safe manner.
-     * @param data The data to be sent.
-     * @note The data is sent as a line, i.e., a newline character is appended to the data if it is not already present.
+     * @param json_data A map containing the data to be sent through the pipe.
      */
-    void sendData(const std::string& data) {
+    void sendData(const nlohmann::json& json_data) {
         // Lock the mutex, to ensure that only one thread writes to the pipe at a time
         // This unlocks the mutex when the function returns
         std::lock_guard<std::mutex> lock(mtx);
-        
-        /* 
-        * Append a newline character to the data if it is not present
-        * This is to ensure that the data is sent as a line
-        * Otherwise, the data might not be read properly from the pipe
-        */ 
-        std::string dataLine = data;
-        if (!dataLine.empty() && dataLine.back() != '\n') {
-            dataLine += '\n';
-        }
+
+        // Convert the JSON object to a string
+        std::string stringified_json = json_data.dump() + "\n";
         
         // Write the data to the pipe
         // Returns the number of bytes written to the pipe
         // Returns -1 if an error occurs
-        ssize_t bytes_written = write(pipe_fd, dataLine.c_str(), dataLine.length());
+        ssize_t bytes_written = write(pipe_fd, stringified_json.c_str(), stringified_json.length());
 
         // Check if an error occurred while writing to the pipe
         if (bytes_written == -1) {
             std::cerr << "Error writing to pipe: " << strerror(errno) << std::endl;
             // Handle error, maybe throw an exception or return an error code.
         } else {
-            // print("Data sent through the pipe: {}\n", dataLine);
+            // print("Data sent through the pipe: {}\n", stringified_json);
         }
     }
 };
-
-/**
- * @brief Constructs a JSON line with the given parameters.
- * @return The constructed JSON line as a string.
- */
-std::string constructJSONLine(int n_spots_4A, int n_spots_no_ice, int n_spots_total, double total_intensity, double estimated_d_min, const std::string& file, int file_number) {
-    std::ostringstream oss;
-    oss << "{";
-    oss << "\"n_spots_4A\": " << n_spots_4A << ", ";
-    oss << "\"n_spots_no_ice\": " << n_spots_no_ice << ", ";
-    oss << "\"n_spots_total\": " << n_spots_total << ", ";
-    oss << "\"total_intensity\": " << total_intensity << ", ";
-    oss << "\"estimated_d_min\": " << estimated_d_min << ", ";
-    oss << "\"file\": \"" << file << "\", ";
-    oss << "\"file-number\": " << file_number;
-    oss << "}\n";
-    return oss.str();
-}
 
 int main(int argc, char **argv) {
     // Parse arguments and get our H5Reader
@@ -687,23 +662,14 @@ int main(int argc, char **argv) {
                 
                 // Check if output pipe was provided
                 if (do_pipe) {
-                    /*
-                    * Construct a JSON line with the results 
-                    * and send it through the pipe
-                    * @note Only num_strong_pixels, file and file-number are 
-                    * used for now.
-                    */
-                    std::string json_line = constructJSONLine(
-                        num_strong_pixels,        // n_spots_4A
-                        0, // n_spots_no_ice
-                        0, // n_spots_total
-                        0, // total_intensity
-                        0, // estimated_d_min
-                        args.file, // file
-                        image_num// file-number
-                    );
-                    // Send the JSON line through the pipe
-                    pipeHandler->sendData(json_line);
+                    // Create a JSON object to store the data
+                    nlohmann::json json_data = {
+                        {"num_strong_pixels", num_strong_pixels},
+                        {"file", args.file},
+                        {"file-number", image_num}
+                    };
+                    // Send the JSON data through the pipe
+                    pipeHandler->sendData(json_data);
                 }
 
                 if (do_validate) {
