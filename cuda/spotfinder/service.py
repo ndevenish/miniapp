@@ -123,16 +123,16 @@ class GPUPerImageAnalysis(CommonService):
 
         # Now run the spotfinder
         command = [
-        self._spotfinder_executable,
-        str(data_path),
-        "--images",
-        parameters["number_of_frames"],
-        "--start-index",
-        parameters["start_index"],
-        "--threads",
-        str(40),
-        "--pipe_fd",
-        str(write_fd)
+            self._spotfinder_executable,
+            str(data_path),
+            "--images",
+            parameters["number_of_frames"],
+            "--start-index",
+            parameters["start_index"],
+            "--threads",
+            str(40),
+            "--pipe_fd",
+            str(write_fd)
         ]
         self.log.info(f"Running: {' '.join(str(x) for x in command)}")
         start_time = time.monotonic()
