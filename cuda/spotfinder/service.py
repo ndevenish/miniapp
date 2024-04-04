@@ -116,7 +116,7 @@ class GPUPerImageAnalysis(CommonService):
         rw.transport.ack(header)
 
         # Form the expected path for this dataset
-        expected_path = f"{base_path}/{parameters['filename']}"
+        data_path = f"{base_path}/{parameters['filename']}"
 
         # Create a pipe for comms
         read_fd, write_fd = os.pipe()
@@ -124,7 +124,7 @@ class GPUPerImageAnalysis(CommonService):
         # Now run the spotfinder
         command = [
         self._spotfinder_executable,
-        str(expected_path),
+        str(data_path),
         "--images",
         parameters["number_of_frames"],
         "--start-index",
