@@ -292,7 +292,7 @@ int main(int argc, char **argv) {
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
     bool do_writeout = parser.get<bool>("writeout");
-    bool do_pipe = parser.get<int>("pipe_fd") > -1; // Check if output pipe was provided
+    int pipe_fd = parser.get<int>("pipe_fd");
     float wait_timeout = parser.get<float>("timeout");
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
@@ -375,8 +375,7 @@ int main(int argc, char **argv) {
 
     // Create a PipeHandler object if the pipe file descriptor is provided
     std::unique_ptr<PipeHandler> pipeHandler = nullptr;
-    if (do_pipe) {
-        int pipe_fd = parser.get<int>("pipe_fd");
+    if (pipe_fd != -1) {
         pipeHandler = std::make_unique<PipeHandler>(pipe_fd);
     }
 
@@ -659,8 +658,8 @@ int main(int argc, char **argv) {
                                     LCT_RGB);
                 }
                 
-                // Check if output pipe was provided
-                if (do_pipe) {
+                // Check if pipeHandler was initialized
+                if (pipeHandler != nullptr) {
                     // Create a JSON object to store the data
                     nlohmann::json json_data = {
                         {"num_strong_pixels", num_strong_pixels},
