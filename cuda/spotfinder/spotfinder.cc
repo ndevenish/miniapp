@@ -17,11 +17,11 @@
 #include <csignal>
 #include <iostream>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <ranges>
 #include <stop_token>
 #include <thread>
 #include <utility>
-#include <nlohmann/json.hpp>
 
 #include "cbfread.hpp"
 #include "common.hpp"
@@ -200,11 +200,11 @@ void wait_for_ready_for_read(const std::string &path,
  * @brief Class for handling a pipe and sending data through it in a thread-safe manner.
  */
 class PipeHandler {
-private:
-    int pipe_fd; // File descriptor for the pipe
-    std::mutex mtx; // Mutex for synchronization
-    
-public:
+  private:
+    int pipe_fd;     // File descriptor for the pipe
+    std::mutex mtx;  // Mutex for synchronization
+
+  public:
     /**
      * @brief Constructor to initialize the PipeHandler object.
      * @param pipe_fd The file descriptor for the pipe.
@@ -218,25 +218,26 @@ public:
      * @brief Destructor to close the pipe.
      */
     ~PipeHandler() {
-        close(pipe_fd);        
+        close(pipe_fd);
     }
-    
+
     /**
      * @brief Sends data through the pipe in a thread-safe manner.
      * @param json_data A json object containing the data to be sent.
      */
-    void sendData(const nlohmann::json& json_data) {
+    void sendData(const nlohmann::json &json_data) {
         // Lock the mutex, to ensure that only one thread writes to the pipe at a time
         // This unlocks the mutex when the function returns
         std::lock_guard<std::mutex> lock(mtx);
 
         // Convert the JSON object to a string
         std::string stringified_json = json_data.dump() + "\n";
-        
+
         // Write the data to the pipe
         // Returns the number of bytes written to the pipe
         // Returns -1 if an error occurs
-        ssize_t bytes_written = write(pipe_fd, stringified_json.c_str(), stringified_json.length());
+        ssize_t bytes_written =
+          write(pipe_fd, stringified_json.c_str(), stringified_json.length());
 
         // Check if an error occurred while writing to the pipe
         if (bytes_written == -1) {
@@ -657,15 +658,14 @@ int main(int argc, char **argv) {
                                     height,
                                     LCT_RGB);
                 }
-                
+
                 // Check if pipeHandler was initialized
                 if (pipeHandler != nullptr) {
                     // Create a JSON object to store the data
                     nlohmann::json json_data = {
-                        {"num_strong_pixels", num_strong_pixels},
-                        {"file", args.file},
-                        {"file-number", image_num}
-                    };
+                      {"num_strong_pixels", num_strong_pixels},
+                      {"file", args.file},
+                      {"file-number", image_num}};
                     // Send the JSON data through the pipe
                     pipeHandler->sendData(json_data);
                 }

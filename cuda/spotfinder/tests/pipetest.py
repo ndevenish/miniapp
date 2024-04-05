@@ -1,5 +1,6 @@
-import subprocess
 import os
+import subprocess
+
 
 def run_executable(executable_path, data_filepath, num_threads, num_images):
     # Create a pipe to capture the output
@@ -16,15 +17,15 @@ def run_executable(executable_path, data_filepath, num_threads, num_images):
         "--threads",
         str(num_threads),
         "--pipe_fd",
-        str(write_fd)
+        str(write_fd),
     ]
 
     # Run the executable
     print("Running:", " ".join(command))
     process = subprocess.Popen(command, executable=executable_path, pass_fds=[write_fd])
-    
+
     # Read from the pipe
-    with os.fdopen(read_fd, 'r') as pipe_in_file:
+    with os.fdopen(read_fd, "r") as pipe_in_file:
         for line in pipe_in_file:
             # Process each line of JSON output
             if line.strip() == "EOF":
@@ -34,6 +35,7 @@ def run_executable(executable_path, data_filepath, num_threads, num_images):
 
     # Wait for the process to finish
     process.wait()
+
 
 if __name__ == "__main__":
     executable_path = "../build/spotfinder"
