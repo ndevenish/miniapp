@@ -50,6 +50,8 @@ class GPUPerImageAnalysis(CommonService):
             log_extender=self.extend_log,
         )
         self._spotfinder_executable = self._find_spotfinder()
+        self.current_working_dcid = None
+        self.current_working_index = None
 
     def _find_spotfinder(self) -> Path:
         """
@@ -107,6 +109,43 @@ class GPUPerImageAnalysis(CommonService):
             f"Gotten PIA request:\nHeader:\n {pformat(header)}\nPayload:\n {pformat(rw.payload)}\n"
             f"Parameters: {pformat(rw.recipe_step['parameters'])}\n"
         )
+
+        # Check if we're already working on this dataset
+        if parameters["dcid"] is self.current_working_dcid:
+            # Check if it is the next message in the sequence
+            if parameters["message_index"] is self.current_working_index + 1:
+                # This is the expected next message
+                # Therefore, we can continue
+                self.log.debug(
+                    f"Processing message: {parameters['dcid']} : {parameters['message_index']}"
+                )
+                pass
+            else:
+                # This message has come out of order, it needs to go
+                # back to the queue.
+                # nack the message in order to requeue it and return
+                self.log.debug(
+                    f"Message out of order: {parameters['dcid']} : {parameters['message_index']} - requeued"
+                )
+                rw.transport.nack(header)
+                return
+        else:
+            if parameters["message_index"] == 0:
+                # This is the first message in a new sequence
+                # Reset the current working dataset and index
+                self.log.debug(
+                    f"Starting new dataset: {parameters['dcid']} : {parameters['message_index']}"
+                )
+                self.current_working_dcid = parameters["dcid"]
+                self.current_working_index = parameters["message_index"]
+            else:
+                # This is a new dataset, but not the first message
+                # nack the message in order to requeue it and return
+                self.log.debug(
+                    f"New dataset, but not the first message: {parameters['dcid']} : {parameters['message_index']} - requeued"
+                )
+                rw.transport.nack(header)
+                return
 
         # Do sanity checks, then launch spotfinder
         if not self._spotfinder_executable.is_file():
