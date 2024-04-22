@@ -50,7 +50,7 @@ class GPUPerImageAnalysis(CommonService):
             log_extender=self.extend_log,
         )
         self._spotfinder_executable = self._find_spotfinder()
-        self.working_message_index = 0
+        self.expected_next_index = 0
 
     def _find_spotfinder(self) -> Path:
         """
@@ -110,26 +110,18 @@ class GPUPerImageAnalysis(CommonService):
         )
 
         # Check if dataset is being processed in order
-
-        # The expected next index is the current index + 1
-        expected_next_index = self.working_message_index + 1
-
-        # If the index is the current index, continue processing
-        if parameters["message_index"] == self.working_message_index:
-            pass  # Explicit pass for clarity
-        # If the index is 0 we can assume that this is a new dataset
-        elif parameters["message_index"] == 0:
-            self.working_message_index = 0
-        # If the index is the expected next index, set the working
-        # message index to the expected next index
-        elif parameters["message_index"] == expected_next_index:
-            self.working_message_index = expected_next_index
-        # Otherwise, nack the message and return
-        else:
-            self.log.warn(
-                f"Received message with unexpected index: {parameters['message_index']}"
+        # First message
+        if parameters["message_index"] == 0:
+            self.expected_next_index = 1
+        # Subsequent messages
+        elif parameters["message_index"] == self.expected_next_index:
+            self.expected_next_index += 1
+        # Out of order message
+        elif parameters["message_index"] != self.expected_next_index:
+            self.log.info(
+                f"Expected message index {self.expected_next_index}, got {parameters['message_index']}"
             )
-            rw.transport.nack(header)
+            rw.transport.nack(header)  # Nack the message -> requeue
             return
 
         # Do sanity checks, then launch spotfinder
