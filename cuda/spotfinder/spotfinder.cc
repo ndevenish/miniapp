@@ -248,6 +248,31 @@ class PipeHandler {
     }
 };
 
+/**
+ * @brief Function to calculate d = wavelength / (2 * sin(theta))
+ * @param wavelength The wavelength of the X-ray beam in Å
+ * @param distance The distance from the sample to the detector in mm
+ * @param x The x-coordinate of the pixel in the image
+ * @param y The y-coordinate of the pixel in the image
+ * @param center_x The x-coordinate of the beam center in the image
+ * @param center_y The y-coordinate of the beam center in the image
+ * @return The calculated d value
+*/
+float calculate_d(float wavelength, float distance, float x, float y, float center_x, float center_y) {
+    // Calculate the distance from the beam center
+    float dx = x - center_x;
+    float dy = y - center_y;
+    float distance_from_center = sqrt(dx * dx + dy * dy);
+
+    // Calculate the angle theta
+    float theta = atan(distance_from_center / distance);
+
+    // Calculate the d value
+    float d = wavelength / (2 * sin(theta));
+
+    return d;
+}
+
 int main(int argc, char **argv) {
     // Parse arguments and get our H5Reader
     auto parser = CUDAArgumentParser();
@@ -289,12 +314,43 @@ int main(int argc, char **argv) {
       .metavar("FD")
       .default_value<int>(-1)
       .scan<'i', int>();
+    parser.add_argument("--dmin")
+      .help("Minimum resolution (Å)")
+      .metavar("MIN D")
+      .scan<'f', float>();
+    parser.add_argument("--dmax")
+      .help("Maximum resolution (Å)")
+      .metavar("MAX D")
+      .scan<'f', float>();
+    parser.add_argument("-w", "-λ", "--wavelength")
+      .help("Wavelength of the X-ray beam (Å)")
+      .metavar("λ")
+      .scan<'f', float>();
+    parser.add_argument("-dd", "detector_distance")
+      .help("Distance from the sample to the detector (mm)")
+      .metavar("DIST")
+      .scan<'f', float>();
+    parser.add_argument("-cx", "--center_x")
+      .help("X-coordinate of the beam center in the image")
+      .metavar("X")
+      .scan<'f', float>();
+    parser.add_argument("-cy", "--center_y")
+      .help("Y-coordinate of the beam center in the image")
+      .metavar("Y")
+      .scan<'f', float>();
 
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
     bool do_writeout = parser.get<bool>("writeout");
     int pipe_fd = parser.get<int>("pipe_fd");
     float wait_timeout = parser.get<float>("timeout");
+
+    float dmin = parser.get<float>("dmin");
+    float dmax = parser.get<float>("dmax");
+    float wavelength = parser.get<float>("wavelength");
+    float detector_distance = parser.get<float>("detector_distance");
+    float center_x = parser.get<float>("center_x");
+    float center_y = parser.get<float>("center_y");
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
     if (num_cpu_threads < 1) {
