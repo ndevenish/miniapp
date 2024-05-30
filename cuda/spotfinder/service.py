@@ -31,6 +31,10 @@ class PiaRequest(BaseModel):
     number_of_frames: int
     start_frame_index: int
     startTime: Optional[datetime] = None
+    wavelength: float
+    xBeam: float
+    yBeam: float
+    detector_distance: float
 
 
 def _setup_rich_logging(level=logging.DEBUG):
@@ -171,7 +175,7 @@ class GPUPerImageAnalysis(CommonService):
             dcid = rw.recipe_step["parameters"].get("dcid", "(unknown DCID)")
             self.log.warning(f"Rejecting PIA request for {dcid}: \n{e}")
             rw.transport.nack(header, requeue=False)
-            return
+            return  
 
         start_time = time.monotonic()
         self.log.info(
