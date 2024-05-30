@@ -232,6 +232,18 @@ class GPUPerImageAnalysis(CommonService):
             str(40),
             "--pipe_fd",
             str(write_fd),
+            "--dmin",
+            str(0.0),
+            "--dmax",
+            str(40.0),
+            "--wavelength",
+            str(parameters.wavelength),
+            "--xbeam",
+            str(parameters.xBeam),
+            "--ybeam",
+            str(parameters.yBeam),
+            "--detector_distance",
+            str(parameters.detector_distance),
         ]
         self.log.info(f"Running: {' '.join(str(x) for x in command)}")
 

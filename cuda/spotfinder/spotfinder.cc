@@ -317,18 +317,16 @@ int main(int argc, char **argv) {
     parser.add_argument("--dmin")
       .help("Minimum resolution (Å)")
       .metavar("MIN D")
+      .default_value<float>(-1f)
       .scan<'f', float>();
     parser.add_argument("--dmax")
       .help("Maximum resolution (Å)")
       .metavar("MAX D")
+      .default_value<float>(-1f)
       .scan<'f', float>();
     parser.add_argument("-w", "-λ", "--wavelength")
       .help("Wavelength of the X-ray beam (Å)")
       .metavar("λ")
-      .scan<'f', float>();
-    parser.add_argument("-dd", "detector_distance")
-      .help("Distance from the sample to the detector (mm)")
-      .metavar("DIST")
       .scan<'f', float>();
     parser.add_argument("-cx", "--center_x")
       .help("X-coordinate of the beam center in the image")
@@ -337,6 +335,10 @@ int main(int argc, char **argv) {
     parser.add_argument("-cy", "--center_y")
       .help("Y-coordinate of the beam center in the image")
       .metavar("Y")
+      .scan<'f', float>();
+    parser.add_argument("-dd", "detector_distance")
+      .help("Distance from the sample to the detector (mm)")
+      .metavar("DIST")
       .scan<'f', float>();
 
     auto args = parser.parse_args(argc, argv);
