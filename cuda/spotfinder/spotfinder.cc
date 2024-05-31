@@ -667,6 +667,10 @@ int main(int argc, char **argv) {
                 }
 
                 // Filter shoeboxes based on minimum spot size and resolution
+                float distance_4A = detector_distance * tan(2 * asin(wavelength / (2 * 4.0)));
+                size_t num_within_4A = 0;
+                size_t num_within_dmin_dmax = 0;
+
                 if (min_spot_size > 0 || dmin > 0 || dmax > 0) {
                     std::vector<Reflection> filtered_boxes;
                     for (auto &box : boxes) {
@@ -683,9 +687,17 @@ int main(int argc, char **argv) {
                             // Calculate the resolution
                             float resolution = get_resolution(order, wavelength, detector_distance, distance_from_center);
 
-                            // Filter based on resolution
-                            if ((dmin < 0 || resolution >= dmin) && (dmax < 0 || resolution <= dmax)) {
+                            // Filter based on resolution and count reflections
+                            bool within_resolution_range = (dmin < 0 || resolution >= dmin) && (dmax < 0 || resolution <= dmax);
+                            bool within_4A_distance = distance_from_center <= distance_4A;
+
+                            if (within_resolution_range) {
                                 filtered_boxes.emplace_back(box);
+                                num_within_dmin_dmax++;
+                            }
+
+                            if (within_4A_distance) {
+                                num_within_4A++;
                             }
                         }
                     }
