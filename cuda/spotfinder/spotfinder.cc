@@ -666,12 +666,27 @@ int main(int argc, char **argv) {
                     box.num_pixels += 1;
                 }
 
-                // Filter shoeboxes
-                if (min_spot_size > 0) {
+                // Filter shoeboxes based on minimum spot size and resolution
+                if (min_spot_size > 0 || dmin > 0 || dmax > 0) {
                     std::vector<Reflection> filtered_boxes;
                     for (auto &box : boxes) {
                         if (box.num_pixels >= min_spot_size) {
-                            filtered_boxes.emplace_back(box);
+                            // Calculate the center of the reflection
+                            float center_x_reflection = (box.l + box.r) / 2.0;
+                            float center_y_reflection = (box.t + box.b) / 2.0;
+
+                            // Calculate the distance from the beam center
+                            float distance_from_center = get_distance_from_centre(
+                                center_x_reflection, center_y_reflection, center_x, center_y,
+                                pixel_size_x, pixel_size_y);
+
+                            // Calculate the resolution
+                            float resolution = get_resolution(order, wavelength, detector_distance, distance_from_center);
+
+                            // Filter based on resolution
+                            if ((dmin < 0 || resolution >= dmin) && (dmax < 0 || resolution <= dmax)) {
+                                filtered_boxes.emplace_back(box);
+                            }
                         }
                     }
                     boxes = std::move(filtered_boxes);
