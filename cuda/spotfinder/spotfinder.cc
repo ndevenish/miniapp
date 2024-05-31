@@ -765,7 +765,9 @@ int main(int argc, char **argv) {
                       {"num_strong_pixels", num_strong_pixels},
                       {"file", args.file},
                       {"file-number", image_num},
-                      {"n_spots_total", boxes.size()}};
+                      {"n_spots_total", boxes.size()},
+                      {"num_within_4A", num_within_4A},
+                      {"num_within_dmin_dmax", num_within_dmin_dmax}};
                     // Send the JSON data through the pipe
                     pipeHandler->sendData(json_data);
                 }
