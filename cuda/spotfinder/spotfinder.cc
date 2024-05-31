@@ -249,27 +249,35 @@ class PipeHandler {
 };
 
 /**
- * @brief Function to calculate d = wavelength / (2 * sin(theta))
- * @param wavelength The wavelength of the X-ray beam in Å
- * @param distance The distance from the sample to the detector in mm
+ * @brief Function to calculate the distance of a pixel from the beam center.
  * @param x The x-coordinate of the pixel in the image
  * @param y The y-coordinate of the pixel in the image
- * @param center_x The x-coordinate of the beam center in the image
- * @param center_y The y-coordinate of the beam center in the image
+ * @param center_x The x-coordinate of the pixel beam center in the image
+ * @param center_y The y-coordinate of the pixel beam center in the image
+ * @param pixel_size_x The pixel size of the detector in the x-direction in mm
+ * @param pixel_size_y The pixel size of the detector in the y-direction in mm
+ * @return The calculated distance from the beam center in mm
+*/
+float get_distance_from_centre(float x, float y, float center_x, float center_y, float pixel_size_x, float pixel_size_y) {
+    float dx = pixel_size_x * (x - center_x);
+    float dy = pixel_size_y * (y - center_y);
+    float distance_from_center = sqrt(dx * dx + dy * dy);
+    return distance_from_center;
+}
+
+/**
+ * @brief Function to calculate the interplanar distance of a reflection.
+ * The interplanar distance is calculated using the formula:
+ *         d = n * λ / (2 * sin(θ))
+ * @param order The order of the reflection
+ * @param wavelength The wavelength of the X-ray beam in Å
+ * @param distance_to_detector The distance from the sample to the detector in mm
+ * @param distance_from_center The distance of the reflection from the beam center in mm
  * @return The calculated d value
 */
-float calculate_d(float wavelength, float distance, float x, float y, float center_x, float center_y) {
-    // Calculate the distance from the beam center
-    float dx = x - center_x;
-    float dy = y - center_y;
-    float distance_from_center = sqrt(dx * dx + dy * dy);
-
-    // Calculate the angle theta
-    float theta = atan(distance_from_center / distance);
-
-    // Calculate the d value
-    float d = wavelength / (2 * sin(theta));
-
+float get_resolution(int order, float wavelength, float distance_to_detector, float distance_from_center) {
+    float theta = atan(distance_from_center / distance_to_detector);
+    float d = order * wavelength / (2 * sin(theta));
     return d;
 }
 
@@ -324,9 +332,18 @@ int main(int argc, char **argv) {
       .metavar("MAX D")
       .default_value<float>(-1f)
       .scan<'f', float>();
+    parser.add_argument("-n", "--order")
+      .help("Order of the reflection")
+      .metavar("N")
+      .default_value<int>(1)
+      .scan<'i', int>();
     parser.add_argument("-w", "-λ", "--wavelength")
       .help("Wavelength of the X-ray beam (Å)")
       .metavar("λ")
+      .scan<'f', float>();
+    parser.add_argument("-dd", "detector_distance")
+      .help("Distance from the sample to the detector (mm)")
+      .metavar("DIST")
       .scan<'f', float>();
     parser.add_argument("-cx", "--center_x")
       .help("X-coordinate of the beam center in the image")
@@ -336,10 +353,6 @@ int main(int argc, char **argv) {
       .help("Y-coordinate of the beam center in the image")
       .metavar("Y")
       .scan<'f', float>();
-    parser.add_argument("-dd", "detector_distance")
-      .help("Distance from the sample to the detector (mm)")
-      .metavar("DIST")
-      .scan<'f', float>();
 
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
@@ -347,6 +360,7 @@ int main(int argc, char **argv) {
     int pipe_fd = parser.get<int>("pipe_fd");
     float wait_timeout = parser.get<float>("timeout");
 
+    int order = parser.get<int>("order");
     float dmin = parser.get<float>("dmin");
     float dmax = parser.get<float>("dmax");
     float wavelength = parser.get<float>("wavelength");

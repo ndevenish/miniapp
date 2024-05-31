@@ -36,6 +36,14 @@ class PiaRequest(BaseModel):
     yBeam: float
     detector_distance: float
 
+class detector():
+    def __init__(self, detector_distance, xBeam, yBeam, wavelength):
+        self.detector_distance = detector_distance
+        self.xBeam = xBeam
+        self.yBeam = yBeam
+        self.wavelength = wavelength
+        self.pixel_size_vertical = 0.075 # mm
+        self.pixel_size_horizontal = 0.075 # mm
 
 def _setup_rich_logging(level=logging.DEBUG):
     """Setup a rich-based logging output. Using for debug running."""
