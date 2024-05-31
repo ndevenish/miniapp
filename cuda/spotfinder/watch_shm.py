@@ -2,17 +2,13 @@ from __future__ import annotations
 
 import argparse
 import itertools
-import os
 import shlex
 import subprocess
 import sys
 import time
-from functools import lru_cache
 from pathlib import Path
 
 from watchdir import Watcher
-
-import requests
 
 R = "\033[31m"
 G = "\033[32m"
@@ -120,7 +116,7 @@ def run():
         if existing := fetcher.fetch():
             print(f"Discarding {BOLD}{len(existing)}{NC} pre-existing data collections")
         else:
-            print(f"No existing data collections.")
+            print("No existing data collections.")
 
     print(f"Waiting for more data collections in {BOLD}{args.visit}{NC}...\n")
 

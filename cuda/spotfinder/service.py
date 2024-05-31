@@ -11,10 +11,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterator, Optional
 
+import workflows.recipe
 from pydantic import BaseModel, ValidationError
 from rich.logging import RichHandler
-
-import workflows.recipe
 from workflows.services.common_service import CommonService
 
 logger = logging.getLogger(__name__)
@@ -36,14 +35,16 @@ class PiaRequest(BaseModel):
     yBeam: float
     detector_distance: float
 
-class detector():
+
+class detector:
     def __init__(self, detector_distance, xBeam, yBeam, wavelength):
         self.detector_distance = detector_distance
         self.xBeam = xBeam
         self.yBeam = yBeam
         self.wavelength = wavelength
-        self.pixel_size_vertical = 0.075 # mm
-        self.pixel_size_horizontal = 0.075 # mm
+        self.pixel_size_vertical = 0.075  # mm
+        self.pixel_size_horizontal = 0.075  # mm
+
 
 def _setup_rich_logging(level=logging.DEBUG):
     """Setup a rich-based logging output. Using for debug running."""
@@ -183,7 +184,7 @@ class GPUPerImageAnalysis(CommonService):
             dcid = rw.recipe_step["parameters"].get("dcid", "(unknown DCID)")
             self.log.warning(f"Rejecting PIA request for {dcid}: \n{e}")
             rw.transport.nack(header, requeue=False)
-            return  
+            return
 
         start_time = time.monotonic()
         self.log.info(

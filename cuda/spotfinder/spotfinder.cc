@@ -258,7 +258,12 @@ class PipeHandler {
  * @param pixel_size_y The pixel size of the detector in the y-direction in mm
  * @return The calculated distance from the beam center in mm
 */
-float get_distance_from_centre(float x, float y, float center_x, float center_y, float pixel_size_x, float pixel_size_y) {
+float get_distance_from_centre(float x,
+                               float y,
+                               float center_x,
+                               float center_y,
+                               float pixel_size_x,
+                               float pixel_size_y) {
     float dx = pixel_size_x * (x - center_x);
     float dy = pixel_size_y * (y - center_y);
     float distance_from_center = sqrt(dx * dx + dy * dy);
@@ -275,7 +280,10 @@ float get_distance_from_centre(float x, float y, float center_x, float center_y,
  * @param distance_from_center The distance of the reflection from the beam center in mm
  * @return The calculated d value
 */
-float get_resolution(int order, float wavelength, float distance_to_detector, float distance_from_center) {
+float get_resolution(int order,
+                     float wavelength,
+                     float distance_to_detector,
+                     float distance_from_center) {
     float theta = atan(distance_from_center / distance_to_detector);
     float d = order * wavelength / (2 * sin(theta));
     return d;
@@ -667,7 +675,8 @@ int main(int argc, char **argv) {
                 }
 
                 // Filter shoeboxes based on minimum spot size and resolution
-                float distance_4A = detector_distance * tan(2 * asin(wavelength / (2 * 4.0)));
+                float distance_4A =
+                  detector_distance * tan(2 * asin(wavelength / (2 * 4.0)));
                 size_t num_within_4A = 0;
                 size_t num_within_dmin_dmax = 0;
 
@@ -680,16 +689,26 @@ int main(int argc, char **argv) {
                             float center_y_reflection = (box.t + box.b) / 2.0;
 
                             // Calculate the distance from the beam center
-                            float distance_from_center = get_distance_from_centre(
-                                center_x_reflection, center_y_reflection, center_x, center_y,
-                                pixel_size_x, pixel_size_y);
+                            float distance_from_center =
+                              get_distance_from_centre(center_x_reflection,
+                                                       center_y_reflection,
+                                                       center_x,
+                                                       center_y,
+                                                       pixel_size_x,
+                                                       pixel_size_y);
 
                             // Calculate the resolution
-                            float resolution = get_resolution(order, wavelength, detector_distance, distance_from_center);
+                            float resolution = get_resolution(order,
+                                                              wavelength,
+                                                              detector_distance,
+                                                              distance_from_center);
 
                             // Filter based on resolution and count reflections
-                            bool within_resolution_range = (dmin < 0 || resolution >= dmin) && (dmax < 0 || resolution <= dmax);
-                            bool within_4A_distance = distance_from_center <= distance_4A;
+                            bool within_resolution_range =
+                              (dmin < 0 || resolution >= dmin)
+                              && (dmax < 0 || resolution <= dmax);
+                            bool within_4A_distance =
+                              distance_from_center <= distance_4A;
 
                             if (within_resolution_range) {
                                 filtered_boxes.emplace_back(box);
