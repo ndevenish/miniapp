@@ -333,12 +333,12 @@ int main(int argc, char **argv) {
     parser.add_argument("--dmin")
       .help("Minimum resolution (Å)")
       .metavar("MIN D")
-      .default_value<float>(-1f)
+      .default_value<float>(-1.f)
       .scan<'f', float>();
     parser.add_argument("--dmax")
       .help("Maximum resolution (Å)")
       .metavar("MAX D")
-      .default_value<float>(-1f)
+      .default_value<float>(-1.f)
       .scan<'f', float>();
     parser.add_argument("-n", "--order")
       .help("Order of the reflection")
@@ -361,6 +361,14 @@ int main(int argc, char **argv) {
       .help("Y-coordinate of the beam center in the image")
       .metavar("Y")
       .scan<'f', float>();
+    parser.add_argument("px", "--pixel_size_x")
+      .help("Pixel size of the detector in the x-direction (mm)")
+      .metavar("PX")
+      .scan<'f', float>();
+    parser.add_argument("py", "--pixel_size_y")
+      .help("Pixel size of the detector in the y-direction (mm)")
+      .metavar("PY")
+      .scan<'f', float>();
 
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
@@ -375,6 +383,8 @@ int main(int argc, char **argv) {
     float detector_distance = parser.get<float>("detector_distance");
     float center_x = parser.get<float>("center_x");
     float center_y = parser.get<float>("center_y");
+    float pixel_size_x = parser.get<float>("pixel_size_x");
+    float pixel_size_y = parser.get<float>("pixel_size_y");
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
     if (num_cpu_threads < 1) {

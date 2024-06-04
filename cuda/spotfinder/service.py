@@ -11,9 +11,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterator, Optional
 
-import workflows.recipe
 from pydantic import BaseModel, ValidationError
 from rich.logging import RichHandler
+
+import workflows.recipe
 from workflows.services.common_service import CommonService
 
 logger = logging.getLogger(__name__)
@@ -34,17 +35,6 @@ class PiaRequest(BaseModel):
     xBeam: float
     yBeam: float
     detector_distance: float
-
-
-class detector:
-    def __init__(self, detector_distance, xBeam, yBeam, wavelength):
-        self.detector_distance = detector_distance
-        self.xBeam = xBeam
-        self.yBeam = yBeam
-        self.wavelength = wavelength
-        self.pixel_size_vertical = 0.075  # mm
-        self.pixel_size_horizontal = 0.075  # mm
-
 
 def _setup_rich_logging(level=logging.DEBUG):
     """Setup a rich-based logging output. Using for debug running."""
@@ -184,7 +174,7 @@ class GPUPerImageAnalysis(CommonService):
             dcid = rw.recipe_step["parameters"].get("dcid", "(unknown DCID)")
             self.log.warning(f"Rejecting PIA request for {dcid}: \n{e}")
             rw.transport.nack(header, requeue=False)
-            return
+            return  
 
         start_time = time.monotonic()
         self.log.info(
@@ -229,6 +219,9 @@ class GPUPerImageAnalysis(CommonService):
         # Create a pipe for comms
         read_fd, write_fd = os.pipe()
 
+        pixel_size_x = 0.075
+        pixel_size_y = 0.075
+
         # Now run the spotfinder
         command = [
             str(self._spotfinder_executable),
@@ -253,6 +246,10 @@ class GPUPerImageAnalysis(CommonService):
             str(parameters.yBeam),
             "--detector_distance",
             str(parameters.detector_distance),
+            "--pixel_size_x",
+            str(pixel_size_x),
+            "--pixel_size_y",
+            str(pixel_size_y)
         ]
         self.log.info(f"Running: {' '.join(str(x) for x in command)}")
 
