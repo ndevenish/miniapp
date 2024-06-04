@@ -284,7 +284,7 @@ float get_resolution(int order,
                      float wavelength,
                      float distance_to_detector,
                      float distance_from_center) {
-    float theta = atan(distance_from_center / distance_to_detector);
+    float theta = 2 * atan(distance_from_center / distance_to_detector);
     float d = order * wavelength / (2 * sin(theta));
     return d;
 }
