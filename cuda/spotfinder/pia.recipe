@@ -30,7 +30,7 @@
             "wavelength": "{$REPLACE:ispyb_dc_info[wavelength]}",
             "xBeam": "{$REPLACE:ispyb_dc_info[xBeam]}",
             "yBeam": "{$REPLACE:ispyb_dc_info[yBeam]}",
-            "detector_distance": "{$REPLACE:ispyb_dc_info[detectorDistance]}",
+            "detector_distance": "{$REPLACE:ispyb_dc_info[detectorDistance]}"
         },
         "output": [
             3
