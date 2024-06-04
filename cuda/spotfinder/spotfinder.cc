@@ -273,19 +273,17 @@ float get_distance_from_centre(float x,
 /**
  * @brief Function to calculate the interplanar distance of a reflection.
  * The interplanar distance is calculated using the formula:
- *         d = n * λ / (2 * sin(θ))
- * @param order The order of the reflection
+ *         d = λ / (2 * sin(θ))
  * @param wavelength The wavelength of the X-ray beam in Å
  * @param distance_to_detector The distance from the sample to the detector in mm
  * @param distance_from_center The distance of the reflection from the beam center in mm
  * @return The calculated d value
 */
-float get_resolution(int order,
-                     float wavelength,
+float get_resolution(float wavelength,
                      float distance_to_detector,
                      float distance_from_center) {
     float theta = 2 * atan(distance_from_center / distance_to_detector);
-    float d = order * wavelength / (2 * sin(theta));
+    float d = wavelength / (2 * sin(theta));
     return d;
 }
 
@@ -340,11 +338,6 @@ int main(int argc, char **argv) {
       .metavar("MAX D")
       .default_value<float>(-1.f)
       .scan<'f', float>();
-    parser.add_argument("-n", "--order")
-      .help("Order of the reflection")
-      .metavar("N")
-      .default_value<int>(1)
-      .scan<'i', int>();
     parser.add_argument("-w", "-λ", "--wavelength")
       .help("Wavelength of the X-ray beam (Å)")
       .metavar("λ")
@@ -376,7 +369,6 @@ int main(int argc, char **argv) {
     int pipe_fd = parser.get<int>("pipe_fd");
     float wait_timeout = parser.get<float>("timeout");
 
-    int order = parser.get<int>("order");
     float dmin = parser.get<float>("dmin");
     float dmax = parser.get<float>("dmax");
     float wavelength = parser.get<float>("wavelength");
@@ -708,8 +700,7 @@ int main(int argc, char **argv) {
                                                        pixel_size_y);
 
                             // Calculate the resolution
-                            float resolution = get_resolution(order,
-                                                              wavelength,
+                            float resolution = get_resolution(wavelength,
                                                               detector_distance,
                                                               distance_from_center);
 
