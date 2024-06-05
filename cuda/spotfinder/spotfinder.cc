@@ -288,7 +288,11 @@ float get_distance_from_centre(float x,
 float get_resolution(float wavelength,
                      float distance_to_detector,
                      float distance_from_center) {
-    float theta = 2 * atan(distance_from_center / distance_to_detector);
+    /*
+     * Since the angle calculated is, in fact, 2θ, we halve to get the
+     * proper value of θ
+    */
+    float theta = 0.5 * tan(distance_from_center / distance_to_detector);
     float d = wavelength / (2 * sin(theta));
     return d;
 }
