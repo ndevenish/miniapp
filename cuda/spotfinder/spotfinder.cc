@@ -205,6 +205,65 @@ void wait_for_ready_for_read(const std::string &path,
 }
 
 /**
+ * @brief Class to store the geometry of the detector.
+*/
+class detector_geometry {
+  public:
+    float pixel_size_x;
+    float pixel_size_y;
+    float center_x;
+    float center_y;
+    float distance;
+
+    /**
+     * @brief Constructor to initialize the detector geometry.
+     * @param pixel_size_x The pixel size of the detector in the x-direction in mm
+     * @param pixel_size_y The pixel size of the detector in the y-direction in mm
+     * @param center_x The x-coordinate of the pixel beam center in the image
+     * @param center_y The y-coordinate of the pixel beam center in the image
+     * @param distance The distance from the sample to the detector in mm
+    */
+    detector_geometry(float pixel_size_x,
+                      float pixel_size_y,
+                      float center_x,
+                      float center_y,
+                      float distance)
+        : pixel_size_x(pixel_size_x),
+          pixel_size_y(pixel_size_y),
+          center_x(center_x),
+          center_y(center_y),
+          distance(distance) {}
+
+    /**
+     * @brief Constructor to initialize the detector geometry from a JSON object.
+     * @param geometry_data A JSON object containing the detector geometry data.
+     * The JSON object must have the following keys:
+     * - pixel_size_x: The pixel size of the detector in the x-direction in mm
+     * - pixel_size_y: The pixel size of the detector in the y-direction in mm
+     * - center_x: The x-coordinate of the pixel beam center in the image
+     * - center_y: The y-coordinate of the pixel beam center in the image
+     * - distance: The distance from the sample to the detector in mm
+    */
+    detector_geometry(nlohmann::json geometry_data) {
+        std::vector<std::string> required_keys = {
+          "pixel_size_x", "pixel_size_y", "center_x", "center_y", "distance"};
+
+        for (const auto &key : required_keys) {
+            if (geometry_data.find(key) == geometry_data.end()) {
+                throw std::invalid_argument("Key " + key
+                                            + " is missing from the input JSON");
+            }
+        }
+
+        pixel_size_x = geometry_data["pixel_size_x"];
+        pixel_size_y = geometry_data["pixel_size_y"];
+        center_x = geometry_data["center_x"];
+        center_y = geometry_data["center_y"];
+        distance = geometry_data["distance"];
+    }
+};
+
+/**
  * @brief Class for handling a pipe and sending data through it in a thread-safe manner.
  */
 class PipeHandler {
@@ -360,26 +419,9 @@ int main(int argc, char **argv) {
       .help("Wavelength of the X-ray beam (Å)")
       .metavar("λ")
       .scan<'f', float>();
-    parser.add_argument("-dd", "detector_distance")
-      .help("Distance from the sample to the detector (mm)")
-      .metavar("DIST")
-      .scan<'f', float>();
-    parser.add_argument("-cx", "--center_x")
-      .help("X-coordinate of the beam center in the image")
-      .metavar("X")
-      .scan<'f', float>();
-    parser.add_argument("-cy", "--center_y")
-      .help("Y-coordinate of the beam center in the image")
-      .metavar("Y")
-      .scan<'f', float>();
-    parser.add_argument("px", "--pixel_size_x")
-      .help("Pixel size of the detector in the x-direction (mm)")
-      .metavar("PX")
-      .scan<'f', float>();
-    parser.add_argument("py", "--pixel_size_y")
-      .help("Pixel size of the detector in the y-direction (mm)")
-      .metavar("PY")
-      .scan<'f', float>();
+    parser.add_argument("--detector")
+      .help("Detector geometry JSON")
+      .metavar("JSON")
 
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
@@ -390,11 +432,7 @@ int main(int argc, char **argv) {
     float dmin = parser.get<float>("dmin");
     float dmax = parser.get<float>("dmax");
     float wavelength = parser.get<float>("wavelength");
-    float detector_distance = parser.get<float>("detector_distance");
-    float center_x = parser.get<float>("center_x");
-    float center_y = parser.get<float>("center_y");
-    float pixel_size_x = parser.get<float>("pixel_size_x");
-    float pixel_size_y = parser.get<float>("pixel_size_y");
+    detector_geometry detector_geometry = detector_geometry(parser.get<nlohmann::json>("detector"));
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
     if (num_cpu_threads < 1) {
@@ -694,11 +732,8 @@ int main(int argc, char **argv) {
                     box.num_pixels += 1;
                 }
 
-                // Filter shoeboxes based on minimum spot size and resolution
-                float distance_4A =
-                  detector_distance * tan(2 * asin(wavelength / (2 * 4.0)));
-                size_t num_within_4A = 0;
-                size_t num_within_dmin_dmax = 0;
+                // Filter shoeboxes based on minimum spot size and resolutions
+                size_t n_filtered_spots = 0;
 
                 if (min_spot_size > 0 || dmin > 0 || dmax > 0) {
                     std::vector<Reflection> filtered_boxes;
@@ -708,31 +743,27 @@ int main(int argc, char **argv) {
                             float distance_from_center =
                               get_distance_from_centre(box.center_x(),
                                                        box.center_y(),
-                                                       center_x,
-                                                       center_y,
-                                                       pixel_size_x,
-                                                       pixel_size_y);
+                                                       detector_geometry.center_x,
+                                                       detector_geometry.center_y,
+                                                       detector_geometry.pixel_size_x,
+                                                       detector_geometry.pixel_size_y);
 
                             // Calculate the resolution
-                            float resolution = get_resolution(wavelength,
-                                                              detector_distance,
-                                                              distance_from_center);
+                            float resolution = get_resolution(
+                              wavelength, detector_geometry.detector_distance, distance_from_center);
 
                             // Filter based on resolution and count reflections
-                            bool within_resolution_range =
-                              (dmin < 0 || resolution >= dmin)
-                              && (dmax < 0 || resolution <= dmax);
-                            bool within_4A_distance =
-                              distance_from_center <= distance_4A;
-
-                            if (within_resolution_range) {
-                                filtered_boxes.emplace_back(box);
-                                num_within_dmin_dmax++;
+                            if (dmin > 0 && resolution < dmin) {
+                                continue;
                             }
-
-                            if (within_4A_distance) {
-                                num_within_4A++;
+                            if (dmax > 0 && resolution > dmax) {
+                                continue;
                             }
+                            if (resolution < 4) { // Filter out reflections with resolution < 4 Å
+                                continue;
+                            }
+                            filtered_boxes.emplace_back(box);
+                            n_filtered_spots++;
                         }
                     }
                     boxes = std::move(filtered_boxes);
@@ -799,9 +830,8 @@ int main(int argc, char **argv) {
                       {"num_strong_pixels", num_strong_pixels},
                       {"file", args.file},
                       {"file-number", image_num},
-                      {"n_spots_total", boxes.size()},
-                      {"num_within_4A", num_within_4A},
-                      {"num_within_dmin_dmax", num_within_dmin_dmax}};
+                      {"n_spots_total", n_filtered_spots}};
+                    // {"n_spots_total", boxes.size()}};
                     // Send the JSON data through the pipe
                     pipeHandler->sendData(json_data);
                 }
