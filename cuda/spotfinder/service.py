@@ -35,6 +35,7 @@ class PiaRequest(BaseModel):
     yBeam: float
     detector_distance: float
 
+
 class DetectorGeometry(BaseModel):
     pixel_size_x: float
     pixel_size_y: float
@@ -44,6 +45,7 @@ class DetectorGeometry(BaseModel):
 
     def to_json(self):
         return json.dumps(self.dict(), indent=4)
+
 
 def _setup_rich_logging(level=logging.DEBUG):
     """Setup a rich-based logging output. Using for debug running."""
@@ -259,7 +261,7 @@ class GPUPerImageAnalysis(CommonService):
             "--wavelength",
             str(parameters.wavelength),
             "--detector",
-            detector_geometry.to_json()
+            detector_geometry.to_json(),
         ]
         self.log.info(f"Running: {' '.join(str(x) for x in command)}")
 

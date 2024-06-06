@@ -423,7 +423,7 @@ int main(int argc, char **argv) {
       .help("Detector geometry JSON")
       .metavar("JSON")
 
-    auto args = parser.parse_args(argc, argv);
+        auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
     bool do_writeout = parser.get<bool>("writeout");
     int pipe_fd = parser.get<int>("pipe_fd");
@@ -432,7 +432,8 @@ int main(int argc, char **argv) {
     float dmin = parser.get<float>("dmin");
     float dmax = parser.get<float>("dmax");
     float wavelength = parser.get<float>("wavelength");
-    detector_geometry detector_geometry = detector_geometry(parser.get<nlohmann::json>("detector"));
+    detector_geometry detector_geometry =
+      detector_geometry(parser.get<nlohmann::json>("detector"));
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
     if (num_cpu_threads < 1) {
@@ -735,7 +736,7 @@ int main(int argc, char **argv) {
                 // Filter shoeboxes based on minimum spot size and resolutions
                 size_t n_filtered_spots = 0;
 
-                if (min_spot_size > 0 || dmin > 0 || dmax > 0) {
+                if (min_spot_size > 0) {
                     std::vector<Reflection> filtered_boxes;
                     for (auto &box : boxes) {
                         if (box.num_pixels >= min_spot_size) {
@@ -749,17 +750,23 @@ int main(int argc, char **argv) {
                                                        detector_geometry.pixel_size_y);
 
                             // Calculate the resolution
-                            float resolution = get_resolution(
-                              wavelength, detector_geometry.detector_distance, distance_from_center);
+                            float resolution =
+                              get_resolution(wavelength,
+                                             detector_geometry.detector_distance,
+                                             distance_from_center);
 
                             // Filter based on resolution and count reflections
+
+                            // If dmin is set, filter out reflections with resolution < dmin
                             if (dmin > 0 && resolution < dmin) {
                                 continue;
                             }
+                            // If dmax is set, filter out reflections with resolution > dmax
                             if (dmax > 0 && resolution > dmax) {
                                 continue;
                             }
-                            if (resolution < 4) { // Filter out reflections with resolution < 4 Å
+                            // Implicitly filter out reflections with resolution < 4 Å ⛔🧊
+                            if (resolution < 4) {
                                 continue;
                             }
                             filtered_boxes.emplace_back(box);
