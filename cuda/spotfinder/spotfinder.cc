@@ -54,6 +54,14 @@ auto operator==(const int2 &left, const int2 &right) -> bool {
 struct Reflection {
     int l, t, r, b;
     int num_pixels = 0;
+
+    int center_x() const {
+        return (l + r) / 2;
+    }
+
+    int center_y() const {
+        return (t + b) / 2;
+    }
 };
 
 template <typename T>
@@ -696,14 +704,10 @@ int main(int argc, char **argv) {
                     std::vector<Reflection> filtered_boxes;
                     for (auto &box : boxes) {
                         if (box.num_pixels >= min_spot_size) {
-                            // Calculate the center of the reflection
-                            float center_x_reflection = (box.l + box.r) / 2.0;
-                            float center_y_reflection = (box.t + box.b) / 2.0;
-
                             // Calculate the distance from the beam center
                             float distance_from_center =
-                              get_distance_from_centre(center_x_reflection,
-                                                       center_y_reflection,
+                              get_distance_from_centre(box.center_x(),
+                                                       box.center_y(),
                                                        center_x,
                                                        center_y,
                                                        pixel_size_x,
