@@ -422,7 +422,7 @@ int main(int argc, char **argv) {
       .help("Detector geometry JSON")
       .metavar("JSON")
 
-        auto args = parser.parse_args(argc, argv);
+    auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
     bool do_writeout = parser.get<bool>("writeout");
     int pipe_fd = parser.get<int>("pipe_fd");
