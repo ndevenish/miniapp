@@ -205,9 +205,9 @@ void wait_for_ready_for_read(const std::string &path,
 }
 
 /**
- * @brief Class to store the geometry of the detector.
+ * @brief Struct to store the geometry of the detector.
 */
-class detector_geometry {
+struct detector_geometry {
   public:
     float pixel_size_x;
     float pixel_size_y;
