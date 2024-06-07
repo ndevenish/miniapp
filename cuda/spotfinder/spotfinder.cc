@@ -761,14 +761,15 @@ int main(int argc, char **argv) {
                             if (dmin > 0 && resolution < dmin) {
                                 continue;
                             }
+                            // Implicitly filter out reflections with resolution < 4 Å ⛔🧊
+                            else if (resolution < 4) {
+                                continue;
+                            }
                             // If dmax is set, filter out reflections with resolution > dmax
                             if (dmax > 0 && resolution > dmax) {
                                 continue;
                             }
-                            // Implicitly filter out reflections with resolution < 4 Å ⛔🧊
-                            if (resolution < 4) {
-                                continue;
-                            }
+                            
                             filtered_boxes.emplace_back(box);
                             n_filtered_spots++;
                         }
