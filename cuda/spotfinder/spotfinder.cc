@@ -420,7 +420,7 @@ int main(int argc, char **argv) {
       .scan<'f', float>();
     parser.add_argument("--detector")
       .help("Detector geometry JSON")
-      .metavar("JSON")
+      .metavar("JSON");
 
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
@@ -431,8 +431,9 @@ int main(int argc, char **argv) {
     float dmin = parser.get<float>("dmin");
     float dmax = parser.get<float>("dmax");
     float wavelength = parser.get<float>("wavelength");
-    detector_geometry detector_geometry =
-      detector_geometry(parser.get<nlohmann::json>("detector"));
+    std::string detector_json = parser.get<std::string>("detector");
+    nlohmann::json detector_json_obj = nlohmann::json::parse(detector_json);
+    detector_geometry detector = detector_geometry(detector_json_obj);
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
     if (num_cpu_threads < 1) {
@@ -743,15 +744,15 @@ int main(int argc, char **argv) {
                             float distance_from_center =
                               get_distance_from_centre(box.center_x(),
                                                        box.center_y(),
-                                                       detector_geometry.center_x,
-                                                       detector_geometry.center_y,
-                                                       detector_geometry.pixel_size_x,
-                                                       detector_geometry.pixel_size_y);
+                                                       detector.center_x,
+                                                       detector.center_y,
+                                                       detector.pixel_size_x,
+                                                       detector.pixel_size_y);
 
                             // Calculate the resolution
                             float resolution =
                               get_resolution(wavelength,
-                                             detector_geometry.detector_distance,
+                                             detector.distance,
                                              distance_from_center);
 
                             // Filter based on resolution and count reflections
