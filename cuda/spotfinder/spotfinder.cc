@@ -210,8 +210,8 @@ void wait_for_ready_for_read(const std::string &path,
 struct detector_geometry {
     float pixel_size_x;
     float pixel_size_y;
-    float center_x;
-    float center_y;
+    float beam_center_x;
+    float beam_center_y;
     float distance;
 
     /**
@@ -220,8 +220,8 @@ struct detector_geometry {
      * The JSON object must have the following keys:
      * - pixel_size_x: The pixel size of the detector in the x-direction in mm
      * - pixel_size_y: The pixel size of the detector in the y-direction in mm
-     * - center_x: The x-coordinate of the pixel beam center in the image
-     * - center_y: The y-coordinate of the pixel beam center in the image
+     * - beam_center_x: The x-coordinate of the pixel beam center in the image
+     * - beam_center_y: The y-coordinate of the pixel beam center in the image
      * - distance: The distance from the sample to the detector in mm
     */
     detector_geometry(nlohmann::json geometry_data) {
@@ -237,8 +237,8 @@ struct detector_geometry {
 
         pixel_size_x = geometry_data["pixel_size_x"];
         pixel_size_y = geometry_data["pixel_size_y"];
-        center_x = geometry_data["beam_center_x"];
-        center_y = geometry_data["beam_center_y"];
+        beam_center_x = geometry_data["beam_center_x"];
+        beam_center_y = geometry_data["beam_center_y"];
         distance = geometry_data["distance"];
     }
 };
@@ -721,8 +721,8 @@ int main(int argc, char **argv) {
                             float distance_from_center =
                               get_distance_from_centre(box.center_x(),
                                                        box.center_y(),
-                                                       detector.center_x,
-                                                       detector.center_y,
+                                                       detector.beam_center_x,
+                                                       detector.beam_center_y,
                                                        detector.pixel_size_x,
                                                        detector.pixel_size_y);
 
