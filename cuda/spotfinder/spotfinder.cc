@@ -215,25 +215,6 @@ struct detector_geometry {
     float distance;
 
     /**
-     * @brief Constructor to initialize the detector geometry.
-     * @param pixel_size_x The pixel size of the detector in the x-direction in mm
-     * @param pixel_size_y The pixel size of the detector in the y-direction in mm
-     * @param center_x The x-coordinate of the pixel beam center in the image
-     * @param center_y The y-coordinate of the pixel beam center in the image
-     * @param distance The distance from the sample to the detector in mm
-    */
-    detector_geometry(float pixel_size_x,
-                      float pixel_size_y,
-                      float center_x,
-                      float center_y,
-                      float distance)
-        : pixel_size_x(pixel_size_x),
-          pixel_size_y(pixel_size_y),
-          center_x(center_x),
-          center_y(center_y),
-          distance(distance) {}
-
-    /**
      * @brief Constructor to initialize the detector geometry from a JSON object.
      * @param geometry_data A JSON object containing the detector geometry data.
      * The JSON object must have the following keys:
@@ -245,7 +226,7 @@ struct detector_geometry {
     */
     detector_geometry(nlohmann::json geometry_data) {
         std::vector<std::string> required_keys = {
-          "pixel_size_x", "pixel_size_y", "center_x", "center_y", "distance"};
+          "pixel_size_x", "pixel_size_y", "beam_center_x", "beam_center_y", "distance"};
 
         for (const auto &key : required_keys) {
             if (geometry_data.find(key) == geometry_data.end()) {
@@ -256,8 +237,8 @@ struct detector_geometry {
 
         pixel_size_x = geometry_data["pixel_size_x"];
         pixel_size_y = geometry_data["pixel_size_y"];
-        center_x = geometry_data["center_x"];
-        center_y = geometry_data["center_y"];
+        center_x = geometry_data["beam_center_x"];
+        center_y = geometry_data["beam_center_y"];
         distance = geometry_data["distance"];
     }
 };
