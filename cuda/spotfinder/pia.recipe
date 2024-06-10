@@ -9,7 +9,11 @@
             "dcid": "{ispyb_dcid}",
             "message_index": "{message_index}",
             "startTime": "{ispyb_dc_info[startTime]}",
-            "dcgid": "{ispyb_dc_info[dataCollectionGroupId]}"
+            "dcgid": "{ispyb_dc_info[dataCollectionGroupId]}",
+            "wavelength": "{$REPLACE:ispyb_dc_info[wavelength]}",
+            "xBeam": "{$REPLACE:ispyb_dc_info[xBeam]}",
+            "yBeam": "{$REPLACE:ispyb_dc_info[yBeam]}",
+            "detector_distance": "{$REPLACE:ispyb_dc_info[detectorDistance]}"
         },
         "output": [
             2
@@ -26,11 +30,7 @@
             "output": "{ispyb_results_directory}/xray-centering/Dials5AResults.json",
             "log": "{ispyb_results_directory}/xray-centering/Dials5AResults.txt",
             "results_symlink": "xrc2",
-            "beamline": "{ispyb_beamline}",
-            "wavelength": "{$REPLACE:ispyb_dc_info[wavelength]}",
-            "xBeam": "{$REPLACE:ispyb_dc_info[xBeam]}",
-            "yBeam": "{$REPLACE:ispyb_dc_info[yBeam]}",
-            "detector_distance": "{$REPLACE:ispyb_dc_info[detectorDistance]}"
+            "beamline": "{ispyb_beamline}"
         },
         "output": [
             3
