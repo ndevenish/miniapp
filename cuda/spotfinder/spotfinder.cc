@@ -312,10 +312,8 @@ float get_distance_from_centre(float x,
                                float pixel_size_x,
                                float pixel_size_y) {
     /*
-     * TODO: This function naively assumes that the angle between the
-     * beam and the detector is 90 degrees. This is fine for testing
-     * but should find a way to get the actual experinental geometry
-     * for a more accurate calculation.
+     * Since this calculation is for a broad, general exclusion, we can
+     * use basic Pythagoras to calculate the distance from the center.
     */
     float dx = pixel_size_x * (x - center_x);
     float dy = pixel_size_y * (y - center_y);
