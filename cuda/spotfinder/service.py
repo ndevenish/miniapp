@@ -239,7 +239,7 @@ class GPUPerImageAnalysis(CommonService):
             pixel_size_y=pixel_size_y,
             distance=parameters.detector_distance,
             beam_center_x=parameters.xBeam,
-            beam_center_y=parameters.yBeam
+            beam_center_y=parameters.yBeam,
         )
 
         # Now run the spotfinder

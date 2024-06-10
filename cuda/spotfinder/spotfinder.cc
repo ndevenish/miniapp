@@ -399,9 +399,7 @@ int main(int argc, char **argv) {
       .help("Wavelength of the X-ray beam (Å)")
       .metavar("λ")
       .scan<'f', float>();
-    parser.add_argument("--detector")
-      .help("Detector geometry JSON")
-      .metavar("JSON");
+    parser.add_argument("--detector").help("Detector geometry JSON").metavar("JSON");
 
     auto args = parser.parse_args(argc, argv);
     bool do_validate = parser.get<bool>("validate");
@@ -731,10 +729,8 @@ int main(int argc, char **argv) {
                                                        detector.pixel_size_y);
 
                             // Calculate the resolution
-                            float resolution =
-                              get_resolution(wavelength,
-                                             detector.distance,
-                                             distance_from_center);
+                            float resolution = get_resolution(
+                              wavelength, detector.distance, distance_from_center);
 
                             // Filter based on resolution and count reflections
 
@@ -750,7 +746,7 @@ int main(int argc, char **argv) {
                             if (dmax > 0 && resolution > dmax) {
                                 continue;
                             }
-                            
+
                             filtered_boxes.emplace_back(box);
                             n_filtered_spots++;
                         }
