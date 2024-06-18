@@ -37,8 +37,8 @@ class PiaRequest(BaseModel):
 
 
 class DetectorGeometry(BaseModel):
-    pixel_size_x: float
-    pixel_size_y: float
+    pixel_size_x: float = 0.075 # Default value for Eiger
+    pixel_size_y: float = 0.075 # Default value for Eiger
     distance: float
     beam_center_x: float
     beam_center_y: float
@@ -230,13 +230,8 @@ class GPUPerImageAnalysis(CommonService):
         # Create a pipe for comms
         read_fd, write_fd = os.pipe()
 
-        pixel_size_x = 0.075
-        pixel_size_y = 0.075
-
         # Create a detector geometry object
         detector_geometry = DetectorGeometry(
-            pixel_size_x=pixel_size_x,
-            pixel_size_y=pixel_size_y,
             distance=parameters.detector_distance,
             beam_center_x=parameters.xBeam,
             beam_center_y=parameters.yBeam,
