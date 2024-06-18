@@ -186,6 +186,18 @@ class GPUPerImageAnalysis(CommonService):
             self.log.warning(f"Rejecting PIA request for {dcid}: \n{e}")
             rw.transport.nack(header, requeue=False)
             return
+        try:
+            # Create a detector geometry object
+            detector_geometry = DetectorGeometry(
+                distance=parameters.detector_distance,
+                beam_center_x=parameters.xBeam,
+                beam_center_y=parameters.yBeam,
+            )
+            print()
+            print(detector_geometry.to_json())
+            print()
+        except ValidationError as e:
+            self.log.warning(f"Rejecting PIA request for {parameters.dcgid}/{parameters.message_index}({parameters.dcid}): Invalid detector parameters \n{e}")
 
         start_time = time.monotonic()
         self.log.info(
@@ -229,13 +241,6 @@ class GPUPerImageAnalysis(CommonService):
 
         # Create a pipe for comms
         read_fd, write_fd = os.pipe()
-
-        # Create a detector geometry object
-        detector_geometry = DetectorGeometry(
-            distance=parameters.detector_distance,
-            beam_center_x=parameters.xBeam,
-            beam_center_y=parameters.yBeam,
-        )
 
         # Now run the spotfinder
         command = [
