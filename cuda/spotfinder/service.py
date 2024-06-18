@@ -37,8 +37,8 @@ class PiaRequest(BaseModel):
 
 
 class DetectorGeometry(BaseModel):
-    pixel_size_x: float = 0.075 # Default value for Eiger
-    pixel_size_y: float = 0.075 # Default value for Eiger
+    pixel_size_x: float = 0.075  # Default value for Eiger
+    pixel_size_y: float = 0.075  # Default value for Eiger
     distance: float
     beam_center_x: float
     beam_center_y: float
@@ -197,7 +197,9 @@ class GPUPerImageAnalysis(CommonService):
             print(detector_geometry.to_json())
             print()
         except ValidationError as e:
-            self.log.warning(f"Rejecting PIA request for {parameters.dcgid}/{parameters.message_index}({parameters.dcid}): Invalid detector parameters \n{e}")
+            self.log.warning(
+                f"Rejecting PIA request for {parameters.dcgid}/{parameters.message_index}({parameters.dcid}): Invalid detector parameters \n{e}"
+            )
 
         start_time = time.monotonic()
         self.log.info(
