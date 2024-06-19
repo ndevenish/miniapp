@@ -51,6 +51,120 @@ __device__ float get_resolution(float wavelength, float distance_to_detector, fl
     return wavelength / (2 * sinf(theta));
 }
 
+
+/**
+ * @brief CUDA kernel to generate a resolution mask for an image.
+ *
+ * This kernel calculates the resolution for each pixel in an image based on the
+ * distance from the beam center and the detector properties. It then masks out
+ * pixels whose resolution falls outside the specified range [dmin, dmax], as
+ * well as pixels that are already masked.
+ *
+ * @param mask Pointer to the input mask data indicating valid pixels.
+ * @param resolution_mask Pointer to the output resolution mask data.
+ * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ * @param wavelength The wavelength of the X-ray beam in Ångströms.
+ * @param distance_to_detector The distance from the sample to the detector in mm.
+ * @param beam_center_x The x-coordinate of the beam center in the image.
+ * @param beam_center_y The y-coordinate of the beam center in the image.
+ * @param pixel_size_x The pixel size of the detector in the x-direction in mm.
+ * @param pixel_size_y The pixel size of the detector in the y-direction in mm.
+ * @param dmin The minimum resolution (d-spacing) threshold.
+ * @param dmax The maximum resolution (d-spacing) threshold.
+ */
+__global__ void generate_resolution_mask(uint8_t *mask,
+                                         uint8_t *resolution_mask,
+                                         size_t mask_pitch,
+                                         int width,
+                                         int height,
+                                         float wavelength,
+                                         float distance_to_detector,
+                                         float beam_center_x,
+                                         float beam_center_y,
+                                         float pixel_size_x,
+                                         float pixel_size_y,
+                                         float dmin,
+                                         float dmax) {
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x < width && y < height) return;    // Out of bounds
+
+    if (mask[y * mask_pitch + x] == 0) { // Check if the pixel is masked
+        /*
+        * If the pixel is already masked, we don't need to calculate the
+        * resolution for it, so we can just set the resolution mask to 0
+        */
+        resolution_mask[y * mask_pitch + x] = 0;
+        return;
+    }
+
+    float distance_from_centre = get_distance_from_centre(x, y, beam_center_x, beam_center_y, pixel_size_x, pixel_size_y);
+    float resolution = get_resolution(wavelength, distance_to_detector, distance_from_centre);
+
+    // Check if dmin is set and if the resolution is below it
+    if (dmin > 0 && resolution < dmin) {
+        resolution_mask[y * mask_pitch + x] = 0;
+        return;
+    }
+
+    // Check if dmax is set and if the resolution is above it
+    if (dmax > 0 && resolution > dmax) {
+        resolution_mask[y * mask_pitch + x] = 0;
+        return;
+    }
+
+    // If the pixel is not masked and the resolution is within the limits, set the resolution mask to 1
+    resolution_mask[y * mask_pitch + x] = 1;
+}
+
+/**
+ * @brief Host function to launch the generate_resolution_mask kernel.
+ *
+ * This function sets up the kernel execution parameters and launches the
+ * generate_resolution_mask kernel to generate a resolution mask for an image.
+ *
+ * @param blocks The dimensions of the grid of blocks.
+ * @param threads The dimensions of the grid of threads within each block.
+ * @param shared_memory The size of shared memory required per block (in bytes).
+ * @param stream The CUDA stream to execute the kernel.
+ * @param mask Pointer to the input mask data indicating valid pixels.
+ * @param resolution_mask Pointer to the output resolution mask data.
+ * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ * @param wavelength The wavelength of the X-ray beam in Ångströms.
+ * @param distance_to_detector The distance from the sample to the detector in mm.
+ * @param beam_center_x The x-coordinate of the beam center in the image.
+ * @param beam_center_y The y-coordinate of the beam center in the image.
+ * @param pixel_size_x The pixel size of the detector in the x-direction in mm.
+ * @param pixel_size_y The pixel size of the detector in the y-direction in mm.
+ * @param dmin The minimum resolution (d-spacing) threshold.
+ * @param dmax The maximum resolution (d-spacing) threshold.
+ */
+void call_generate_resolution_mask(dim3 blocks,
+                                   dim3 threads,
+                                   size_t shared_memory,
+                                   cudaStream_t stream,
+                                   uint8_t *mask,
+                                   uint8_t *resolution_mask,
+                                   size_t mask_pitch,
+                                   int width,
+                                   int height,
+                                   float wavelength,
+                                   float distance_to_detector,
+                                   float beam_center_x,
+                                   float beam_center_y,
+                                   float pixel_size_x,
+                                   float pixel_size_y,
+                                   float dmin,
+                                   float dmax) {
+    generate_resolution_mask<<<blocks, threads, shared_memory, stream>>>(
+        mask, resolution_mask, mask_pitch, width, height, wavelength, distance_to_detector, beam_center_x, beam_center_y, pixel_size_x, pixel_size_y, dmin, dmax);
+}
+
 __global__ void do_spotfinding_naive(pixel_t *image,
                                      size_t image_pitch,
                                      uint8_t *mask,
