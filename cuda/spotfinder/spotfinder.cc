@@ -295,53 +295,6 @@ class PipeHandler {
     }
 };
 
-/**
- * @brief Function to calculate the distance of a pixel from the beam center.
- * @param x The x-coordinate of the pixel in the image
- * @param y The y-coordinate of the pixel in the image
- * @param center_x The x-coordinate of the pixel beam center in the image
- * @param center_y The y-coordinate of the pixel beam center in the image
- * @param pixel_size_x The pixel size of the detector in the x-direction in mm
- * @param pixel_size_y The pixel size of the detector in the y-direction in mm
- * @return The calculated distance from the beam center in mm
-*/
-float get_distance_from_centre(float x,
-                               float y,
-                               float center_x,
-                               float center_y,
-                               float pixel_size_x,
-                               float pixel_size_y) {
-    /*
-     * Since this calculation is for a broad, general exclusion, we can
-     * use basic Pythagoras to calculate the distance from the center.
-    */
-    float dx = pixel_size_x * (x - center_x);
-    float dy = pixel_size_y * (y - center_y);
-    float distance_from_center = sqrt(dx * dx + dy * dy);
-    return distance_from_center;
-}
-
-/**
- * @brief Function to calculate the interplanar distance of a reflection.
- * The interplanar distance is calculated using the formula:
- *         d = λ / (2 * sin(θ))
- * @param wavelength The wavelength of the X-ray beam in Å
- * @param distance_to_detector The distance from the sample to the detector in mm
- * @param distance_from_center The distance of the reflection from the beam center in mm
- * @return The calculated d value
-*/
-float get_resolution(float wavelength,
-                     float distance_to_detector,
-                     float distance_from_center) {
-    /*
-     * Since the angle calculated is, in fact, 2θ, we halve to get the
-     * proper value of θ
-    */
-    float theta = 0.5 * tan(distance_from_center / distance_to_detector);
-    float d = wavelength / (2 * sin(theta));
-    return d;
-}
-
 int main(int argc, char **argv) {
     // Parse arguments and get our H5Reader
     auto parser = CUDAArgumentParser();

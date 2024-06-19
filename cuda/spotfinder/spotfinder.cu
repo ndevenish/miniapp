@@ -13,6 +13,44 @@
 
 namespace cg = cooperative_groups;
 
+/**
+ * @brief Function to calculate the distance of a pixel from the beam center.
+ * @param x The x-coordinate of the pixel in the image
+ * @param y The y-coordinate of the pixel in the image
+ * @param center_x The x-coordinate of the pixel beam center in the image
+ * @param center_y The y-coordinate of the pixel beam center in the image
+ * @param pixel_size_x The pixel size of the detector in the x-direction in mm
+ * @param pixel_size_y The pixel size of the detector in the y-direction in mm
+ * @return The calculated distance from the beam center in mm
+*/
+__device__ float get_distance_from_centre(float x, float y, float centre_x, float centre_y, float pixel_size_x, float pixel_size_y) {
+    /*
+     * Since this calculation is for a broad, general exclusion, we can
+     * use basic Pythagoras to calculate the distance from the center.
+    */
+    float dx = (x - centre_x) * pixel_size_x;
+    float dy = (y - centre_y) * pixel_size_y;
+    return sqrtf(dx * dx + dy * dy);
+}
+
+/**
+ * @brief Function to calculate the interplanar distance of a reflection.
+ * The interplanar distance is calculated using the formula:
+ *         d = λ / (2 * sin(ϴ))
+ * @param wavelength The wavelength of the X-ray beam in Å
+ * @param distance_to_detector The distance from the sample to the detector in mm
+ * @param distance_from_center The distance of the reflection from the beam center in mm
+ * @return The calculated d value
+*/
+__device__ float get_resolution(float wavelength, float distance_to_detector, float distance_from_centre) {
+    /*
+     * Since the angle calculated is, in fact, 2ϴ, we halve to get the
+     * proper value of ϴ
+    */
+    float theta = 0.5 * atanf(distance_from_centre / distance_to_detector);
+    return wavelength / (2 * sinf(theta));
+}
+
 __global__ void do_spotfinding_naive(pixel_t *image,
                                      size_t image_pitch,
                                      uint8_t *mask,
