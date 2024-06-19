@@ -23,7 +23,12 @@ namespace cg = cooperative_groups;
  * @param pixel_size_y The pixel size of the detector in the y-direction in mm
  * @return The calculated distance from the beam center in mm
 */
-__device__ float get_distance_from_centre(float x, float y, float centre_x, float centre_y, float pixel_size_x, float pixel_size_y) {
+__device__ float get_distance_from_centre(float x,
+                                          float y,
+                                          float centre_x,
+                                          float centre_y,
+                                          float pixel_size_x,
+                                          float pixel_size_y) {
     /*
      * Since this calculation is for a broad, general exclusion, we can
      * use basic Pythagoras to calculate the distance from the center.
@@ -42,7 +47,9 @@ __device__ float get_distance_from_centre(float x, float y, float centre_x, floa
  * @param distance_from_center The distance of the reflection from the beam center in mm
  * @return The calculated d value
 */
-__device__ float get_resolution(float wavelength, float distance_to_detector, float distance_from_centre) {
+__device__ float get_resolution(float wavelength,
+                                float distance_to_detector,
+                                float distance_from_centre) {
     /*
      * Since the angle calculated is, in fact, 2ϴ, we halve to get the
      * proper value of ϴ
@@ -50,7 +57,6 @@ __device__ float get_resolution(float wavelength, float distance_to_detector, fl
     float theta = 0.5 * atanf(distance_from_centre / distance_to_detector);
     return wavelength / (2 * sinf(theta));
 }
-
 
 /**
  * @brief CUDA kernel to generate a resolution mask for an image.
@@ -90,9 +96,9 @@ __global__ void generate_resolution_mask(uint8_t *mask,
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (x < width && y < height) return;    // Out of bounds
+    if (x < width && y < height) return;  // Out of bounds
 
-    if (mask[y * mask_pitch + x] == 0) { // Check if the pixel is masked
+    if (mask[y * mask_pitch + x] == 0) {  // Check if the pixel is masked
         /*
         * If the pixel is already masked, we don't need to calculate the
         * resolution for it, so we can just set the resolution mask to 0
@@ -101,8 +107,10 @@ __global__ void generate_resolution_mask(uint8_t *mask,
         return;
     }
 
-    float distance_from_centre = get_distance_from_centre(x, y, beam_center_x, beam_center_y, pixel_size_x, pixel_size_y);
-    float resolution = get_resolution(wavelength, distance_to_detector, distance_from_centre);
+    float distance_from_centre = get_distance_from_centre(
+      x, y, beam_center_x, beam_center_y, pixel_size_x, pixel_size_y);
+    float resolution =
+      get_resolution(wavelength, distance_to_detector, distance_from_centre);
 
     // Check if dmin is set and if the resolution is below it
     if (dmin > 0 && resolution < dmin) {
@@ -162,7 +170,19 @@ void call_generate_resolution_mask(dim3 blocks,
                                    float dmin,
                                    float dmax) {
     generate_resolution_mask<<<blocks, threads, shared_memory, stream>>>(
-        mask, resolution_mask, mask_pitch, width, height, wavelength, distance_to_detector, beam_center_x, beam_center_y, pixel_size_x, pixel_size_y, dmin, dmax);
+      mask,
+      resolution_mask,
+      mask_pitch,
+      width,
+      height,
+      wavelength,
+      distance_to_detector,
+      beam_center_x,
+      beam_center_y,
+      pixel_size_x,
+      pixel_size_y,
+      dmin,
+      dmax);
 }
 
 __global__ void do_spotfinding_naive(pixel_t *image,
