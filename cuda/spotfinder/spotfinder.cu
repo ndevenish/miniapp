@@ -11,6 +11,9 @@
 
 #include "spotfinder.h"
 
+#define VALID_PIXEL 1
+#define MASKED_PIXEL 0
+
 namespace cg = cooperative_groups;
 
 /**
@@ -96,12 +99,12 @@ __global__ void apply_resolution_mask(uint8_t *mask,
 
     if (x < width && y < height) return;  // Out of bounds
 
-    if (mask[y * mask_pitch + x] == 0) {  // Check if the pixel is masked
+    if (mask[y * mask_pitch + x] == MASKED_PIXEL) {  // Check if the pixel is masked
         /*
         * If the pixel is already masked, we don't need to calculate the
         * resolution for it, so we can just set the resolution mask to 0
         */
-        mask[y * mask_pitch + x] = 0;
+        // mask[y * mask_pitch + x] = MASKED_PIXEL;
         return;
     }
 
@@ -112,18 +115,18 @@ __global__ void apply_resolution_mask(uint8_t *mask,
 
     // Check if dmin is set and if the resolution is below it
     if (dmin > 0 && resolution < dmin) {
-        mask[y * mask_pitch + x] = 0;
+        mask[y * mask_pitch + x] = MASKED_PIXEL;
         return;
     }
 
     // Check if dmax is set and if the resolution is above it
     if (dmax > 0 && resolution > dmax) {
-        mask[y * mask_pitch + x] = 0;
+        mask[y * mask_pitch + x] = MASKED_PIXEL;
         return;
     }
 
     // If the pixel is not masked and the resolution is within the limits, set the resolution mask to 1
-    mask[y * mask_pitch + x] = 1;
+    mask[y * mask_pitch + x] = VALID_PIXEL;
 }
 
 /**
