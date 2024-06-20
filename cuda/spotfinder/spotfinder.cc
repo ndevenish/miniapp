@@ -143,6 +143,41 @@ auto upload_mask(T &reader) -> PitchedMalloc<uint8_t> {
     };
 }
 
+auto apply_resolution_filtering(PitchedMalloc<uint8_t> &mask,
+                                int width,
+                                int height,
+                                float wavelength,
+                                float distance_to_detector,
+                                float beam_center_x,
+                                float beam_center_y,
+                                float pixel_size_x,
+                                float pixel_size_y,
+                                float dmin,
+                                float dmax) -> PitchedMalloc<uint8_t> {
+    // Define the block size and grid size for the kernel
+    dim3 threadsPerBlock(32, 32);
+    dim3 numBlocks((width + threadsPerBlock.x - 1) / threadsPerBlock.x,
+                   (height + threadsPerBlock.y - 1) / threadsPerBlock.y);
+
+    // Launch the kernel to apply resolution filtering
+    call_apply_resolution_mask(numBlocks,
+                               threadsPerBlock,
+                               0,
+                               0,
+                               mask.get(),
+                               mask.pitch,
+                               width,
+                               height,
+                               wavelength,
+                               distance_to_detector,
+                               beam_center_x,
+                               beam_center_y,
+                               pixel_size_x,
+                               pixel_size_y,
+                               dmin,
+                               dmax);
+}
+
 /// Handle setting up an NppStreamContext from a specific stream
 auto create_npp_context_from_stream(const CudaStream &stream) -> NppStreamContext {
     NppStreamContext npp_context;
@@ -432,6 +467,21 @@ int main(int argc, char **argv) {
 
     auto mask = upload_mask(reader);
 
+    // Apply resolution filtering to the mask
+    if (dmin > 0 || dmax > 0) {
+        apply_resolution_filtering(mask,
+                                   width,
+                                   height,
+                                   wavelength,
+                                   detector.distance,
+                                   detector.beam_center_x,
+                                   detector.beam_center_y,
+                                   detector.pixel_size_x,
+                                   detector.pixel_size_y,
+                                   dmin,
+                                   dmax);
+    }
+
     auto all_images_start_time = std::chrono::high_resolution_clock::now();
 
     auto next_image = std::atomic<int>(0);
@@ -670,36 +720,7 @@ int main(int argc, char **argv) {
                     std::vector<Reflection> filtered_boxes;
                     for (auto &box : boxes) {
                         if (box.num_pixels >= min_spot_size) {
-                            // Calculate the distance from the beam center
-                            float distance_from_center =
-                              get_distance_from_centre(box.center_x(),
-                                                       box.center_y(),
-                                                       detector.beam_center_x,
-                                                       detector.beam_center_y,
-                                                       detector.pixel_size_x,
-                                                       detector.pixel_size_y);
-
-                            // Calculate the resolution
-                            float resolution = get_resolution(
-                              wavelength, detector.distance, distance_from_center);
-
-                            // Filter based on resolution and count reflections
-
-                            // If dmin is set, filter out reflections with resolution < dmin
-                            if (dmin > 0 && resolution < dmin) {
-                                continue;
-                            }
-                            // Implicitly filter out reflections with resolution < 4 Å ⛔🧊
-                            else if (resolution < 4) {
-                                continue;
-                            }
-                            // If dmax is set, filter out reflections with resolution > dmax
-                            if (dmax > 0 && resolution > dmax) {
-                                continue;
-                            }
-
                             filtered_boxes.emplace_back(box);
-                            n_filtered_spots++;
                         }
                     }
                     boxes = std::move(filtered_boxes);
@@ -766,8 +787,7 @@ int main(int argc, char **argv) {
                       {"num_strong_pixels", num_strong_pixels},
                       {"file", args.file},
                       {"file-number", image_num},
-                      {"n_spots_total", n_filtered_spots}};
-                    // {"n_spots_total", boxes.size()}};
+                      {"n_spots_total", boxes.size()}};
                     // Send the JSON data through the pipe
                     pipeHandler->sendData(json_data);
                 }
