@@ -54,14 +54,6 @@ auto operator==(const int2 &left, const int2 &right) -> bool {
 struct Reflection {
     int l, t, r, b;
     int num_pixels = 0;
-
-    int center_x() const {
-        return (l + r) / 2;
-    }
-
-    int center_y() const {
-        return (t + b) / 2;
-    }
 };
 
 template <typename T>
