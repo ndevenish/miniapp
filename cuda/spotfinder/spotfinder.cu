@@ -59,15 +59,14 @@ __device__ float get_resolution(float wavelength,
 }
 
 /**
- * @brief CUDA kernel to generate a resolution mask for an image.
+ * @brief CUDA kernel to apply a resolution mask for an image.
  *
  * This kernel calculates the resolution for each pixel in an image based on the
  * distance from the beam center and the detector properties. It then masks out
  * pixels whose resolution falls outside the specified range [dmin, dmax], as
  * well as pixels that are already masked.
  *
- * @param mask Pointer to the input mask data indicating valid pixels.
- * @param resolution_mask Pointer to the output resolution mask data.
+ * @param mask Pointer to the mask data indicating valid pixels.
  * @param mask_pitch The pitch (width in bytes) of the mask data.
  * @param width The width of the image.
  * @param height The height of the image.
@@ -80,19 +79,18 @@ __device__ float get_resolution(float wavelength,
  * @param dmin The minimum resolution (d-spacing) threshold.
  * @param dmax The maximum resolution (d-spacing) threshold.
  */
-__global__ void generate_resolution_mask(uint8_t *mask,
-                                         uint8_t *resolution_mask,
-                                         size_t mask_pitch,
-                                         int width,
-                                         int height,
-                                         float wavelength,
-                                         float distance_to_detector,
-                                         float beam_center_x,
-                                         float beam_center_y,
-                                         float pixel_size_x,
-                                         float pixel_size_y,
-                                         float dmin,
-                                         float dmax) {
+__global__ void apply_resolution_mask(uint8_t *mask,
+                                      size_t mask_pitch,
+                                      int width,
+                                      int height,
+                                      float wavelength,
+                                      float distance_to_detector,
+                                      float beam_center_x,
+                                      float beam_center_y,
+                                      float pixel_size_x,
+                                      float pixel_size_y,
+                                      float dmin,
+                                      float dmax) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -103,7 +101,7 @@ __global__ void generate_resolution_mask(uint8_t *mask,
         * If the pixel is already masked, we don't need to calculate the
         * resolution for it, so we can just set the resolution mask to 0
         */
-        resolution_mask[y * mask_pitch + x] = 0;
+        mask[y * mask_pitch + x] = 0;
         return;
     }
 
@@ -114,32 +112,31 @@ __global__ void generate_resolution_mask(uint8_t *mask,
 
     // Check if dmin is set and if the resolution is below it
     if (dmin > 0 && resolution < dmin) {
-        resolution_mask[y * mask_pitch + x] = 0;
+        mask[y * mask_pitch + x] = 0;
         return;
     }
 
     // Check if dmax is set and if the resolution is above it
     if (dmax > 0 && resolution > dmax) {
-        resolution_mask[y * mask_pitch + x] = 0;
+        mask[y * mask_pitch + x] = 0;
         return;
     }
 
     // If the pixel is not masked and the resolution is within the limits, set the resolution mask to 1
-    resolution_mask[y * mask_pitch + x] = 1;
+    mask[y * mask_pitch + x] = 1;
 }
 
 /**
- * @brief Host function to launch the generate_resolution_mask kernel.
+ * @brief Host function to launch the apply_resolution_mask kernel.
  *
  * This function sets up the kernel execution parameters and launches the
- * generate_resolution_mask kernel to generate a resolution mask for an image.
+ * apply_resolution_mask kernel to generate a resolution mask for an image.
  *
  * @param blocks The dimensions of the grid of blocks.
  * @param threads The dimensions of the grid of threads within each block.
  * @param shared_memory The size of shared memory required per block (in bytes).
  * @param stream The CUDA stream to execute the kernel.
  * @param mask Pointer to the input mask data indicating valid pixels.
- * @param resolution_mask Pointer to the output resolution mask data.
  * @param mask_pitch The pitch (width in bytes) of the mask data.
  * @param width The width of the image.
  * @param height The height of the image.
@@ -152,24 +149,23 @@ __global__ void generate_resolution_mask(uint8_t *mask,
  * @param dmin The minimum resolution (d-spacing) threshold.
  * @param dmax The maximum resolution (d-spacing) threshold.
  */
-void call_generate_resolution_mask(dim3 blocks,
-                                   dim3 threads,
-                                   size_t shared_memory,
-                                   cudaStream_t stream,
-                                   uint8_t *mask,
-                                   uint8_t *resolution_mask,
-                                   size_t mask_pitch,
-                                   int width,
-                                   int height,
-                                   float wavelength,
-                                   float distance_to_detector,
-                                   float beam_center_x,
-                                   float beam_center_y,
-                                   float pixel_size_x,
-                                   float pixel_size_y,
-                                   float dmin,
-                                   float dmax) {
-    generate_resolution_mask<<<blocks, threads, shared_memory, stream>>>(
+void call_apply_resolution_mask(dim3 blocks,
+                                dim3 threads,
+                                size_t shared_memory,
+                                cudaStream_t stream,
+                                uint8_t *mask,
+                                size_t mask_pitch,
+                                int width,
+                                int height,
+                                float wavelength,
+                                float distance_to_detector,
+                                float beam_center_x,
+                                float beam_center_y,
+                                float pixel_size_x,
+                                float pixel_size_y,
+                                float dmin,
+                                float dmax) {
+    apply_resolution_mask<<<blocks, threads, shared_memory, stream>>>(
       mask,
       resolution_mask,
       mask_pitch,
