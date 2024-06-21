@@ -16,6 +16,9 @@
 
 namespace cg = cooperative_groups;
 
+// Constant memory for parameters
+__constant__ ResolutionMaskParams params;
+
 /**
  * @brief Function to calculate the distance of a pixel from the beam center.
  * @param x The x-coordinate of the pixel in the image
@@ -139,7 +142,7 @@ __global__ void apply_resolution_mask(uint8_t *mask,
  * @param threads The dimensions of the grid of threads within each block.
  * @param shared_memory The size of shared memory required per block (in bytes).
  * @param stream The CUDA stream to execute the kernel.
- * @param mask Pointer to the input mask data indicating valid pixels.
+ * @param mask Device pointer to the mask data indicating valid pixels.
  * @param mask_pitch The pitch (width in bytes) of the mask data.
  * @param width The width of the image.
  * @param height The height of the image.
@@ -157,31 +160,30 @@ void call_apply_resolution_mask(dim3 blocks,
                                 size_t shared_memory,
                                 cudaStream_t stream,
                                 uint8_t *mask,
-                                size_t mask_pitch,
-                                int width,
-                                int height,
-                                float wavelength,
-                                float distance_to_detector,
-                                float beam_center_x,
-                                float beam_center_y,
-                                float pixel_size_x,
-                                float pixel_size_y,
-                                float dmin,
-                                float dmax) {
+                                ResolutionMaskParams params) {
+    // Copy the parameters to constant memory
+    cudaMemcpyToSymbol(::params,
+                       &params,
+                       sizeof(ResolutionMaskParams),
+                       0,
+                       cudaMemcpyHostToDevice,
+                       stream);
+    cudaStreamSynchronize(stream);
+
     apply_resolution_mask<<<blocks, threads, shared_memory, stream>>>(
       mask,
-      resolution_mask,
-      mask_pitch,
-      width,
-      height,
-      wavelength,
-      distance_to_detector,
-      beam_center_x,
-      beam_center_y,
-      pixel_size_x,
-      pixel_size_y,
-      dmin,
-      dmax);
+      params.mask_pitch,
+      params.width,
+      params.height,
+      params.wavelength,
+      params.detector.distance_to_detector,
+      params.detector.beam_center_x,
+      params.detector.beam_center_y,
+      params.detector.pixel_size_x,
+      params.detector.pixel_size_y,
+      params.dmin,
+      params.dmax);
+    );
 }
 
 __global__ void do_spotfinding_naive(pixel_t *image,
