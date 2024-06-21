@@ -135,39 +135,29 @@ auto upload_mask(T &reader) -> PitchedMalloc<uint8_t> {
     };
 }
 
-auto apply_resolution_filtering(PitchedMalloc<uint8_t> &mask,
+void apply_resolution_filtering(PitchedMalloc<uint8_t> mask,
                                 int width,
                                 int height,
                                 float wavelength,
-                                float distance_to_detector,
-                                float beam_center_x,
-                                float beam_center_y,
-                                float pixel_size_x,
-                                float pixel_size_y,
+                                detector_geometry detector,
                                 float dmin,
-                                float dmax) -> PitchedMalloc<uint8_t> {
+                                float dmax) {
     // Define the block size and grid size for the kernel
     dim3 threadsPerBlock(32, 32);
     dim3 numBlocks((width + threadsPerBlock.x - 1) / threadsPerBlock.x,
                    (height + threadsPerBlock.y - 1) / threadsPerBlock.y);
 
+    // Set the parameters for the resolution mask kernel
+    ResolutionMaskParams params{.mask_pitch = mask.pitch,
+                                .width = width,
+                                .height = height,
+                                .wavelength = wavelength,
+                                .detector = detector,
+                                .dmin = dmin,
+                                .dmax = dmax};
+
     // Launch the kernel to apply resolution filtering
-    call_apply_resolution_mask(numBlocks,
-                               threadsPerBlock,
-                               0,
-                               0,
-                               mask.get(),
-                               mask.pitch,
-                               width,
-                               height,
-                               wavelength,
-                               distance_to_detector,
-                               beam_center_x,
-                               beam_center_y,
-                               pixel_size_x,
-                               pixel_size_y,
-                               dmin,
-                               dmax);
+    call_apply_resolution_mask(numBlocks, threadsPerBlock, 0, 0, mask.get(), params);
 }
 
 /// Handle setting up an NppStreamContext from a specific stream
@@ -230,45 +220,6 @@ void wait_for_ready_for_read(const std::string &path,
         print("\n");
     }
 }
-
-/**
- * @brief Struct to store the geometry of the detector.
-*/
-struct detector_geometry {
-    float pixel_size_x;
-    float pixel_size_y;
-    float beam_center_x;
-    float beam_center_y;
-    float distance;
-
-    /**
-     * @brief Constructor to initialize the detector geometry from a JSON object.
-     * @param geometry_data A JSON object containing the detector geometry data.
-     * The JSON object must have the following keys:
-     * - pixel_size_x: The pixel size of the detector in the x-direction in mm
-     * - pixel_size_y: The pixel size of the detector in the y-direction in mm
-     * - beam_center_x: The x-coordinate of the pixel beam center in the image
-     * - beam_center_y: The y-coordinate of the pixel beam center in the image
-     * - distance: The distance from the sample to the detector in mm
-    */
-    detector_geometry(nlohmann::json geometry_data) {
-        std::vector<std::string> required_keys = {
-          "pixel_size_x", "pixel_size_y", "beam_center_x", "beam_center_y", "distance"};
-
-        for (const auto &key : required_keys) {
-            if (geometry_data.find(key) == geometry_data.end()) {
-                throw std::invalid_argument("Key " + key
-                                            + " is missing from the input JSON");
-            }
-        }
-
-        pixel_size_x = geometry_data["pixel_size_x"];
-        pixel_size_y = geometry_data["pixel_size_y"];
-        beam_center_x = geometry_data["beam_center_x"];
-        beam_center_y = geometry_data["beam_center_y"];
-        distance = geometry_data["distance"];
-    }
-};
 
 /**
  * @brief Class for handling a pipe and sending data through it in a thread-safe manner.
@@ -459,19 +410,10 @@ int main(int argc, char **argv) {
 
     auto mask = upload_mask(reader);
 
-    // Apply resolution filtering to the mask
+    // If set, apply resolution filtering
     if (dmin > 0 || dmax > 0) {
-        apply_resolution_filtering(mask,
-                                   width,
-                                   height,
-                                   wavelength,
-                                   detector.distance,
-                                   detector.beam_center_x,
-                                   detector.beam_center_y,
-                                   detector.pixel_size_x,
-                                   detector.pixel_size_y,
-                                   dmin,
-                                   dmax);
+        apply_resolution_filtering(
+          mask, width, height, wavelength, detector, dmin, dmax);
     }
 
     auto all_images_start_time = std::chrono::high_resolution_clock::now();
