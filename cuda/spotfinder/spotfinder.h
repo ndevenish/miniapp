@@ -88,19 +88,6 @@ struct ResolutionMaskParams {
     detector_geometry detector;
     float dmin;
     float dmax;
-
-    /**
-     * @brief Default constructor for ResolutionMaskParams.
-     * Initializes the members with zeroed values.
-     */
-    ResolutionMaskParams()
-        : mask_pitch(0),
-          width(0),
-          height(0),
-          wavelength(0.0f),
-          detector(),
-          dmin(-1.f),
-          dmax(-1.f) {}
 };
 
 void call_apply_resolution_mask(dim3 blocks,
