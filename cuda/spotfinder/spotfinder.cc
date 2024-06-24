@@ -424,6 +424,7 @@ int main(int argc, char **argv) {
                          height,
                          cudaMemcpyDeviceToHost);
 
+            // Convert the mask to a binary image
             for (auto &pixel : mask_buffer) {
                 pixel = pixel ? 255 : 0;
             }
