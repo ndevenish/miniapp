@@ -2,6 +2,7 @@
 #define SPOTFINDER_H
 
 #include <builtin_types.h>
+#include <nlohmann/json.hpp>
 
 #include "h5read.h"
 
