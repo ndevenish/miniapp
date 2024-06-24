@@ -716,11 +716,10 @@ int main(int argc, char **argv) {
                 // Check if pipeHandler was initialized
                 if (pipeHandler != nullptr) {
                     // Create a JSON object to store the data
-                    json json_data = {
-                      {"num_strong_pixels", num_strong_pixels},
-                      {"file", args.file},
-                      {"file-number", image_num},
-                      {"n_spots_total", boxes.size()}};
+                    json json_data = {{"num_strong_pixels", num_strong_pixels},
+                                      {"file", args.file},
+                                      {"file-number", image_num},
+                                      {"n_spots_total", boxes.size()}};
                     // Send the JSON data through the pipe
                     pipeHandler->sendData(json_data);
                 }
