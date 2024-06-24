@@ -413,6 +413,27 @@ int main(int argc, char **argv) {
     if (dmin > 0 || dmax > 0) {
         apply_resolution_filtering(
           mask, width, height, wavelength, detector, dmin, dmax);
+        if (do_writeout) {
+            // Write out the mask for debugging
+            auto mask_buffer = std::vector<uint8_t>(width * height, 0);
+            cudaMemcpy2D(mask_buffer.data(),
+                         width,
+                         mask.get(),
+                         mask.pitch_bytes(),
+                         width,
+                         height,
+                         cudaMemcpyDeviceToHost);
+
+            for (auto &pixel : mask_buffer) {
+                pixel = pixel ? 255 : 0;
+            }
+
+            lodepng::encode("mask.png",
+                            reinterpret_cast<uint8_t *>(mask_buffer.data()),
+                            width,
+                            height,
+                            LCT_GREY);
+        }
     }
 
     auto all_images_start_time = std::chrono::high_resolution_clock::now();
