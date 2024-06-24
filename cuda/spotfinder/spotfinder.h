@@ -2,6 +2,7 @@
 #define SPOTFINDER_H
 
 #include <builtin_types.h>
+
 #include <nlohmann/json.hpp>
 
 #include "h5read.h"
@@ -16,6 +17,11 @@ constexpr int KERNEL_HEIGHT = 3;
 
 /**
  * @brief Struct to store the geometry of the detector.
+ * @param pixel_size_x The pixel size of the detector in the x-direction in mm.
+ * @param pixel_size_y The pixel size of the detector in the y-direction in mm.
+ * @param beam_center_x The x-coordinate of the beam center in the image.
+ * @param beam_center_y The y-coordinate of the beam center in the image.
+ * @param distanc The distance from the sample to the detector in mm.
 */
 struct detector_geometry {
     float pixel_size_x;
@@ -23,6 +29,17 @@ struct detector_geometry {
     float beam_center_x;
     float beam_center_y;
     float distance;
+
+    /**
+     * @brief Default constructor for detector_geometry.
+     * Initializes the members with zeroed values.
+     */
+    detector_geometry()
+        : pixel_size_x(0.0f),
+          pixel_size_y(0.0f),
+          beam_center_x(0.0f),
+          beam_center_y(0.0f),
+          distance(0.0f) {}
 
     /**
      * @brief Constructor to initialize the detector geometry from a JSON object.
@@ -55,6 +72,13 @@ struct detector_geometry {
 
 /**
  * @brief Struct to store parameters for calculating the resolution filtered mask
+ * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ * @param wavelength The wavelength of the X-ray beam in Ångströms.
+ * @param detector The geometry of the detector.
+ * @param dmin The minimum resolution (d-spacing) threshold.
+ * @param dmax The maximum resolution (d-spacing) threshold.
 */
 struct ResolutionMaskParams {
     size_t mask_pitch;
@@ -64,6 +88,19 @@ struct ResolutionMaskParams {
     detector_geometry detector;
     float dmin;
     float dmax;
+
+    /**
+     * @brief Default constructor for ResolutionMaskParams.
+     * Initializes the members with zeroed values.
+     */
+    ResolutionMaskParams()
+        : mask_pitch(0),
+          width(0),
+          height(0),
+          wavelength(0.0f),
+          detector(),
+          dmin(-1.f),
+          dmax(-1.f) {}
 };
 
 void call_apply_resolution_mask(dim3 blocks,
@@ -71,17 +108,7 @@ void call_apply_resolution_mask(dim3 blocks,
                                 size_t shared_memory,
                                 cudaStream_t stream,
                                 uint8_t *mask,
-                                size_t mask_pitch,
-                                int width,
-                                int height,
-                                float wavelength,
-                                float distance_to_detector,
-                                float beam_center_x,
-                                float beam_center_y,
-                                float pixel_size_x,
-                                float pixel_size_y,
-                                float dmin,
-                                float dmax);
+                                ResolutionMaskParams params);
 
 void call_do_spotfinding_naive(dim3 blocks,
                                dim3 threads,

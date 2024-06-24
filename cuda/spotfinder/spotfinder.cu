@@ -143,17 +143,7 @@ __global__ void apply_resolution_mask(uint8_t *mask,
  * @param shared_memory The size of shared memory required per block (in bytes).
  * @param stream The CUDA stream to execute the kernel.
  * @param mask Device pointer to the mask data indicating valid pixels.
- * @param mask_pitch The pitch (width in bytes) of the mask data.
- * @param width The width of the image.
- * @param height The height of the image.
- * @param wavelength The wavelength of the X-ray beam in Ångströms.
- * @param distance_to_detector The distance from the sample to the detector in mm.
- * @param beam_center_x The x-coordinate of the beam center in the image.
- * @param beam_center_y The y-coordinate of the beam center in the image.
- * @param pixel_size_x The pixel size of the detector in the x-direction in mm.
- * @param pixel_size_y The pixel size of the detector in the y-direction in mm.
- * @param dmin The minimum resolution (d-spacing) threshold.
- * @param dmax The maximum resolution (d-spacing) threshold.
+ * @param params The parameters required to calculate the resolution mask.  
  */
 void call_apply_resolution_mask(dim3 blocks,
                                 dim3 threads,
@@ -176,7 +166,7 @@ void call_apply_resolution_mask(dim3 blocks,
       params.width,
       params.height,
       params.wavelength,
-      params.detector.distance_to_detector,
+      params.detector.distance,
       params.detector.beam_center_x,
       params.detector.beam_center_y,
       params.detector.pixel_size_x,
