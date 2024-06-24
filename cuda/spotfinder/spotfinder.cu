@@ -97,7 +97,7 @@ __global__ void apply_resolution_mask(uint8_t *mask,
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (x < width && y < height) return;  // Out of bounds
+    if (x > width || y > height) return;  // Out of bounds
 
     if (mask[y * mask_pitch + x] == MASKED_PIXEL) {  // Check if the pixel is masked
         /*
