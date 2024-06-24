@@ -17,7 +17,6 @@
 #include <csignal>
 #include <iostream>
 #include <memory>
-#include <nlohmann/json.hpp>
 #include <ranges>
 #include <stop_token>
 #include <thread>
@@ -250,7 +249,7 @@ class PipeHandler {
      * @brief Sends data through the pipe in a thread-safe manner.
      * @param json_data A json object containing the data to be sent.
      */
-    void sendData(const nlohmann::json &json_data) {
+    void sendData(const json &json_data) {
         // Lock the mutex, to ensure that only one thread writes to the pipe at a time
         // This unlocks the mutex when the function returns
         std::lock_guard<std::mutex> lock(mtx);
@@ -340,7 +339,7 @@ int main(int argc, char **argv) {
     float dmax = parser.get<float>("dmax");
     float wavelength = parser.get<float>("wavelength");
     std::string detector_json = parser.get<std::string>("detector");
-    nlohmann::json detector_json_obj = nlohmann::json::parse(detector_json);
+    json detector_json_obj = json::parse(detector_json);
     detector_geometry detector = detector_geometry(detector_json_obj);
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
@@ -717,7 +716,7 @@ int main(int argc, char **argv) {
                 // Check if pipeHandler was initialized
                 if (pipeHandler != nullptr) {
                     // Create a JSON object to store the data
-                    nlohmann::json json_data = {
+                    json json_data = {
                       {"num_strong_pixels", num_strong_pixels},
                       {"file", args.file},
                       {"file-number", image_num},
