@@ -678,6 +678,16 @@ int main(int argc, char **argv) {
                         }
                     }
                     boxes = std::move(filtered_boxes);
+
+                    // Print out shoebox details for debugging
+                    // for (auto &box : boxes) {
+                    //     // Print the shoebox details
+                    //     print("Shoebox: ({:3d}, {:3d}) - ({:3d}, {:3d})\n",
+                    //           box.l,
+                    //           box.t,
+                    //           box.r,
+                    //           box.b);
+                    // }
                 }
                 // // Do the connected component calculations
                 // NPP_CHECK(nppiLabelMarkersUF_8u32u_C1R_Ctx(device_results.get(),
