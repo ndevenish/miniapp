@@ -148,11 +148,11 @@ void call_apply_resolution_mask(dim3 blocks,
                                 cudaStream_t stream,
                                 uint8_t *mask,
                                 ResolutionMaskParams params) {
-
     // Copy the parameters to device memory
     ResolutionMaskParams *d_params;
     cudaMalloc(&d_params, sizeof(ResolutionMaskParams));
-    cudaMemcpyAsync(d_params, &params, sizeof(ResolutionMaskParams), cudaMemcpyHostToDevice, stream);
+    cudaMemcpyAsync(
+      d_params, &params, sizeof(ResolutionMaskParams), cudaMemcpyHostToDevice, stream);
     cudaStreamSynchronize(stream);
 
     // Launch the kernel
