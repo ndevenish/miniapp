@@ -66,8 +66,9 @@ __device__ float get_resolution(float wavelength,
  *
  * This kernel calculates the resolution for each pixel in an image based on the
  * distance from the beam center and the detector properties. It then masks out
- * pixels whose resolution falls outside the specified range [dmin, dmax], as
- * well as pixels that are already masked.
+ * pixels whose resolution falls outside the specified range [dmin, dmax],
+ * provided that the pixel is not already masked, by setting the mask value of
+ * the pixel to 0 in the mask data.
  *
  * @param mask Pointer to the mask data indicating valid pixels.
  * @param mask_pitch The pitch (width in bytes) of the mask data.
@@ -133,7 +134,8 @@ __global__ void apply_resolution_mask(uint8_t *mask,
  * @brief Host function to launch the apply_resolution_mask kernel.
  *
  * This function sets up the kernel execution parameters and launches the
- * apply_resolution_mask kernel to generate a resolution mask for an image.
+ * apply_resolution_mask kernel to generate and apply a resolution mask
+ * onto the base mask for the detector.
  *
  * @param blocks The dimensions of the grid of blocks.
  * @param threads The dimensions of the grid of threads within each block.
