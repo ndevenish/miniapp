@@ -127,6 +127,7 @@ __global__ void apply_resolution_mask(uint8_t *mask,
 
     // If the pixel is not masked and the resolution is within the limits, set the resolution mask to 1
     mask[y * mask_pitch + x] = VALID_PIXEL;
+    // ⛔🧊
 }
 
 /**
