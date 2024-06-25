@@ -102,9 +102,8 @@ __global__ void apply_resolution_mask(uint8_t *mask,
     if (mask[y * mask_pitch + x] == MASKED_PIXEL) {  // Check if the pixel is masked
         /*
         * If the pixel is already masked, we don't need to calculate the
-        * resolution for it, so we can just set the resolution mask to 0
+        * resolution for it, so we can just leave it masked
         */
-        // mask[y * mask_pitch + x] = MASKED_PIXEL;
         return;
     }
 

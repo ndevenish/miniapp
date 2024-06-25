@@ -413,9 +413,12 @@ int main(int argc, char **argv) {
     if (dmin > 0 || dmax > 0) {
         apply_resolution_filtering(
           mask, width, height, wavelength, detector, dmin, dmax);
+
+        // Create a mask image for debugging
         if (do_writeout) {
-            // Write out the mask for debugging
             auto mask_buffer = std::vector<uint8_t>(width * height, 0);
+
+            // Copy the mask back from the GPU
             cudaMemcpy2D(mask_buffer.data(),
                          width,
                          mask.get(),
@@ -426,6 +429,11 @@ int main(int argc, char **argv) {
 
             // Convert the mask to a binary image
             for (auto &pixel : mask_buffer) {
+                /*
+               * Since the mask is a binary image, 1 for valid, 0 for invalid,
+               * we can use a simple ternary operator to convert the mask to a
+               * binary - black and white - image.
+              */
                 pixel = pixel ? 255 : 0;
             }
 
@@ -667,9 +675,6 @@ int main(int argc, char **argv) {
                     box.b = std::max(box.b, coord.y);
                     box.num_pixels += 1;
                 }
-
-                // Filter shoeboxes based on minimum spot size and resolutions
-                size_t n_filtered_spots = 0;
 
                 if (min_spot_size > 0) {
                     std::vector<Reflection> filtered_boxes;
