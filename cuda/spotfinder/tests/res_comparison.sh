@@ -22,6 +22,7 @@ exec 3> output_file.txt
   --wavelength 0.976261 \
   --detector "$(cat detector.json)" \
   --threads 1 \
+  --images 1
 
 # Close file descriptor 3
 exec 3>&-
