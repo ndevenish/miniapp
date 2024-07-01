@@ -261,10 +261,10 @@ __global__ void do_spotfinding_dispersion(pixel_t *image,
  * @param radius The radius around each masked pixel to also be masked.
  */
 __global__ void erosion_kernel(uint8_t *mask,
-                                        size_t mask_pitch,
-                                        int width,
-                                        int height,
-                                        int radius) {
+                               size_t mask_pitch,
+                               int width,
+                               int height,
+                               int radius) {
     // Declare shared memory to store a local copy of the mask for the block
     extern __shared__ uint8_t shared_mask[];
 
@@ -342,13 +342,19 @@ __global__ void erosion_kernel(uint8_t *mask,
  * @param width The width of the image.
  * @param height The height of the image.
  */
-__global__ void combine_masks(const uint8_t* original_mask, const uint8_t* eroded_mask, uint8_t* combined_mask, size_t mask_pitch, int width, int height) {
+__global__ void combine_masks(const uint8_t *original_mask,
+                              const uint8_t *eroded_mask,
+                              uint8_t *combined_mask,
+                              size_t mask_pitch,
+                              int width,
+                              int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (x >= width || y >= height) return;
 
-    combined_mask[y * mask_pitch + x] = original_mask[y * mask_pitch + x] | eroded_mask[y * mask_pitch + x];
+    combined_mask[y * mask_pitch + x] =
+      original_mask[y * mask_pitch + x] | eroded_mask[y * mask_pitch + x];
 }
 
 void call_do_spotfinding_naive(dim3 blocks,
@@ -426,23 +432,23 @@ void call_do_spotfinding_extended(dim3 blocks,
       d_result_strong_buffer);
     cudaStreamSynchronize(stream);
 
-    {   // Erode the results
+    {  // Erode the results
         dim3 threads_per_erosion_block(32, 32);
         dim3 erosion_blocks(
-        (width + threads_per_erosion_block.x - 1) / threads_per_erosion_block.x,
-        (height + threads_per_erosion_block.y - 1) / threads_per_erosion_block.y);
+          (width + threads_per_erosion_block.x - 1) / threads_per_erosion_block.x,
+          (height + threads_per_erosion_block.y - 1) / threads_per_erosion_block.y);
 
         // Calculate the shared memory size for the erosion kernel
-        size_t erosion_shared_memory = (threads_per_erosion_block.x + 2 * kernel_radius)
-                                    * (threads_per_erosion_block.y + 2 * kernel_radius)
-                                    * sizeof(uint8_t);
+        size_t erosion_shared_memory =
+          (threads_per_erosion_block.x + 2 * kernel_radius)
+          * (threads_per_erosion_block.y + 2 * kernel_radius) * sizeof(uint8_t);
 
         // Perform erosion
         erosion_kernel<<<erosion_blocks,
-                                threads_per_erosion_block,
-                                erosion_shared_memory,
-                                stream>>>(
-        d_result_strong_buffer, image_pitch, width, height, kernel_radius);
+                         threads_per_erosion_block,
+                         erosion_shared_memory,
+                         stream>>>(
+          d_result_strong_buffer, image_pitch, width, height, kernel_radius);
         cudaStreamSynchronize(stream);
     }
 
@@ -450,16 +456,14 @@ void call_do_spotfinding_extended(dim3 blocks,
     uint8_t *d_combined_mask;
     cudaMallocPitch(&d_combined_mask, &mask_pitch, width, height);
 
-    {   // Combine mask with positive eroded signals
+    {  // Combine mask with positive eroded signals
         dim3 threads_per_combine_block(32, 32);
         dim3 combine_blocks(
-        (width + threads_per_combine_block.x - 1) / threads_per_combine_block.x,
-        (height + threads_per_combine_block.y - 1) / threads_per_combine_block.y);
+          (width + threads_per_combine_block.x - 1) / threads_per_combine_block.x,
+          (height + threads_per_combine_block.y - 1) / threads_per_combine_block.y);
 
-        combine_masks<<<combine_blocks,
-                        threads_per_combine_block,
-                        0,
-                        stream>>>(mask, d_result_strong_buffer, d_combined_mask, mask_pitch, width, height);
+        combine_masks<<<combine_blocks, threads_per_combine_block, 0, stream>>>(
+          mask, d_result_strong_buffer, d_combined_mask, mask_pitch, width, height);
         cudaStreamSynchronize(stream);
     }
     cudaFree(d_result_strong_buffer);
