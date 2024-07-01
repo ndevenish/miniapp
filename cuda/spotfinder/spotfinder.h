@@ -90,6 +90,8 @@ struct ResolutionMaskParams {
     float dmax;
 };
 
+enum class DispersionAlgorithm { DISPERSION, EXTENDED_DISPERSION };
+
 void call_apply_resolution_mask(dim3 blocks,
                                 dim3 threads,
                                 size_t shared_memory,
