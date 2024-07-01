@@ -150,7 +150,6 @@ void call_apply_resolution_mask(dim3 blocks,
                                 cudaStream_t stream,
                                 uint8_t *mask,
                                 ResolutionMaskParams params) {
-
     // Launch the kernel
     apply_resolution_mask<<<blocks, threads, shared_memory, stream>>>(
       mask,
@@ -168,17 +167,17 @@ void call_apply_resolution_mask(dim3 blocks,
 }
 
 __global__ void do_spotfinding_dispersion(pixel_t *image,
-                                     size_t image_pitch,
-                                     uint8_t *mask,
-                                     size_t mask_pitch,
-                                     int width,
-                                     int height,
-                                     int kernel_width,
-                                     int kernel_height,
-                                     //  int *result_sum,
-                                     //  size_t *result_sumsq,
-                                     //  uint8_t *result_n,
-                                     uint8_t *result_strong) {
+                                          size_t image_pitch,
+                                          uint8_t *mask,
+                                          size_t mask_pitch,
+                                          int width,
+                                          int height,
+                                          int kernel_width,
+                                          int kernel_height,
+                                          //  int *result_sum,
+                                          //  size_t *result_sumsq,
+                                          //  uint8_t *result_n,
+                                          uint8_t *result_strong) {
     image = image + (image_pitch * height * blockIdx.z);
     // result_sum = result_sum + (image_pitch * height * blockIdx.z);
     // result_sumsq = result_sumsq + (image_pitch * height * blockIdx.z);
@@ -249,6 +248,77 @@ __global__ void do_spotfinding_dispersion(pixel_t *image,
     }
 }
 
+__global__ void erosion_kernel_in_place(uint8_t *mask,
+                                        size_t mask_pitch,
+                                        int width,
+                                        int height,
+                                        int radius) {
+    // Declare shared memory to store a local copy of the mask for the block
+    extern __shared__ uint8_t shared_mask[];
+
+    // Calculate global coordinates
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    // Calculate local coordinates in shared memory
+    int local_x = threadIdx.x + radius;
+    int local_y = threadIdx.y + radius;
+
+    // Dimensions of shared memory array
+    int shared_width = blockDim.x + 2 * radius;
+    int shared_height = blockDim.y + 2 * radius;
+
+    // Load central pixels into shared memory
+    if (x < width && y < height) {
+        shared_mask[local_y * shared_width + local_x] = mask[y * mask_pitch + x];
+    } else {
+        // If out of bounds, set to MASKED_PIXEL
+        shared_mask[local_y * shared_width + local_x] = MASKED_PIXEL;
+    }
+
+    // Load border pixels into shared memory
+    for (int i = threadIdx.x; i < shared_width; i += blockDim.x) {
+        for (int j = threadIdx.y; j < shared_height; j += blockDim.y) {
+            int global_x = x + (i - local_x);
+            int global_y = y + (j - local_y);
+            if (i < radius || i >= shared_width - radius || j < radius
+                || j >= shared_height - radius) {
+                if (global_x >= 0 && global_x < width && global_y >= 0
+                    && global_y < height) {
+                    shared_mask[j * shared_width + i] =
+                      mask[global_y * mask_pitch + global_x];
+                } else {
+                    shared_mask[j * shared_width + i] = MASKED_PIXEL;
+                }
+            }
+        }
+    }
+
+    // Synchronize threads to ensure all shared memory is loaded
+    __syncthreads();
+
+    // If the thread is out of image bounds, exit
+    if (x >= width || y >= height) return;
+
+    // Determine if the current pixel should be erased
+    bool should_erase = false;
+    for (int i = -radius; i <= radius; ++i) {
+        for (int j = -radius; j <= radius; ++j) {
+            if (shared_mask[(local_y + j) * shared_width + (local_x + i)]
+                == MASKED_PIXEL) {
+                should_erase = true;
+                break;
+            }
+        }
+        if (should_erase) break;
+    }
+
+    // Update the mask based on erosion result
+    if (should_erase) {
+        mask[y * mask_pitch + x] = MASKED_PIXEL;
+    }
+}
+
 /**
  * @brief Wrapper function to allow for the selection of the spotfinding algorithm.
  * @param blocks The dimensions of the grid of blocks.
@@ -290,16 +360,16 @@ void do_spotfinding(dim3 blocks,
     }
 
     dispersion_algorithm_call_function(blocks,
-         threads,
-         shared_memory,
-         stream,
-         image,
-         image_pitch,
-         mask,
-         mask_pitch,
-         width,
-         height,
-         result_strong);
+                                       threads,
+                                       shared_memory,
+                                       stream,
+                                       image,
+                                       image_pitch,
+                                       mask,
+                                       mask_pitch,
+                                       width,
+                                       height,
+                                       result_strong);
 }
 
 void call_do_spotfinding_naive(dim3 blocks,
@@ -362,6 +432,8 @@ void call_do_spotfinding_extended(dim3 blocks,
     uint8_t *d_result_strong_buffer;
     cudaMallocPitch(&d_result_strong_buffer, &mask_pitch, width, height);
 
+    int kernel_radius = 3;
+
     // Do the first step of spotfinding
     do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
       image,
@@ -370,13 +442,29 @@ void call_do_spotfinding_extended(dim3 blocks,
       mask_pitch,
       width,
       height,
-      3, // One-direction width of kernel. Total kernel span is (width * 2 + 1)
-      3, // One-direction height of kernel. Total kernel span is (height * 2 + 1)
+      kernel_radius,  // One-direction width of kernel. Total kernel span is (width * 2 + 1)
+      kernel_radius,  // One-direction height of kernel. Total kernel span is (height * 2 + 1)
       d_result_strong_buffer);
     cudaStreamSynchronize(stream);
 
     // Erode the results
-    //TODO: Implement erosion
+    dim3 threads_per_erosion_block(32, 32);
+    dim3 erosion_blocks(
+      (width + threads_per_erosion_block.x - 1) / threads_per_erosion_block.x,
+      (height + threads_per_erosion_block.y - 1) / threads_per_erosion_block.y);
+
+    // Calculate the shared memory size for the erosion kernel
+    size_t erosion_shared_memory = (threads_per_erosion_block.x + 2 * kernel_radius)
+                                   * (threads_per_erosion_block.y + 2 * kernel_radius)
+                                   * sizeof(uint8_t);
+
+    // Perform erosion
+    erosion_kernel_in_place<<<erosion_blocks,
+                              threads_per_erosion_block,
+                              erosion_shared_memory,
+                              stream>>>(
+      d_result_strong_buffer, image_pitch, width, height, kernel_radius);
+    cudaStreamSynchronize(stream);
 
     // Allocate memory for the combined mask
     uint8_t *d_combined_mask;
@@ -384,6 +472,8 @@ void call_do_spotfinding_extended(dim3 blocks,
 
     // Combine mask with positive eroded signals
     //TODO: Implement combining
+
+    kernel_radius = 5;
 
     // Perform the second step of spotfinding
     do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
@@ -393,8 +483,8 @@ void call_do_spotfinding_extended(dim3 blocks,
       mask_pitch,
       width,
       height,
-      5,
-      5,
+      kernel_radius,
+      kernel_radius,
       result_strong);
     cudaStreamSynchronize(stream);
 
