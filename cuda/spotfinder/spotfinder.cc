@@ -317,6 +317,10 @@ int main(int argc, char **argv) {
       .metavar("FD")
       .default_value<int>(-1)
       .scan<'i', int>();
+    parser.add_argument("-a", "--algorithm")
+      .help("Dispersion algorithm to use")
+      .metavar("ALGO")
+      .default_value("dispersion");
     parser.add_argument("--dmin")
       .help("Minimum resolution (Å)")
       .metavar("MIN D")
@@ -345,6 +349,20 @@ int main(int argc, char **argv) {
     std::string detector_json = parser.get<std::string>("detector");
     json detector_json_obj = json::parse(detector_json);
     detector_geometry detector = detector_geometry(detector_json_obj);
+
+    DispersionAlgorithm dispersion_algorithm;
+    { // Parse the algorithm input
+      std::string dispersion_algorithm_str = parser.get<std::string>("algorithm");
+      std::transform(dispersion_algorithm_str.begin(), dispersion_algorithm_str.end(), dispersion_algorithm_str.begin(), ::tolower);
+      if (dispersion_algorithm_str == "dispersion") {
+          dispersion_algorithm = DispersionAlgorithm::DISPERSION;
+      } else if (dispersion_algorithm_str == "dispersion_extended") {
+          dispersion_algorithm = DispersionAlgorithm::DISPERSION_EXTENDED;
+      } else {
+          print("Error: Unknown dispersion algorithm '{}'\n", dispersion_algorithm_str);
+          std::exit(1);
+      }
+    }
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
     if (num_cpu_threads < 1) {
@@ -580,17 +598,30 @@ int main(int argc, char **argv) {
                 copy.record(stream);
                 // When done, launch the spotfind kernel
                 // do_spotfinding_naive<<<blocks_dims, gpu_thread_block_size, 0, stream>>>(
-                call_do_spotfinding_naive(blocks_dims,
-                                          gpu_thread_block_size,
-                                          0,
-                                          stream,
-                                          device_image.get(),
-                                          device_image.pitch,
-                                          mask.get(),
-                                          mask.pitch,
-                                          width,
-                                          height,
-                                          device_results.get());
+                // call_do_spotfinding_naive(blocks_dims,
+                //                           gpu_thread_block_size,
+                //                           0,
+                //                           stream,
+                //                           device_image.get(),
+                //                           device_image.pitch,
+                //                           mask.get(),
+                //                           mask.pitch,
+                //                           width,
+                //                           height,
+                //                           device_results.get());
+                // Do spotfinding
+                do_spotfinding(blocks_dims,
+                               gpu_thread_block_size,
+                               0,
+                               stream,
+                               device_image.get(),
+                               device_image.pitch,
+                               mask.get(),
+                               mask.pitch,
+                               width,
+                               height,
+                               dispersion_algorithm,
+                               device_results.get());
                 post.record(stream);
 
                 // Copy the results buffer back to the CPU
