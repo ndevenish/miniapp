@@ -11,9 +11,9 @@ using pixel_t = H5Read::image_type;
 using json = nlohmann::json;
 
 /// One-direction width of kernel. Total kernel span is (K_W * 2 + 1)
-constexpr int KERNEL_WIDTH = 3;
+constexpr int BASIC_KERNEL_WIDTH = 3;
 /// One-direction height of kernel. Total kernel span is (K_H * 2 + 1)
-constexpr int KERNEL_HEIGHT = 3;
+constexpr int BASIC_KERNEL_HEIGHT = 3;
 
 /**
  * @brief Struct to store the geometry of the detector.

@@ -167,12 +167,14 @@ void call_apply_resolution_mask(dim3 blocks,
       params.dmax);
 }
 
-__global__ void do_spotfinding_naive(pixel_t *image,
+__global__ void do_spotfinding_dispersion(pixel_t *image,
                                      size_t image_pitch,
                                      uint8_t *mask,
                                      size_t mask_pitch,
                                      int width,
                                      int height,
+                                     int kernel_width,
+                                     int kernel_height,
                                      //  int *result_sum,
                                      //  size_t *result_sumsq,
                                      //  uint8_t *result_n,
@@ -200,13 +202,13 @@ __global__ void do_spotfinding_naive(pixel_t *image,
     pixel_t this_pixel = image[y * image_pitch + x];
 
     if (px_is_valid) {
-        for (int row = max(0, y - KERNEL_HEIGHT);
-             row < min(y + KERNEL_HEIGHT + 1, height);
+        for (int row = max(0, y - kernel_height);
+             row < min(y + kernel_height + 1, height);
              ++row) {
             int row_offset = image_pitch * row;
             int mask_offset = mask_pitch * row;
-            for (int col = max(0, x - KERNEL_WIDTH);
-                 col < min(x + KERNEL_WIDTH + 1, width);
+            for (int col = max(0, x - kernel_width);
+                 col < min(x + kernel_width + 1, width);
                  ++col) {
                 pixel_t pixel = image[row_offset + col];
                 uint8_t mask_pixel = mask[mask_offset + col];
@@ -274,20 +276,20 @@ void do_spotfinding(dim3 blocks,
                     int height,
                     DispersionAlgorithm dispersion_algorithm,
                     uint8_t *result_strong) {
-    void (*)() func = nullptr;  // Function pointer
+    void (*)() dispersion_algorithm_call_function = nullptr;  // Function pointer
 
     switch (dispersion_algorithm) {
     case DispersionAlgorithm::DISPERSION:
-        func = do_spotfinding_naive;
+        dispersion_algorithm_call_function = do_spotfinding_naive;
         break;
     case DispersionAlgorithm::DISPERSION_EXTENDED:
-        func = do_spotfinding_extended;
+        dispersion_algorithm_call_function = do_spotfinding_extended;
         break;
     default:
         throw std::runtime_error("Invalid dispersion algorithm");
     }
 
-    func(blocks,
+    dispersion_algorithm_call_function(blocks,
          threads,
          shared_memory,
          stream,
@@ -314,8 +316,21 @@ void call_do_spotfinding_naive(dim3 blocks,
                                //  size_t *result_sumsq,
                                //  uint8_t *result_n,
                                uint8_t *result_strong) {
-    do_spotfinding_naive<<<blocks, threads, shared_memory, stream>>>(
-      image, image_pitch, mask, mask_pitch, width, height, result_strong);
+    /// One-direction width of kernel. Total kernel span is (K_W * 2 + 1)
+    constexpr int BASIC_KERNEL_WIDTH = 3;
+    /// One-direction height of kernel. Total kernel span is (K_H * 2 + 1)
+    constexpr int BASIC_KERNEL_HEIGHT = 3;
+
+    do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
+      image,
+      image_pitch,
+      mask,
+      mask_pitch,
+      width,
+      height,
+      BASIC_KERNEL_WIDTH,
+      BASIC_KERNEL_HEIGHT,
+      result_strong);
 }
 
 void call_do_
