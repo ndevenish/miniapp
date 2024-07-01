@@ -157,7 +157,8 @@ void apply_resolution_filtering(PitchedMalloc<uint8_t> mask,
                                 .dmax = dmax};
 
     // Launch the kernel to apply resolution filtering
-    call_apply_resolution_mask(numBlocks, threadsPerBlock, 0, stream, mask.get(), params);
+    call_apply_resolution_mask(
+      numBlocks, threadsPerBlock, 0, stream, mask.get(), params);
 
     CUDA_CHECK(cudaStreamSynchronize(stream));
 }
