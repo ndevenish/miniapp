@@ -248,7 +248,7 @@ __global__ void do_spotfinding_dispersion(pixel_t *image,
     }
 }
 
-__global__ void erosion_kernel_in_place(uint8_t *mask,
+__global__ void erosion_kernel(uint8_t *mask,
                                         size_t mask_pitch,
                                         int width,
                                         int height,
@@ -459,7 +459,7 @@ void call_do_spotfinding_extended(dim3 blocks,
                                    * sizeof(uint8_t);
 
     // Perform erosion
-    erosion_kernel_in_place<<<erosion_blocks,
+    erosion_kernel<<<erosion_blocks,
                               threads_per_erosion_block,
                               erosion_shared_memory,
                               stream>>>(
