@@ -248,6 +248,18 @@ __global__ void do_spotfinding_dispersion(pixel_t *image,
     }
 }
 
+/**
+ * @brief CUDA kernel to erode the mask in place.
+ * 
+ * This kernel uses shared memory to store a local copy of the mask for each block. It ensures that
+ * pixels within a certain radius of a masked pixel are also masked, effectively "eroding" the mask.
+ * 
+ * @param mask Pointer to the mask data indicating valid pixels.
+ * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ * @param radius The radius around each masked pixel to also be masked.
+ */
 __global__ void erosion_kernel(uint8_t *mask,
                                         size_t mask_pitch,
                                         int width,
@@ -317,6 +329,26 @@ __global__ void erosion_kernel(uint8_t *mask,
     if (should_erase) {
         mask[y * mask_pitch + x] = MASKED_PIXEL;
     }
+}
+/**
+ * @brief CUDA kernel to combine two masks into a third mask.
+ * 
+ * This kernel combines the original mask and the eroded mask into a third mask using a logical OR operation.
+ * 
+ * @param original_mask Pointer to the original mask data.
+ * @param eroded_mask Pointer to the eroded mask data.
+ * @param combined_mask Pointer to the combined mask data.
+ * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ */
+__global__ void combine_masks(const uint8_t* original_mask, const uint8_t* eroded_mask, uint8_t* combined_mask, size_t mask_pitch, int width, int height) {
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x >= width || y >= height) return;
+
+    combined_mask[y * mask_pitch + x] = original_mask[y * mask_pitch + x] | eroded_mask[y * mask_pitch + x];
 }
 
 /**
@@ -447,31 +479,43 @@ void call_do_spotfinding_extended(dim3 blocks,
       d_result_strong_buffer);
     cudaStreamSynchronize(stream);
 
-    // Erode the results
-    dim3 threads_per_erosion_block(32, 32);
-    dim3 erosion_blocks(
-      (width + threads_per_erosion_block.x - 1) / threads_per_erosion_block.x,
-      (height + threads_per_erosion_block.y - 1) / threads_per_erosion_block.y);
+    {   // Erode the results
+        dim3 threads_per_erosion_block(32, 32);
+        dim3 erosion_blocks(
+        (width + threads_per_erosion_block.x - 1) / threads_per_erosion_block.x,
+        (height + threads_per_erosion_block.y - 1) / threads_per_erosion_block.y);
 
-    // Calculate the shared memory size for the erosion kernel
-    size_t erosion_shared_memory = (threads_per_erosion_block.x + 2 * kernel_radius)
-                                   * (threads_per_erosion_block.y + 2 * kernel_radius)
-                                   * sizeof(uint8_t);
+        // Calculate the shared memory size for the erosion kernel
+        size_t erosion_shared_memory = (threads_per_erosion_block.x + 2 * kernel_radius)
+                                    * (threads_per_erosion_block.y + 2 * kernel_radius)
+                                    * sizeof(uint8_t);
 
-    // Perform erosion
-    erosion_kernel<<<erosion_blocks,
-                              threads_per_erosion_block,
-                              erosion_shared_memory,
-                              stream>>>(
-      d_result_strong_buffer, image_pitch, width, height, kernel_radius);
-    cudaStreamSynchronize(stream);
+        // Perform erosion
+        erosion_kernel<<<erosion_blocks,
+                                threads_per_erosion_block,
+                                erosion_shared_memory,
+                                stream>>>(
+        d_result_strong_buffer, image_pitch, width, height, kernel_radius);
+        cudaStreamSynchronize(stream);
+    }
 
     // Allocate memory for the combined mask
     uint8_t *d_combined_mask;
     cudaMallocPitch(&d_combined_mask, &mask_pitch, width, height);
 
-    // Combine mask with positive eroded signals
-    //TODO: Implement combining
+    {   // Combine mask with positive eroded signals
+        dim3 threads_per_combine_block(32, 32);
+        dim3 combine_blocks(
+        (width + threads_per_combine_block.x - 1) / threads_per_combine_block.x,
+        (height + threads_per_combine_block.y - 1) / threads_per_combine_block.y);
+
+        combine_masks<<<combine_blocks,
+                        threads_per_combine_block,
+                        0,
+                        stream>>>(mask, d_result_strong_buffer, d_combined_mask, mask_pitch, width, height);
+        cudaStreamSynchronize(stream);
+    }
+    cudaFree(d_result_strong_buffer);
 
     kernel_radius = 5;
 
@@ -488,7 +532,5 @@ void call_do_spotfinding_extended(dim3 blocks,
       result_strong);
     cudaStreamSynchronize(stream);
 
-    // Free the intermediate buffers
-    cudaFree(d_result_strong_buffer);
     cudaFree(d_combined_mask);
 }
