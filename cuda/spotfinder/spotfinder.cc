@@ -351,17 +351,22 @@ int main(int argc, char **argv) {
     detector_geometry detector = detector_geometry(detector_json_obj);
 
     DispersionAlgorithm dispersion_algorithm;
-    { // Parse the algorithm input
-      std::string dispersion_algorithm_str = parser.get<std::string>("algorithm");
-      std::transform(dispersion_algorithm_str.begin(), dispersion_algorithm_str.end(), dispersion_algorithm_str.begin(), ::tolower);
-      if (dispersion_algorithm_str == "dispersion") {
-          dispersion_algorithm = DispersionAlgorithm::DISPERSION;
-      } else if (dispersion_algorithm_str == "dispersion_extended") {
-          dispersion_algorithm = DispersionAlgorithm::DISPERSION_EXTENDED;
-      } else {
-          print("Error: Unknown dispersion algorithm '{}'\n", dispersion_algorithm_str);
-          std::exit(1);
-      }
+    {  // Parse the algorithm input
+        std::string dispersion_algorithm_str = parser.get<std::string>("algorithm");
+        std::transform(dispersion_algorithm_str.begin(),
+                       dispersion_algorithm_str.end(),
+                       dispersion_algorithm_str.begin(),
+                       ::tolower);
+        if (dispersion_algorithm_str == "dispersion") {
+            dispersion_algorithm = DispersionAlgorithm::DISPERSION;
+        } else if (dispersion_algorithm_str == "dispersion_extended") {
+            dispersion_algorithm = DispersionAlgorithm::DISPERSION_EXTENDED;
+        } else {
+            print("Error: Unknown dispersion algorithm '{}'\n",
+                  dispersion_algorithm_str);
+            std::exit(1);
+        }
+        print("Using dispersion algorithm: {}\n", dispersion_algorithm_str);
     }
 
     uint32_t num_cpu_threads = parser.get<uint32_t>("threads");
