@@ -280,10 +280,10 @@ void do_spotfinding(dim3 blocks,
 
     switch (dispersion_algorithm) {
     case DispersionAlgorithm::DISPERSION:
-        dispersion_algorithm_call_function = do_spotfinding_naive;
+        dispersion_algorithm_call_function = call_do_spotfinding_naive;
         break;
     case DispersionAlgorithm::DISPERSION_EXTENDED:
-        dispersion_algorithm_call_function = do_spotfinding_extended;
+        dispersion_algorithm_call_function = call_do_spotfinding_extended;
         break;
     default:
         throw std::runtime_error("Invalid dispersion algorithm");
@@ -333,4 +333,72 @@ void call_do_spotfinding_naive(dim3 blocks,
       result_strong);
 }
 
-void call_do_
+/**
+ * @brief Wrapper function to call the extended spotfinding algorithm.
+ * @param blocks The dimensions of the grid of blocks.
+ * @param threads The dimensions of the grid of threads within each block.
+ * @param shared_memory The size of shared memory required per block (in bytes).
+ * @param stream The CUDA stream to execute the kernel.
+ * @param image Device pointer to the image data.
+ * @param image_pitch The pitch (width in bytes) of the image data.
+ * @param mask Device pointer to the mask data indicating valid pixels.
+ * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ * @param result_strong (Output) Device pointer for the strong pixel mask data to be written to.
+ */
+void call_do_spotfinding_extended(dim3 blocks,
+                                  dim3 threads,
+                                  size_t shared_memory,
+                                  cudaStream_t stream,
+                                  pixel_t *image,
+                                  size_t image_pitch,
+                                  uint8_t *mask,
+                                  size_t mask_pitch,
+                                  int width,
+                                  int height,
+                                  uint8_t *result_strong) {
+    // Allocate memory for the intermediate result buffer
+    uint8_t *d_result_strong_buffer;
+    cudaMallocPitch(&d_result_strong_buffer, &mask_pitch, width, height);
+
+    // Do the first step of spotfinding
+    do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
+      image,
+      image_pitch,
+      mask,
+      mask_pitch,
+      width,
+      height,
+      3, // One-direction width of kernel. Total kernel span is (width * 2 + 1)
+      3, // One-direction height of kernel. Total kernel span is (height * 2 + 1)
+      d_result_strong_buffer);
+    cudaStreamSynchronize(stream);
+
+    // Erode the results
+    //TODO: Implement erosion
+
+    // Allocate memory for the combined mask
+    uint8_t *d_combined_mask;
+    cudaMallocPitch(&d_combined_mask, &mask_pitch, width, height);
+
+    // Combine mask with positive eroded signals
+    //TODO: Implement combining
+
+    // Perform the second step of spotfinding
+    do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
+      image,
+      image_pitch,
+      d_combined_mask,
+      mask_pitch,
+      width,
+      height,
+      5,
+      5,
+      result_strong);
+    cudaStreamSynchronize(stream);
+
+    // Free the intermediate buffers
+    cudaFree(d_result_strong_buffer);
+    cudaFree(d_combined_mask);
+}
