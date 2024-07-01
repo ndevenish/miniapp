@@ -10,11 +10,6 @@
 using pixel_t = H5Read::image_type;
 using json = nlohmann::json;
 
-/// One-direction width of kernel. Total kernel span is (K_W * 2 + 1)
-constexpr int BASIC_KERNEL_WIDTH = 3;
-/// One-direction height of kernel. Total kernel span is (K_H * 2 + 1)
-constexpr int BASIC_KERNEL_HEIGHT = 3;
-
 /**
  * @brief Struct to store the geometry of the detector.
  * @param pixel_size_x The pixel size of the detector in the x-direction in mm.
@@ -90,7 +85,7 @@ struct ResolutionMaskParams {
     float dmax;
 };
 
-enum class DispersionAlgorithm { DISPERSION, EXTENDED_DISPERSION };
+enum class DispersionAlgorithm { DISPERSION, DISPERSION_EXTENDED };
 
 void call_apply_resolution_mask(dim3 blocks,
                                 dim3 threads,
@@ -99,19 +94,17 @@ void call_apply_resolution_mask(dim3 blocks,
                                 uint8_t *mask,
                                 ResolutionMaskParams params);
 
-void call_do_spotfinding_naive(dim3 blocks,
-                               dim3 threads,
-                               size_t shared_memory,
-                               cudaStream_t stream,
-                               pixel_t *image,
-                               size_t image_pitch,
-                               uint8_t *mask,
-                               size_t mask_pitch,
-                               int width,
-                               int height,
-                               //  int *result_sum,
-                               //  size_t *result_sumsq,
-                               //  uint8_t *result_n,
-                               uint8_t *result_strong);
+void do_spotfinding(dim3 blocks,
+                    dim3 threads,
+                    size_t shared_memory,
+                    cudaStream_t stream,
+                    pixel_t *image,
+                    size_t image_pitch,
+                    uint8_t *mask,
+                    size_t mask_pitch,
+                    int width,
+                    int height,
+                    DispersionAlgorithm dispersion_algorithm,
+                    uint8_t *result_strong);
 
 #endif
