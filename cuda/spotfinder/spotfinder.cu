@@ -513,7 +513,17 @@ void do_spotfinding(dim3 blocks,
                     int height,
                     DispersionAlgorithm dispersion_algorithm,
                     uint8_t *result_strong) {
-    void (*)() dispersion_algorithm_call_function = nullptr;  // Function pointer
+    void (*dispersion_algorithm_call_function)(dim3,
+                                               dim3,
+                                               size_t,
+                                               cudaStream_t,
+                                               pixel_t *,
+                                               size_t,
+                                               uint8_t *,
+                                               size_t,
+                                               int,
+                                               int,
+                                               uint8_t *);  // Function pointer
 
     switch (dispersion_algorithm) {
     case DispersionAlgorithm::DISPERSION:
