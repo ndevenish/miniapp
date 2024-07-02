@@ -22,7 +22,9 @@ exec 3> output_file.txt
   --wavelength 0.976261 \
   --detector "$(cat detector.json)" \
   --threads 1 \
-  --images 1
+  --images 4 \
+  --writeout \
+  --algorithm "dispersion_extended"
 
 # Close file descriptor 3
 exec 3>&-

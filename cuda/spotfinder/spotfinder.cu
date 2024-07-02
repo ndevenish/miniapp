@@ -150,7 +150,6 @@ void call_apply_resolution_mask(dim3 blocks,
                                 cudaStream_t stream,
                                 uint8_t *mask,
                                 ResolutionMaskParams params) {
-
     // Launch the kernel
     apply_resolution_mask<<<blocks, threads, shared_memory, stream>>>(
       mask,
@@ -167,16 +166,18 @@ void call_apply_resolution_mask(dim3 blocks,
       params.dmax);
 }
 
-__global__ void do_spotfinding_naive(pixel_t *image,
-                                     size_t image_pitch,
-                                     uint8_t *mask,
-                                     size_t mask_pitch,
-                                     int width,
-                                     int height,
-                                     //  int *result_sum,
-                                     //  size_t *result_sumsq,
-                                     //  uint8_t *result_n,
-                                     uint8_t *result_strong) {
+__global__ void do_spotfinding_dispersion(pixel_t *image,
+                                          size_t image_pitch,
+                                          uint8_t *mask,
+                                          size_t mask_pitch,
+                                          int width,
+                                          int height,
+                                          int kernel_width,
+                                          int kernel_height,
+                                          //  int *result_sum,
+                                          //  size_t *result_sumsq,
+                                          //  uint8_t *result_n,
+                                          uint8_t *result_strong) {
     image = image + (image_pitch * height * blockIdx.z);
     // result_sum = result_sum + (image_pitch * height * blockIdx.z);
     // result_sumsq = result_sumsq + (image_pitch * height * blockIdx.z);
@@ -200,13 +201,13 @@ __global__ void do_spotfinding_naive(pixel_t *image,
     pixel_t this_pixel = image[y * image_pitch + x];
 
     if (px_is_valid) {
-        for (int row = max(0, y - KERNEL_HEIGHT);
-             row < min(y + KERNEL_HEIGHT + 1, height);
+        for (int row = max(0, y - kernel_height);
+             row < min(y + kernel_height + 1, height);
              ++row) {
             int row_offset = image_pitch * row;
             int mask_offset = mask_pitch * row;
-            for (int col = max(0, x - KERNEL_WIDTH);
-                 col < min(x + KERNEL_WIDTH + 1, width);
+            for (int col = max(0, x - kernel_width);
+                 col < min(x + kernel_width + 1, width);
                  ++col) {
                 pixel_t pixel = image[row_offset + col];
                 uint8_t mask_pixel = mask[mask_offset + col];
@@ -246,6 +247,127 @@ __global__ void do_spotfinding_naive(pixel_t *image,
         }
     }
 }
+
+/**
+ * @brief CUDA kernel to erode the mask in place.
+ * 
+ * This kernel uses shared memory to store a local copy of the mask for each block. It ensures that
+ * pixels within a certain radius of a masked pixel are also masked, effectively "eroding" the mask.
+ * 
+ * @param mask Pointer to the mask data indicating valid pixels.
+ * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ * @param radius The radius around each masked pixel to also be masked.
+ */
+__global__ void erosion_kernel(uint8_t *mask,
+                               size_t mask_pitch,
+                               int width,
+                               int height,
+                               int radius) {
+    // Declare shared memory to store a local copy of the mask for the block
+    extern __shared__ uint8_t shared_mask[];
+
+    // Calculate global coordinates
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    // Calculate local coordinates in shared memory
+    int local_x = threadIdx.x + radius;
+    int local_y = threadIdx.y + radius;
+
+    // Dimensions of shared memory array
+    int shared_width = blockDim.x + 2 * radius;
+    int shared_height = blockDim.y + 2 * radius;
+
+    // Load central pixels into shared memory
+    if (x < width && y < height) {
+        shared_mask[local_y * shared_width + local_x] = mask[y * mask_pitch + x];
+    } else {
+        // If out of bounds, set to MASKED_PIXEL
+        shared_mask[local_y * shared_width + local_x] = MASKED_PIXEL;
+    }
+
+    // Load border pixels into shared memory
+    // Loop over the shared memory width
+    for (int i = threadIdx.x; i < shared_width; i += blockDim.x) {
+        // Loop over the shared memory height
+        for (int j = threadIdx.y; j < shared_height; j += blockDim.y) {
+            // Calculate global coordinates for the pixel to be loaded into shared memory
+            int global_x = x + (i - local_x);
+            int global_y = y + (j - local_y);
+            // Check if the current index is within the border region
+            if (i < radius || i >= shared_width - radius || j < radius
+                || j >= shared_height - radius) {
+                // Check if global coordinates are within the image bounds
+                if (global_x >= 0 && global_x < width && global_y >= 0
+                    && global_y < height) {
+                    // Load the pixel from global memory into shared memory
+                    shared_mask[j * shared_width + i] =
+                      mask[global_y * mask_pitch + global_x];
+                } else {
+                    // If out of bounds, set to MASKED_PIXEL
+                    shared_mask[j * shared_width + i] = MASKED_PIXEL;
+                }
+            }
+        }
+    }
+
+    // Synchronize threads to ensure all shared memory is loaded
+    __syncthreads();
+
+    // If the thread is out of image bounds, exit
+    if (x >= width || y >= height) return;
+
+    // Determine if the current pixel should be erased
+    bool should_erase = false;
+    for (int i = -radius; i <= radius; ++i) {
+        for (int j = -radius; j <= radius; ++j) {
+            if (shared_mask[(local_y + j) * shared_width + (local_x + i)]
+                == MASKED_PIXEL) {
+                should_erase = true;
+                break;
+            }
+        }
+        if (should_erase) break;
+    }
+
+    // Update the mask based on erosion result
+    if (should_erase) {
+        mask[y * mask_pitch + x] = MASKED_PIXEL;
+    }
+}
+
+/**
+ * @brief CUDA kernel to combine two masks into a third mask.
+ * 
+ * This kernel combines the original mask and the eroded mask into a third mask using a logical OR operation.
+ * 
+ * @param original_mask Pointer to the original mask data.
+ * @param eroded_mask Pointer to the eroded mask data.
+ * @param combined_mask Pointer to the combined mask data.
+ * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ */
+__global__ void combine_masks(
+  // __restrict__ is a hint to the compiler that the two pointers are not
+  // aliased, allowing the compiler to perform more agressive optimizations
+  const uint8_t __restrict__ *original_mask,
+  const uint8_t __restrict__ *eroded_mask,
+  uint8_t *combined_mask,
+  size_t mask_pitch,
+  int width,
+  int height) {
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x >= width || y >= height) return;
+
+    combined_mask[y * mask_pitch + x] =
+      original_mask[y * mask_pitch + x] | eroded_mask[y * mask_pitch + x];
+}
+
 void call_do_spotfinding_naive(dim3 blocks,
                                dim3 threads,
                                size_t shared_memory,
@@ -260,6 +382,180 @@ void call_do_spotfinding_naive(dim3 blocks,
                                //  size_t *result_sumsq,
                                //  uint8_t *result_n,
                                uint8_t *result_strong) {
-    do_spotfinding_naive<<<blocks, threads, shared_memory, stream>>>(
-      image, image_pitch, mask, mask_pitch, width, height, result_strong);
+    /// One-direction width of kernel. Total kernel span is (K_W * 2 + 1)
+    constexpr int BASIC_KERNEL_WIDTH = 3;
+    /// One-direction height of kernel. Total kernel span is (K_H * 2 + 1)
+    constexpr int BASIC_KERNEL_HEIGHT = 3;
+
+    do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
+      image,
+      image_pitch,
+      mask,
+      mask_pitch,
+      width,
+      height,
+      BASIC_KERNEL_WIDTH,
+      BASIC_KERNEL_HEIGHT,
+      result_strong);
+}
+
+/**
+ * @brief Wrapper function to call the extended spotfinding algorithm.
+ * @param blocks The dimensions of the grid of blocks.
+ * @param threads The dimensions of the grid of threads within each block.
+ * @param shared_memory The size of shared memory required per block (in bytes).
+ * @param stream The CUDA stream to execute the kernel.
+ * @param image Device pointer to the image data.
+ * @param image_pitch The pitch (width in bytes) of the image data.
+ * @param mask Device pointer to the mask data indicating valid pixels.
+ * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ * @param result_strong (Output) Device pointer for the strong pixel mask data to be written to.
+ */
+void call_do_spotfinding_extended(dim3 blocks,
+                                  dim3 threads,
+                                  size_t shared_memory,
+                                  cudaStream_t stream,
+                                  pixel_t *image,
+                                  size_t image_pitch,
+                                  uint8_t *mask,
+                                  size_t mask_pitch,
+                                  int width,
+                                  int height,
+                                  uint8_t *result_strong) {
+    // Allocate memory for the intermediate result buffer
+    uint8_t *d_result_strong_buffer;
+    cudaMallocPitch(&d_result_strong_buffer, &mask_pitch, width, height);
+
+    int kernel_radius = 3;
+
+    // Do the first step of spotfinding
+    do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
+      image,
+      image_pitch,
+      mask,
+      mask_pitch,
+      width,
+      height,
+      kernel_radius,  // One-direction width of kernel. Total kernel span is (width * 2 + 1)
+      kernel_radius,  // One-direction height of kernel. Total kernel span is (height * 2 + 1)
+      d_result_strong_buffer);
+    cudaStreamSynchronize(stream);
+
+    {  // Erode the results
+        dim3 threads_per_erosion_block(32, 32);
+        dim3 erosion_blocks(
+          (width + threads_per_erosion_block.x - 1) / threads_per_erosion_block.x,
+          (height + threads_per_erosion_block.y - 1) / threads_per_erosion_block.y);
+
+        // Calculate the shared memory size for the erosion kernel
+        size_t erosion_shared_memory =
+          (threads_per_erosion_block.x + 2 * kernel_radius)
+          * (threads_per_erosion_block.y + 2 * kernel_radius) * sizeof(uint8_t);
+
+        // Perform erosion
+        erosion_kernel<<<erosion_blocks,
+                         threads_per_erosion_block,
+                         erosion_shared_memory,
+                         stream>>>(
+          d_result_strong_buffer, image_pitch, width, height, kernel_radius);
+        cudaStreamSynchronize(stream);
+    }
+
+    // Allocate memory for the combined mask
+    uint8_t *d_combined_mask;
+    cudaMallocPitch(&d_combined_mask, &mask_pitch, width, height);
+
+    {  // Combine mask with positive eroded signals
+        dim3 threads_per_combine_block(32, 32);
+        dim3 combine_blocks(
+          (width + threads_per_combine_block.x - 1) / threads_per_combine_block.x,
+          (height + threads_per_combine_block.y - 1) / threads_per_combine_block.y);
+
+        combine_masks<<<combine_blocks, threads_per_combine_block, 0, stream>>>(
+          mask, d_result_strong_buffer, d_combined_mask, mask_pitch, width, height);
+        cudaStreamSynchronize(stream);
+    }
+    cudaFree(d_result_strong_buffer);
+
+    kernel_radius = 5;
+
+    // Perform the second step of spotfinding
+    do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
+      image,
+      image_pitch,
+      d_combined_mask,
+      mask_pitch,
+      width,
+      height,
+      kernel_radius,
+      kernel_radius,
+      result_strong);
+    cudaStreamSynchronize(stream);
+
+    cudaFree(d_combined_mask);
+}
+
+/**
+ * @brief Wrapper function to allow for the selection of the spotfinding algorithm.
+ * @param blocks The dimensions of the grid of blocks.
+ * @param threads The dimensions of the grid of threads within each block.
+ * @param shared_memory The size of shared memory required per block (in bytes).
+ * @param stream The CUDA stream to execute the kernel.
+ * @param image Device pointer to the image data.
+ * @param image_pitch The pitch (width in bytes) of the image data.
+ * @param mask Device pointer to the mask data indicating valid pixels.
+ * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ * @param dispersion_algorithm The algorithm to use for spotfinding.
+ * @param result_strong (Output) Device pointer for the strong pixel mask data to be written to.
+ */
+void do_spotfinding(dim3 blocks,
+                    dim3 threads,
+                    size_t shared_memory,
+                    cudaStream_t stream,
+                    pixel_t *image,
+                    size_t image_pitch,
+                    uint8_t *mask,
+                    size_t mask_pitch,
+                    int width,
+                    int height,
+                    DispersionAlgorithm dispersion_algorithm,
+                    uint8_t *result_strong) {
+    void (*dispersion_algorithm_call_function)(dim3,
+                                               dim3,
+                                               size_t,
+                                               cudaStream_t,
+                                               pixel_t *,
+                                               size_t,
+                                               uint8_t *,
+                                               size_t,
+                                               int,
+                                               int,
+                                               uint8_t *);  // Function pointer
+
+    switch (dispersion_algorithm) {
+    case DispersionAlgorithm::DISPERSION:
+        dispersion_algorithm_call_function = call_do_spotfinding_naive;
+        break;
+    case DispersionAlgorithm::DISPERSION_EXTENDED:
+        dispersion_algorithm_call_function = call_do_spotfinding_extended;
+        break;
+    default:
+        throw std::runtime_error("Invalid dispersion algorithm");
+    }
+
+    dispersion_algorithm_call_function(blocks,
+                                       threads,
+                                       shared_memory,
+                                       stream,
+                                       image,
+                                       image_pitch,
+                                       mask,
+                                       mask_pitch,
+                                       width,
+                                       height,
+                                       result_strong);
 }
