@@ -342,12 +342,15 @@ __global__ void erosion_kernel(uint8_t *mask,
  * @param width The width of the image.
  * @param height The height of the image.
  */
-__global__ void combine_masks(const uint8_t *original_mask,
-                              const uint8_t *eroded_mask,
-                              uint8_t *combined_mask,
-                              size_t mask_pitch,
-                              int width,
-                              int height) {
+__global__ void combine_masks(
+  // __restrict__ is a hint to the compiler that the two pointers are not
+  // aliased, allowing the compiler to perform more agressive optimizations
+  const uint8_t __restrict__ *original_mask,
+  const uint8_t __restrict__ *eroded_mask,
+  uint8_t *combined_mask,
+  size_t mask_pitch,
+  int width,
+  int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
 
