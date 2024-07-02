@@ -289,17 +289,24 @@ __global__ void erosion_kernel(uint8_t *mask,
     }
 
     // Load border pixels into shared memory
+    // Loop over the shared memory width
     for (int i = threadIdx.x; i < shared_width; i += blockDim.x) {
+        // Loop over the shared memory height
         for (int j = threadIdx.y; j < shared_height; j += blockDim.y) {
+            // Calculate global coordinates for the pixel to be loaded into shared memory
             int global_x = x + (i - local_x);
             int global_y = y + (j - local_y);
+            // Check if the current index is within the border region
             if (i < radius || i >= shared_width - radius || j < radius
                 || j >= shared_height - radius) {
+                // Check if global coordinates are within the image bounds
                 if (global_x >= 0 && global_x < width && global_y >= 0
                     && global_y < height) {
+                    // Load the pixel from global memory into shared memory
                     shared_mask[j * shared_width + i] =
                       mask[global_y * mask_pitch + global_x];
                 } else {
+                    // If out of bounds, set to MASKED_PIXEL
                     shared_mask[j * shared_width + i] = MASKED_PIXEL;
                 }
             }
