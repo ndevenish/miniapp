@@ -330,6 +330,7 @@ __global__ void erosion_kernel(uint8_t *mask,
         mask[y * mask_pitch + x] = MASKED_PIXEL;
     }
 }
+
 /**
  * @brief CUDA kernel to combine two masks into a third mask.
  * 
