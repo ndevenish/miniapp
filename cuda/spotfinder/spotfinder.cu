@@ -451,15 +451,15 @@ void call_do_spotfinding_extended(dim3 blocks,
 
         // Calculate the shared memory size for the erosion kernel
         size_t erosion_shared_memory =
-          (threads_per_erosion_block.x + 2 * kernel_radius)
-          * (threads_per_erosion_block.y + 2 * kernel_radius) * sizeof(uint8_t);
+          (threads_per_erosion_block.x + 2 * first_pass_kernel_radius)
+          * (threads_per_erosion_block.y + 2 * first_pass_kernel_radius) * sizeof(uint8_t);
 
         // Perform erosion
         erosion_kernel<<<erosion_blocks,
                          threads_per_erosion_block,
                          erosion_shared_memory,
                          stream>>>(
-          d_result_strong_buffer, image_pitch, width, height, kernel_radius);
+          d_result_strong_buffer, image_pitch, width, height, first_pass_kernel_radius);
         cudaStreamSynchronize(stream);
     }
 
