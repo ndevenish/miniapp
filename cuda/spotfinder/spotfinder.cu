@@ -383,9 +383,9 @@ void call_do_spotfinding_naive(dim3 blocks,
                                //  uint8_t *result_n,
                                uint8_t *result_strong) {
     /// One-direction width of kernel. Total kernel span is (K_W * 2 + 1)
-    constexpr int BASIC_KERNEL_WIDTH = 3;
+    constexpr int basic_kernel_width = 3;
     /// One-direction height of kernel. Total kernel span is (K_H * 2 + 1)
-    constexpr int BASIC_KERNEL_HEIGHT = 3;
+    constexpr int basic_kernel_height = 3;
 
     do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
       image,
@@ -394,8 +394,8 @@ void call_do_spotfinding_naive(dim3 blocks,
       mask_pitch,
       width,
       height,
-      BASIC_KERNEL_WIDTH,
-      BASIC_KERNEL_HEIGHT,
+      basic_kernel_width,
+      basic_kernel_height,
       result_strong);
 }
 
@@ -428,7 +428,7 @@ void call_do_spotfinding_extended(dim3 blocks,
     uint8_t *d_result_strong_buffer;
     cudaMallocPitch(&d_result_strong_buffer, &mask_pitch, width, height);
 
-    int kernel_radius = 3;
+    constexpr int first_pass_kernel_radius = 3;
 
     // Do the first step of spotfinding
     do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
@@ -438,8 +438,8 @@ void call_do_spotfinding_extended(dim3 blocks,
       mask_pitch,
       width,
       height,
-      kernel_radius,  // One-direction width of kernel. Total kernel span is (width * 2 + 1)
-      kernel_radius,  // One-direction height of kernel. Total kernel span is (height * 2 + 1)
+      first_pass_kernel_radius,  // One-direction width of kernel. Total kernel span is (width * 2 + 1)
+      first_pass_kernel_radius,  // One-direction height of kernel. Total kernel span is (height * 2 + 1)
       d_result_strong_buffer);
     cudaStreamSynchronize(stream);
 
@@ -479,7 +479,7 @@ void call_do_spotfinding_extended(dim3 blocks,
     }
     cudaFree(d_result_strong_buffer);
 
-    kernel_radius = 5;
+    constexpr int second_pass_kernel_radius = 5;
 
     // Perform the second step of spotfinding
     do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
@@ -489,8 +489,8 @@ void call_do_spotfinding_extended(dim3 blocks,
       mask_pitch,
       width,
       height,
-      kernel_radius,
-      kernel_radius,
+      second_pass_kernel_radius,
+      second_pass_kernel_radius,
       result_strong);
     cudaStreamSynchronize(stream);
 
