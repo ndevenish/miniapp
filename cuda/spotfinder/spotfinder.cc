@@ -602,19 +602,6 @@ int main(int argc, char **argv) {
                                              stream));
                 copy.record(stream);
                 // When done, launch the spotfind kernel
-                // do_spotfinding_naive<<<blocks_dims, gpu_thread_block_size, 0, stream>>>(
-                // call_do_spotfinding_naive(blocks_dims,
-                //                           gpu_thread_block_size,
-                //                           0,
-                //                           stream,
-                //                           device_image.get(),
-                //                           device_image.pitch,
-                //                           mask.get(),
-                //                           mask.pitch,
-                //                           width,
-                //                           height,
-                //                           device_results.get());
-                // Do spotfinding
                 do_spotfinding(blocks_dims,
                                gpu_thread_block_size,
                                0,
