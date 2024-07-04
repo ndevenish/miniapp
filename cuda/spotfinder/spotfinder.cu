@@ -268,17 +268,20 @@ __global__ void erosion_kernel(uint8_t *mask,
     // Declare shared memory to store a local copy of the mask for the block
     extern __shared__ uint8_t shared_mask[];
 
+    // Create a cooperative group for the current block
+    cg::thread_block block = cg::this_thread_block();
+
     // Calculate global coordinates
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    int x = block.group_index().x * block.group_dim().x + block.thread_index().x;
+    int y = block.group_index().y * block.group_dim().y + block.thread_index().y;
 
     // Calculate local coordinates in shared memory
-    int local_x = threadIdx.x + radius;
-    int local_y = threadIdx.y + radius;
+    int local_x = block.thread_index().x + radius;
+    int local_y = block.thread_index().y + radius;
 
     // Dimensions of shared memory array
-    int shared_width = blockDim.x + 2 * radius;
-    int shared_height = blockDim.y + 2 * radius;
+    int shared_width = block.group_dim().x + 2 * radius;
+    int shared_height = block.group_dim().y + 2 * radius;
 
     // Load central pixels into shared memory
     if (x < width && y < height) {
@@ -289,13 +292,16 @@ __global__ void erosion_kernel(uint8_t *mask,
     }
 
     // Load border pixels into shared memory
-    for (int i = threadIdx.x; i < shared_width; i += blockDim.x) {
-        for (int j = threadIdx.y; j < shared_height; j += blockDim.y) {
+    for (int i = block.thread_index().x; i < shared_width; i += block.group_dim().x) {
+        for (int j = block.thread_index().y; j < shared_height;
+             j += block.group_dim().y) {
             int global_x = x + (i - local_x);
             int global_y = y + (j - local_y);
 
             // Define conditions clearly
-            bool is_within_central_region = (i >= radius && i < shared_width - radius && j >= radius && j < shared_height - radius);
+            bool is_within_central_region =
+              (i >= radius && i < shared_width - radius && j >= radius
+               && j < shared_height - radius);
             bool is_global_x_in_bounds = (global_x >= 0 && global_x < width);
             bool is_global_y_in_bounds = (global_y >= 0 && global_y < height);
 
@@ -311,7 +317,8 @@ __global__ void erosion_kernel(uint8_t *mask,
             */
             if (is_global_x_in_bounds && is_global_y_in_bounds) {
                 // Load the pixel from global memory into shared memory
-                shared_mask[j * shared_width + i] = mask[global_y * mask_pitch + global_x];
+                shared_mask[j * shared_width + i] =
+                  mask[global_y * mask_pitch + global_x];
             } else {
                 // If out of bounds, set to MASKED_PIXEL
                 shared_mask[j * shared_width + i] = MASKED_PIXEL;
@@ -320,7 +327,7 @@ __global__ void erosion_kernel(uint8_t *mask,
     }
 
     // Synchronize threads to ensure all shared memory is loaded
-    __syncthreads();
+    block.sync();
 
     // If the thread is out of image bounds, exit
     if (x >= width || y >= height) return;
@@ -458,7 +465,8 @@ void call_do_spotfinding_extended(dim3 blocks,
         // Calculate the shared memory size for the erosion kernel
         size_t erosion_shared_memory =
           (threads_per_erosion_block.x + 2 * first_pass_kernel_radius)
-          * (threads_per_erosion_block.y + 2 * first_pass_kernel_radius) * sizeof(uint8_t);
+          * (threads_per_erosion_block.y + 2 * first_pass_kernel_radius)
+          * sizeof(uint8_t);
 
         // Perform erosion
         erosion_kernel<<<erosion_blocks,
