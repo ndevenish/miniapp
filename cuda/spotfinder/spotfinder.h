@@ -2,10 +2,15 @@
 #define SPOTFINDER_H
 
 #include <builtin_types.h>
+#include <cooperative_groups.h>
+#include <cooperative_groups/reduce.h>
 
 #include <nlohmann/json.hpp>
 
 #include "h5read.h"
+
+#define VALID_PIXEL 1
+#define MASKED_PIXEL 0
 
 using pixel_t = H5Read::image_type;
 using json = nlohmann::json;

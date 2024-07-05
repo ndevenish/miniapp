@@ -6,13 +6,8 @@
  */
 
 // #include <bitshuffle.h>
-#include <cooperative_groups.h>
-#include <cooperative_groups/reduce.h>
 
 #include "spotfinder.h"
-
-#define VALID_PIXEL 1
-#define MASKED_PIXEL 0
 
 namespace cg = cooperative_groups;
 
