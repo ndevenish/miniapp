@@ -1,4 +1,3 @@
-#include "erosion.cu"
 #include "spotfinder.h"
 
 namespace cg = cooperative_groups;
@@ -167,7 +166,7 @@ __device__ bool launch_erasure_kernel(const uint8_t *shared_mask,
 
     // Launch the erasure determination kernel
     dim3 erasure_block_size(2 * radius + 1, 2 * radius + 1);
-    determine_erasure_kernel<<<1, erasure_block_size>>>(shared_mask,
+    determine_erasure<<<1, erasure_block_size>>>(shared_mask,
                                                         threadParams.shared_width,
                                                         threadParams.local_x,
                                                         threadParams.local_y,

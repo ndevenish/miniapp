@@ -1,4 +1,5 @@
 #include "spotfinder.h"
+#include "kernels/erosion.hu"
 
 #include <bitshuffle.h>
 #include <fmt/core.h>
