@@ -161,9 +161,109 @@ void call_apply_resolution_mask(dim3 blocks,
       params.dmax);
 }
 
+/**
+ * @brief Calculate the sum, sum of squares, and count of valid pixels in the neighborhood.
+ * @param image Device pointer to the image data.
+ * @param mask Device pointer to the mask data indicating valid pixels.
+ * @param background_mask (Optional) Device pointer to the background mask data. If nullptr, all pixels are considered for background calculation.
+ * @param image_pitch The pitch (width in bytes) of the image data.
+ * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ * @param x The x-coordinate of the current pixel.
+ * @param y The y-coordinate of the current pixel.
+ * @param kernel_width The radius of the kernel in the x-direction.
+ * @param kernel_height The radius of the kernel in the y-direction.
+ * @param sum (Output) The sum of the valid pixels in the neighborhood.
+ * @param sumsq (Output) The sum of squares of the valid pixels in the neighborhood.
+ * @param n (Output) The count of valid pixels in the neighborhood.
+ */
+__device__ void calculate_sums(pixel_t *image,
+                               uint8_t *mask,
+                               uint8_t *background_mask,
+                               size_t image_pitch,
+                               size_t mask_pitch,
+                               int width,
+                               int height,
+                               int x,
+                               int y,
+                               int kernel_width,
+                               int kernel_height,
+                               uint &sum,
+                               size_t &sumsq,
+                               uint8_t &n) {
+    sum = 0;
+    sumsq = 0;
+    n = 0;
+
+    for (int row = max(0, y - kernel_height); row < min(y + kernel_height + 1, height);
+         ++row) {
+        int row_offset = image_pitch * row;
+        int mask_offset = mask_pitch * row;
+        for (int col = max(0, x - kernel_width); col < min(x + kernel_width + 1, width);
+             ++col) {
+            pixel_t pixel = image[row_offset + col];
+            uint8_t mask_pixel = mask[mask_offset + col];
+            bool include_pixel = mask_pixel != 0;
+            if (background_mask != nullptr) {
+                uint8_t background_mask_pixel = background_mask[mask_offset + col];
+                include_pixel = include_pixel && (background_mask_pixel != 0);
+            }
+            if (include_pixel) {
+                sum += pixel;
+                sumsq += pixel * pixel;
+                n += 1;
+            }
+        }
+    }
+}
+
+/**
+ * @brief Determine if the current pixel is a strong pixel.
+ * @param sum The sum of the valid pixels in the neighborhood.
+ * @param sumsq The sum of squares of the valid pixels in the neighborhood.
+ * @param n The count of valid pixels in the neighborhood.
+ * @param this_pixel The intensity value of the current pixel.
+ * @return True if the current pixel is a strong pixel, false otherwise.
+ */
+__device__ bool is_strong_pixel(uint sum, size_t sumsq, uint8_t n, pixel_t this_pixel) {
+    constexpr float n_sig_s = 3.0f;
+    constexpr float n_sig_b = 6.0f;
+
+    float sum_f = static_cast<float>(sum);
+    float sumsq_f = static_cast<float>(sumsq);
+
+    float mean = sum_f / n;
+    float variance = (n * sumsq_f - (sum_f * sum_f)) / (n * (n - 1));
+    float dispersion = variance / mean;
+    float background_threshold = 1 + n_sig_b * sqrt(2.0f / (n - 1));
+    bool not_background = dispersion > background_threshold;
+    float signal_threshold = mean + n_sig_s * sqrt(mean);
+    bool is_signal = this_pixel > signal_threshold;
+
+    return not_background && is_signal;
+}
+
+/**
+ * @brief CUDA kernel to perform spotfinding using a dispersion-based algorithm.
+ * 
+ * This kernel identifies strong pixels in the image based on analysis of the pixel neighborhood.
+ * 
+ * @param image Device pointer to the image data.
+ * @param image_pitch The pitch (width in bytes) of the image data.
+ * @param mask Device pointer to the mask data indicating valid pixels.
+ * @param background_mask (Optional) Device pointer to the background mask data. If nullptr, all pixels are considered for background calculation.
+ * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ * @param kernel_width The radius of the kernel in the x-direction.
+ * @param kernel_height The radius of the kernel in the y-direction.
+ * @param result_strong (Output) Device pointer for the strong pixel mask data to be written to.
+ */
 __global__ void do_spotfinding_dispersion(pixel_t *image,
                                           size_t image_pitch,
                                           uint8_t *mask,
+                                          uint8_t *background_mask,
                                           size_t mask_pitch,
                                           int width,
                                           int height,
@@ -196,23 +296,20 @@ __global__ void do_spotfinding_dispersion(pixel_t *image,
     pixel_t this_pixel = image[y * image_pitch + x];
 
     if (px_is_valid) {
-        for (int row = max(0, y - kernel_height);
-             row < min(y + kernel_height + 1, height);
-             ++row) {
-            int row_offset = image_pitch * row;
-            int mask_offset = mask_pitch * row;
-            for (int col = max(0, x - kernel_width);
-                 col < min(x + kernel_width + 1, width);
-                 ++col) {
-                pixel_t pixel = image[row_offset + col];
-                uint8_t mask_pixel = mask[mask_offset + col];
-                if (mask_pixel) {
-                    sum += pixel;
-                    sumsq += pixel * pixel;
-                    n += 1;
-                }
-            }
-        }
+        calculate_sums(image,
+                       mask,
+                       background_mask,
+                       image_pitch,
+                       mask_pitch,
+                       width,
+                       height,
+                       x,
+                       y,
+                       kernel_width,
+                       kernel_height,
+                       sum,
+                       sumsq,
+                       n);
     }
 
     if (x < width && y < height) {
@@ -221,22 +318,9 @@ __global__ void do_spotfinding_dispersion(pixel_t *image,
         // result_n[x + mask_pitch * y] = n;
 
         // Calculate the thresholding
-        if (px_is_valid) {
-            constexpr float n_sig_s = 3.0f;
-            constexpr float n_sig_b = 6.0f;
-
-            float sum_f = static_cast<float>(sum);
-            float sumsq_f = static_cast<float>(sumsq);
-
-            float mean = sum_f / n;
-            float variance = (n * sumsq_f - (sum_f * sum_f)) / (n * (n - 1));
-            float dispersion = variance / mean;
-            float background_threshold = 1 + n_sig_b * sqrt(2.0f / (n - 1));
-            bool not_background = dispersion > background_threshold;
-            float signal_threshold = mean + n_sig_s * sqrt(mean);
-            bool is_signal = this_pixel > signal_threshold;
-            bool is_strong_pixel = not_background && is_signal;
-            result_strong[x + mask_pitch * y] = is_strong_pixel;
+        if (px_is_valid && n > 1) {
+            bool is_strong_pixel_flag = is_strong_pixel(sum, sumsq, n, this_pixel);
+            result_strong[x + mask_pitch * y] = is_strong_pixel_flag;
         } else {
             result_strong[x + mask_pitch * y] = 0;
         }
@@ -296,6 +380,7 @@ void call_do_spotfinding_naive(dim3 blocks,
       image,
       image_pitch,
       mask,
+      nullptr, // No background mask
       mask_pitch,
       width,
       height,
@@ -340,6 +425,7 @@ void call_do_spotfinding_extended(dim3 blocks,
       image,
       image_pitch,
       mask,
+      nullptr,  // No background mask
       mask_pitch,
       width,
       height,
