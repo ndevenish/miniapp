@@ -1,5 +1,4 @@
 #include "spotfinder.h"
-#include "kernels/erosion.hu"
 
 #include <bitshuffle.h>
 #include <fmt/core.h>
@@ -26,6 +25,7 @@
 #include "cbfread.hpp"
 #include "common.hpp"
 #include "h5read.h"
+#include "kernels/erosion.hu"
 #include "shmread.hpp"
 #include "standalone.h"
 
