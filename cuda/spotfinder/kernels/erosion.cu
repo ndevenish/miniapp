@@ -53,7 +53,7 @@ __device__ KernelThreadParams calculate_block_info(cg::thread_block block, int r
  */
 __device__ void load_central_pixels(cg::thread_block block,
                                     const KernelThreadParams &threadParams,
-                                    uint8_t *mask,
+                                    const uint8_t *mask,
                                     uint8_t *shared_mask,
                                     size_t mask_pitch,
                                     int width,
@@ -83,7 +83,7 @@ __device__ void load_central_pixels(cg::thread_block block,
  */
 __device__ void load_border_pixels(cg::thread_block block,
                                    const KernelThreadParams &threadParams,
-                                   uint8_t *mask,
+                                   const uint8_t *mask,
                                    uint8_t *shared_mask,
                                    size_t mask_pitch,
                                    int width,
@@ -204,22 +204,27 @@ __device__ bool launch_determine_erasure_kernel(const uint8_t *shared_mask,
 }
 
 /**
- * @brief CUDA kernel to erode the mask in place.
+ * @brief CUDA kernel to apply erosion based on the mask and update the erosion_mask.
  * 
- * This kernel uses shared memory to store a local copy of the mask for each block. It ensures that
- * pixels within a certain radius of a masked pixel are also masked, effectively "eroding" the mask.
+ * This kernel uses shared memory to store a local copy of the mask for each block.
  * 
  * @param mask Pointer to the mask data indicating valid pixels.
+ * @param erosion_mask Pointer to the allocated output erosion mask.
  * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param erosion_mask Pointer to the output erosion mask data. (Expected to be the same size as the mask)
  * @param width The width of the image.
  * @param height The height of the image.
  * @param radius The radius around each masked pixel to also be masked.
  */
-__global__ void erosion_kernel(uint8_t *mask,
-                               size_t mask_pitch,
-                               int width,
-                               int height,
-                               int radius) {
+__global__ void erosion_kernel(
+  const uint8_t __restrict__ *mask,
+  uint8_t __restrict__ *erosion_mask,
+  // __restrict__ is a hint to the compiler that the two pointers are not
+  // aliased, allowing the compiler to perform more agressive optimizations
+  size_t mask_pitch,
+  int width,
+  int height,
+  int radius) {
     // Declare shared memory to store a local copy of the mask for the block
     extern __shared__ uint8_t shared_mask[];
 
@@ -242,13 +247,12 @@ __global__ void erosion_kernel(uint8_t *mask,
 
     /*
      * If the current pixel is outside the image bounds, return without doing anything.
-     * We do this after loading shared memory as it may be necessary to load border pixels.
+     * We do this after loading shared memory as it may be necessary for this thread 
+     * to load border pixels.
     */
     if (threadParams.x >= width || threadParams.y >= height) return;
 
     // Determine if the current pixel should be erased
-    //TODO: Determine if the current pixel should be erased using one of the following methods:
-    // for-loop based
     bool should_erase =
       determine_erasure(threadParams,
                         shared_mask,
@@ -261,8 +265,10 @@ __global__ void erosion_kernel(uint8_t *mask,
                                       radius,
                                       2);  // Use 2 as the Chebyshev distance threshold
 
-    // Update the mask based on erosion result
+    // Update the erosion_mask based on erosion result
     if (should_erase) {
-        mask[threadParams.y * mask_pitch + threadParams.x] = MASKED_PIXEL;
+        erosion_mask[threadParams.y * mask_pitch + threadParams.x] = MASKED_PIXEL;
+    } else {
+        erosion_mask[threadParams.y * mask_pitch + threadParams.x] = VALID_PIXEL;
     }
 }
