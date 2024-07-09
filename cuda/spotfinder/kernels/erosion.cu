@@ -147,6 +147,24 @@ __device__ bool determine_erasure(const KernelThreadParams &threadParams,
     return should_erase;
 }
 
+__global__ void determine_erasure_kernel(const uint8_t *shared_mask,
+                                         int shared_width,
+                                         int local_x,
+                                         int local_y,
+                                         int radius,
+                                         int distance_threshold,
+                                         unsigned int *should_erase) {
+    int i = threadIdx.x - radius;
+    int j = threadIdx.y - radius;
+
+    if (shared_mask[(local_y + j) * shared_width + (local_x + i)] == MASKED_PIXEL) {
+        int chebyshev_distance = max(abs(i), abs(j));
+        if (chebyshev_distance <= distance_threshold) {
+            atomicExch(should_erase, 1u);
+        }
+    }
+}
+
 /**
  * @brief Device function to determine if the current pixel should be erased using dynamic parallelism.
  * @param shared_mask Pointer to the shared memory buffer.
@@ -155,18 +173,18 @@ __device__ bool determine_erasure(const KernelThreadParams &threadParams,
  * @param distance_threshold The maximum Chebyshev distance for erasing the current pixel.
  * @return True if the current pixel should be erased, false otherwise.
  */
-__device__ bool launch_erasure_kernel(const uint8_t *shared_mask,
-                                      const KernelThreadParams &threadParams,
-                                      int radius,
-                                      int distance_threshold) {
+__device__ bool launch_determine_erasure_kernel(const uint8_t *shared_mask,
+                                                const KernelThreadParams &threadParams,
+                                                int radius,
+                                                int distance_threshold) {
     // Allocate memory for the erasure flag
-    bool *d_should_erase;
-    cudaMalloc(&d_should_erase, sizeof(bool));
-    cudaMemset(d_should_erase, false, sizeof(bool));
+    unsigned int *d_should_erase;
+    cudaMalloc(&d_should_erase, sizeof(unsigned int));
+    cudaMemset(d_should_erase, 0, sizeof(unsigned int));
 
     // Launch the erasure determination kernel
     dim3 erasure_block_size(2 * radius + 1, 2 * radius + 1);
-    determine_erasure<<<1, erasure_block_size>>>(shared_mask,
+    determine_erasure_kernel<<<1, erasure_block_size>>>(shared_mask,
                                                         threadParams.shared_width,
                                                         threadParams.local_x,
                                                         threadParams.local_y,
@@ -175,11 +193,14 @@ __device__ bool launch_erasure_kernel(const uint8_t *shared_mask,
                                                         d_should_erase);
 
     // Copy the result back to the host
-    bool h_should_erase;
-    cudaMemcpy(&h_should_erase, d_should_erase, sizeof(bool), cudaMemcpyDeviceToHost);
+    unsigned int h_should_erase_uint;
+    cudaMemcpy(&h_should_erase_uint,
+               d_should_erase,
+               sizeof(unsigned int),
+               cudaMemcpyDeviceToHost);
     cudaFree(d_should_erase);
 
-    return h_should_erase;
+    return h_should_erase_uint == 1u;
 }
 
 /**
@@ -235,10 +256,10 @@ __global__ void erosion_kernel(uint8_t *mask,
                         2);  // Use 2 as the Chebyshev distance threshold
     // dynamic parrelism based
     bool should_erase =
-      launch_erasure_kernel(shared_mask,
-                            threadParams,
-                            radius,
-                            2);  // Use 2 as the Chebyshev distance threshold
+      launch_determine_erasure_kernel(shared_mask,
+                                      threadParams,
+                                      radius,
+                                      2);  // Use 2 as the Chebyshev distance threshold
 
     // Update the mask based on erosion result
     if (should_erase) {
