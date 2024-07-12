@@ -15,16 +15,19 @@ EOF
 exec 3> output_file.txt
 
 # Run the program with file descriptor 3
+
+# Extended dispersion test dataset
+# ./spotfinder /dls/i24/data/2024/nr27313-319/gw/Test_Insulin/ins_big_15/ins_big_15_2_master.h5 \
+# Resoltuion filterting test dataset
 ./spotfinder /dls/i03/data/2024/cm37235-2/xraycentring/TestInsulin/ins_14/ins_14_24.nxs \
   --min-spot-size 3 \
   --pipe_fd 3 \
   --dmin 4 \
   --wavelength 0.976261 \
   --detector "$(cat detector.json)" \
-  --threads 1 \
-  --images 4 \
-  --writeout \
-  --algorithm "dispersion_extended"
+  --algorithm "dispersion_extended" \
+  --images 1 \
+  --writeout
 
 # Close file descriptor 3
 exec 3>&-
