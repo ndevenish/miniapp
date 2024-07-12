@@ -2,8 +2,6 @@
 #define SPOTFINDER_H
 
 #include <builtin_types.h>
-#include <cooperative_groups.h>
-#include <cooperative_groups/reduce.h>
 
 #include <nlohmann/json.hpp>
 

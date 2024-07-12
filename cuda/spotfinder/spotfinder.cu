@@ -6,8 +6,11 @@
  */
 
 // #include <bitshuffle.h>
+#include <cooperative_groups.h>
+#include <cooperative_groups/reduce.h>
 
 #include "spotfinder.h"
+#include "kernels/erosion.hu"
 
 namespace cg = cooperative_groups;
 
