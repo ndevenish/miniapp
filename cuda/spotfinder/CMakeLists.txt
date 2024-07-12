@@ -14,6 +14,7 @@ include(AlwaysColourCompilation)
 include(UseSpanBackportIfNeeded)
 
 include_directories(../common/include)
+include_directories(./kernels)
 
 add_subdirectory(../../dependencies/fmt fmt)
 add_subdirectory(../../h5read h5read)
@@ -32,7 +33,13 @@ find_package(Bitshuffle REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 find_package(Boost REQUIRED COMPONENTS graph)
 
-add_executable(spotfinder spotfinder.cc spotfinder.cu shmread.cc cbfread.cc)
+add_executable(spotfinder 
+    spotfinder.cc 
+    spotfinder.cu 
+    shmread.cc 
+    cbfread.cc
+    kernels/erosion.cu
+)
 target_link_libraries(spotfinder
     PRIVATE
     fmt
