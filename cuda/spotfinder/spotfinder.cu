@@ -330,36 +330,6 @@ __global__ void do_spotfinding_dispersion(pixel_t *image,
     }
 }
 
-/**
- * @brief CUDA kernel to combine two masks into a third mask.
- * 
- * This kernel combines the original mask and the eroded mask into a third mask using a logical OR operation.
- * 
- * @param original_mask Pointer to the original mask data.
- * @param eroded_mask Pointer to the eroded mask data.
- * @param combined_mask Pointer to the combined mask data.
- * @param mask_pitch The pitch (width in bytes) of the mask data.
- * @param width The width of the image.
- * @param height The height of the image.
- */
-__global__ void combine_masks(
-  // __restrict__ is a hint to the compiler that the two pointers are not
-  // aliased, allowing the compiler to perform more agressive optimizations
-  const uint8_t __restrict__ *original_mask,
-  const uint8_t __restrict__ *eroded_mask,
-  uint8_t *combined_mask,
-  size_t mask_pitch,
-  int width,
-  int height) {
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
-
-    if (x >= width || y >= height) return;
-
-    combined_mask[y * mask_pitch + x] =
-      original_mask[y * mask_pitch + x] | eroded_mask[y * mask_pitch + x];
-}
-
 void call_do_spotfinding_naive(dim3 blocks,
                                dim3 threads,
                                size_t shared_memory,
