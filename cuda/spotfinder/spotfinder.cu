@@ -8,11 +8,10 @@
 // #include <bitshuffle.h>
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
+#include <lodepng.h>
 
 #include "spotfinder.h"
-
-#define VALID_PIXEL 1
-#define MASKED_PIXEL 0
+#include "kernels/erosion.hu"
 
 namespace cg = cooperative_groups;
 
@@ -150,7 +149,6 @@ void call_apply_resolution_mask(dim3 blocks,
                                 cudaStream_t stream,
                                 uint8_t *mask,
                                 ResolutionMaskParams params) {
-
     // Launch the kernel
     apply_resolution_mask<<<blocks, threads, shared_memory, stream>>>(
       mask,
@@ -167,16 +165,118 @@ void call_apply_resolution_mask(dim3 blocks,
       params.dmax);
 }
 
-__global__ void do_spotfinding_naive(pixel_t *image,
-                                     size_t image_pitch,
-                                     uint8_t *mask,
-                                     size_t mask_pitch,
-                                     int width,
-                                     int height,
-                                     //  int *result_sum,
-                                     //  size_t *result_sumsq,
-                                     //  uint8_t *result_n,
-                                     uint8_t *result_strong) {
+/**
+ * @brief Calculate the sum, sum of squares, and count of valid pixels in the neighborhood.
+ * @param image Device pointer to the image data.
+ * @param mask Device pointer to the mask data indicating valid pixels.
+ * @param background_mask (Optional) Device pointer to the background mask data. If nullptr, all pixels are considered for background calculation.
+ * @param image_pitch The pitch (width in bytes) of the image data.
+ * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ * @param x The x-coordinate of the current pixel.
+ * @param y The y-coordinate of the current pixel.
+ * @param kernel_width The radius of the kernel in the x-direction.
+ * @param kernel_height The radius of the kernel in the y-direction.
+ * @param sum (Output) The sum of the valid pixels in the neighborhood.
+ * @param sumsq (Output) The sum of squares of the valid pixels in the neighborhood.
+ * @param n (Output) The count of valid pixels in the neighborhood.
+ */
+__device__ void calculate_sums(pixel_t *image,
+                               uint8_t *mask,
+                               uint8_t *background_mask,
+                               size_t image_pitch,
+                               size_t mask_pitch,
+                               int width,
+                               int height,
+                               int x,
+                               int y,
+                               int kernel_width,
+                               int kernel_height,
+                               uint &sum,
+                               size_t &sumsq,
+                               uint8_t &n) {
+    sum = 0;
+    sumsq = 0;
+    n = 0;
+
+    for (int row = max(0, y - kernel_height); row < min(y + kernel_height + 1, height);
+         ++row) {
+        int row_offset = image_pitch * row;
+        int mask_offset = mask_pitch * row;
+        for (int col = max(0, x - kernel_width); col < min(x + kernel_width + 1, width);
+             ++col) {
+            pixel_t pixel = image[row_offset + col];
+            uint8_t mask_pixel = mask[mask_offset + col];
+            bool include_pixel = mask_pixel != 0;
+            if (background_mask != nullptr) {
+                uint8_t background_mask_pixel = background_mask[mask_offset + col];
+                include_pixel = include_pixel && (background_mask_pixel == VALID_PIXEL);
+            }
+            if (include_pixel) {
+                sum += pixel;
+                sumsq += pixel * pixel;
+                n += 1;
+            }
+        }
+    }
+}
+
+/**
+ * @brief Determine if the current pixel is a strong pixel.
+ * @param sum The sum of the valid pixels in the neighborhood.
+ * @param sumsq The sum of squares of the valid pixels in the neighborhood.
+ * @param n The count of valid pixels in the neighborhood.
+ * @param this_pixel The intensity value of the current pixel.
+ * @return True if the current pixel is a strong pixel, false otherwise.
+ */
+__device__ bool is_strong_pixel(uint sum, size_t sumsq, uint8_t n, pixel_t this_pixel) {
+    constexpr float n_sig_s = 3.0f;
+    constexpr float n_sig_b = 6.0f;
+
+    float sum_f = static_cast<float>(sum);
+    float sumsq_f = static_cast<float>(sumsq);
+
+    float mean = sum_f / n;
+    float variance = (n * sumsq_f - (sum_f * sum_f)) / (n * (n - 1));
+    float dispersion = variance / mean;
+    float background_threshold = 1 + n_sig_b * sqrt(2.0f / (n - 1));
+    bool not_background = dispersion > background_threshold;
+    float signal_threshold = mean + n_sig_s * sqrt(mean);
+    bool is_signal = this_pixel > signal_threshold;
+
+    return not_background && is_signal;
+}
+
+/**
+ * @brief CUDA kernel to perform spotfinding using a dispersion-based algorithm.
+ * 
+ * This kernel identifies strong pixels in the image based on analysis of the pixel neighborhood.
+ * 
+ * @param image Device pointer to the image data.
+ * @param image_pitch The pitch (width in bytes) of the image data.
+ * @param mask Device pointer to the mask data indicating valid pixels.
+ * @param background_mask (Optional) Device pointer to the background mask data. If nullptr, all pixels are considered for background calculation.
+ * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ * @param kernel_width The radius of the kernel in the x-direction.
+ * @param kernel_height The radius of the kernel in the y-direction.
+ * @param result_strong (Output) Device pointer for the strong pixel mask data to be written to.
+ */
+__global__ void do_spotfinding_dispersion(pixel_t *image,
+                                          size_t image_pitch,
+                                          uint8_t *mask,
+                                          uint8_t *background_mask,
+                                          size_t mask_pitch,
+                                          int width,
+                                          int height,
+                                          int kernel_width,
+                                          int kernel_height,
+                                          //  int *result_sum,
+                                          //  size_t *result_sumsq,
+                                          //  uint8_t *result_n,
+                                          uint8_t *result_strong) {
     image = image + (image_pitch * height * blockIdx.z);
     // result_sum = result_sum + (image_pitch * height * blockIdx.z);
     // result_sumsq = result_sumsq + (image_pitch * height * blockIdx.z);
@@ -200,23 +300,20 @@ __global__ void do_spotfinding_naive(pixel_t *image,
     pixel_t this_pixel = image[y * image_pitch + x];
 
     if (px_is_valid) {
-        for (int row = max(0, y - KERNEL_HEIGHT);
-             row < min(y + KERNEL_HEIGHT + 1, height);
-             ++row) {
-            int row_offset = image_pitch * row;
-            int mask_offset = mask_pitch * row;
-            for (int col = max(0, x - KERNEL_WIDTH);
-                 col < min(x + KERNEL_WIDTH + 1, width);
-                 ++col) {
-                pixel_t pixel = image[row_offset + col];
-                uint8_t mask_pixel = mask[mask_offset + col];
-                if (mask_pixel) {
-                    sum += pixel;
-                    sumsq += pixel * pixel;
-                    n += 1;
-                }
-            }
-        }
+        calculate_sums(image,
+                       mask,
+                       background_mask,
+                       image_pitch,
+                       mask_pitch,
+                       width,
+                       height,
+                       x,
+                       y,
+                       kernel_width,
+                       kernel_height,
+                       sum,
+                       sumsq,
+                       n);
     }
 
     if (x < width && y < height) {
@@ -225,27 +322,15 @@ __global__ void do_spotfinding_naive(pixel_t *image,
         // result_n[x + mask_pitch * y] = n;
 
         // Calculate the thresholding
-        if (px_is_valid) {
-            constexpr float n_sig_s = 3.0f;
-            constexpr float n_sig_b = 6.0f;
-
-            float sum_f = static_cast<float>(sum);
-            float sumsq_f = static_cast<float>(sumsq);
-
-            float mean = sum_f / n;
-            float variance = (n * sumsq_f - (sum_f * sum_f)) / (n * (n - 1));
-            float dispersion = variance / mean;
-            float background_threshold = 1 + n_sig_b * sqrt(2.0f / (n - 1));
-            bool not_background = dispersion > background_threshold;
-            float signal_threshold = mean + n_sig_s * sqrt(mean);
-            bool is_signal = this_pixel > signal_threshold;
-            bool is_strong_pixel = not_background && is_signal;
-            result_strong[x + mask_pitch * y] = is_strong_pixel;
+        if (px_is_valid && n > 1) {
+            bool is_strong_pixel_flag = is_strong_pixel(sum, sumsq, n, this_pixel);
+            result_strong[x + mask_pitch * y] = is_strong_pixel_flag;
         } else {
             result_strong[x + mask_pitch * y] = 0;
         }
     }
 }
+
 void call_do_spotfinding_naive(dim3 blocks,
                                dim3 threads,
                                size_t shared_memory,
@@ -260,6 +345,195 @@ void call_do_spotfinding_naive(dim3 blocks,
                                //  size_t *result_sumsq,
                                //  uint8_t *result_n,
                                uint8_t *result_strong) {
-    do_spotfinding_naive<<<blocks, threads, shared_memory, stream>>>(
-      image, image_pitch, mask, mask_pitch, width, height, result_strong);
+    /// One-direction width of kernel. Total kernel span is (K_W * 2 + 1)
+    constexpr int basic_kernel_width = 3;
+    /// One-direction height of kernel. Total kernel span is (K_H * 2 + 1)
+    constexpr int basic_kernel_height = 3;
+
+    do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
+      image,
+      image_pitch,
+      mask,
+      nullptr,  // No background mask
+      mask_pitch,
+      width,
+      height,
+      basic_kernel_width,
+      basic_kernel_height,
+      result_strong);
+}
+
+/**
+ * @brief Wrapper function to call the extended spotfinding algorithm.
+ * @param blocks The dimensions of the grid of blocks.
+ * @param threads The dimensions of the grid of threads within each block.
+ * @param shared_memory The size of shared memory required per block (in bytes).
+ * @param stream The CUDA stream to execute the kernel.
+ * @param image Device pointer to the image data.
+ * @param image_pitch The pitch (width in bytes) of the image data.
+ * @param mask Device pointer to the mask data indicating valid pixels.
+ * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ * @param result_strong (Output) Device pointer for the strong pixel mask data to be written to.
+ */
+void call_do_spotfinding_extended(dim3 blocks,
+                                  dim3 threads,
+                                  size_t shared_memory,
+                                  cudaStream_t stream,
+                                  pixel_t *image,
+                                  size_t image_pitch,
+                                  uint8_t *mask,
+                                  size_t mask_pitch,
+                                  int width,
+                                  int height,
+                                  uint8_t *result_strong) {
+    // Allocate memory for the intermediate result buffer
+    uint8_t *d_result_strong_buffer;
+    cudaMallocPitch(&d_result_strong_buffer, &mask_pitch, width, height);
+
+    constexpr int first_pass_kernel_radius = 3;
+
+    // Do the first step of spotfinding
+    do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
+      image,
+      image_pitch,
+      mask,
+      nullptr,  // No background mask
+      mask_pitch,
+      width,
+      height,
+      first_pass_kernel_radius,  // One-direction width of kernel. Total kernel span is (width * 2 + 1)
+      first_pass_kernel_radius,  // One-direction height of kernel. Total kernel span is (height * 2 + 1)
+      d_result_strong_buffer);
+    cudaStreamSynchronize(stream);
+
+    /*
+     * Allocate memory for the erosion mask. This is a mask of pixels that
+     * are considered strong in the first pass, but were removed in the
+     * upcoming erosion step.
+    */
+    uint8_t *d_erosion_mask;
+    cudaMallocPitch(&d_erosion_mask, &mask_pitch, width, height);
+
+    {  // Get erosion results
+        dim3 threads_per_erosion_block(32, 32);
+        dim3 erosion_blocks(
+          (width + threads_per_erosion_block.x - 1) / threads_per_erosion_block.x,
+          (height + threads_per_erosion_block.y - 1) / threads_per_erosion_block.y);
+
+        // Calculate the shared memory size for the erosion kernel
+        size_t erosion_shared_memory =
+          (threads_per_erosion_block.x + 2 * first_pass_kernel_radius)
+          * (threads_per_erosion_block.y + 2 * first_pass_kernel_radius)
+          * sizeof(uint8_t);
+
+        // Perform erosion
+        erosion_kernel<<<erosion_blocks,
+                         threads_per_erosion_block,
+                         erosion_shared_memory,
+                         stream>>>(d_result_strong_buffer,
+                                   d_erosion_mask,
+                                   image_pitch,
+                                   width,
+                                   height,
+                                   first_pass_kernel_radius);
+        cudaStreamSynchronize(stream);
+    }
+
+    cudaFree(d_result_strong_buffer);
+    {
+        // Print the erosion mask to png
+        auto mask_buffer = std::vector<uint8_t>(width * height);
+        cudaMemcpy(mask_buffer.data(), d_erosion_mask, width * height, cudaMemcpyDeviceToHost);
+        for (auto &pixel : mask_buffer) {
+            pixel = pixel ? 255 : 0;
+        }
+        lodepng::encode("erosion_mask.png",
+                        reinterpret_cast<uint8_t *>(mask_buffer.data()),
+                        width,
+                        height,
+                        LCT_GREY);
+    }
+    
+    constexpr int second_pass_kernel_radius = 5;
+
+    // Perform the second step of spotfinding
+    do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
+      image,
+      image_pitch,
+      mask,
+      d_erosion_mask,
+      mask_pitch,
+      width,
+      height,
+      second_pass_kernel_radius,
+      second_pass_kernel_radius,
+      result_strong);
+    cudaStreamSynchronize(stream);
+
+    cudaFree(d_erosion_mask);
+}
+
+/**
+ * @brief Wrapper function to allow for the selection of the spotfinding algorithm.
+ * @param blocks The dimensions of the grid of blocks.
+ * @param threads The dimensions of the grid of threads within each block.
+ * @param shared_memory The size of shared memory required per block (in bytes).
+ * @param stream The CUDA stream to execute the kernel.
+ * @param image Device pointer to the image data.
+ * @param image_pitch The pitch (width in bytes) of the image data.
+ * @param mask Device pointer to the mask data indicating valid pixels.
+ * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ * @param dispersion_algorithm The algorithm to use for spotfinding.
+ * @param result_strong (Output) Device pointer for the strong pixel mask data to be written to.
+ */
+void do_spotfinding(dim3 blocks,
+                    dim3 threads,
+                    size_t shared_memory,
+                    cudaStream_t stream,
+                    pixel_t *image,
+                    size_t image_pitch,
+                    uint8_t *mask,
+                    size_t mask_pitch,
+                    int width,
+                    int height,
+                    DispersionAlgorithm dispersion_algorithm,
+                    uint8_t *result_strong) {
+    void (*dispersion_algorithm_call_function)(dim3,
+                                               dim3,
+                                               size_t,
+                                               cudaStream_t,
+                                               pixel_t *,
+                                               size_t,
+                                               uint8_t *,
+                                               size_t,
+                                               int,
+                                               int,
+                                               uint8_t *);  // Function pointer
+
+    switch (dispersion_algorithm) {
+    case DispersionAlgorithm::DISPERSION:
+        dispersion_algorithm_call_function = call_do_spotfinding_naive;
+        break;
+    case DispersionAlgorithm::DISPERSION_EXTENDED:
+        dispersion_algorithm_call_function = call_do_spotfinding_extended;
+        break;
+    default:
+        throw std::runtime_error("Invalid dispersion algorithm");
+    }
+
+    dispersion_algorithm_call_function(blocks,
+                                       threads,
+                                       shared_memory,
+                                       stream,
+                                       image,
+                                       image_pitch,
+                                       mask,
+                                       mask_pitch,
+                                       width,
+                                       height,
+                                       result_strong);
 }
