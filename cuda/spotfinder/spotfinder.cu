@@ -8,6 +8,7 @@
 // #include <bitshuffle.h>
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
+#include <lodepng.h>
 
 #include "spotfinder.h"
 #include "kernels/erosion.hu"
@@ -210,7 +211,7 @@ __device__ void calculate_sums(pixel_t *image,
             bool include_pixel = mask_pixel != 0;
             if (background_mask != nullptr) {
                 uint8_t background_mask_pixel = background_mask[mask_offset + col];
-                include_pixel = include_pixel && (background_mask_pixel != 0);
+                include_pixel = include_pixel && (background_mask_pixel == VALID_PIXEL);
             }
             if (include_pixel) {
                 sum += pixel;
@@ -441,7 +442,20 @@ void call_do_spotfinding_extended(dim3 blocks,
     }
 
     cudaFree(d_result_strong_buffer);
-
+    {
+        // Print the erosion mask to png
+        auto mask_buffer = std::vector<uint8_t>(width * height);
+        cudaMemcpy(mask_buffer.data(), d_erosion_mask, width * height, cudaMemcpyDeviceToHost);
+        for (auto &pixel : mask_buffer) {
+            pixel = pixel ? 255 : 0;
+        }
+        lodepng::encode("erosion_mask.png",
+                        reinterpret_cast<uint8_t *>(mask_buffer.data()),
+                        width,
+                        height,
+                        LCT_GREY);
+    }
+    
     constexpr int second_pass_kernel_radius = 5;
 
     // Perform the second step of spotfinding
