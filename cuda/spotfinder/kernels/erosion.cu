@@ -1,7 +1,8 @@
-#include "../spotfinder.h"
-#include "erosion.hu"
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
+
+#include "../spotfinder.h"
+#include "erosion.hu"
 
 namespace cg = cooperative_groups;
 
@@ -30,8 +31,7 @@ __device__ void load_central_pixels(cg::thread_block block,
 
     // Load central pixels into shared memory
     if (x < width && y < height) {
-        shared_mask[local_y * shared_width + local_x] =
-            mask[y * mask_pitch + x];
+        shared_mask[local_y * shared_width + local_x] = mask[y * mask_pitch + x];
     } else {
         shared_mask[local_y * shared_width + local_x] = MASKED_PIXEL;
     }
@@ -63,13 +63,14 @@ __device__ void load_border_pixels(cg::thread_block block,
 
     // Load border pixels into shared memory
     for (int i = block.thread_index().x; i < shared_width; i += block.group_dim().x) {
-        for (int j = block.thread_index().y; j < shared_height; j += block.group_dim().y) {
+        for (int j = block.thread_index().y; j < shared_height;
+             j += block.group_dim().y) {
             int global_x = x + (i - local_x);
             int global_y = y + (j - local_y);
 
             bool is_within_central_region =
-                (i >= radius && i < shared_width - radius && j >= radius
-                 && j < shared_height - radius);
+              (i >= radius && i < shared_width - radius && j >= radius
+               && j < shared_height - radius);
             bool is_global_x_in_bounds = (global_x >= 0 && global_x < width);
             bool is_global_y_in_bounds = (global_y >= 0 && global_y < height);
 
@@ -79,7 +80,7 @@ __device__ void load_border_pixels(cg::thread_block block,
 
             if (is_global_x_in_bounds && is_global_y_in_bounds) {
                 shared_mask[j * shared_width + i] =
-                    mask[global_y * mask_pitch + global_x];
+                  mask[global_y * mask_pitch + global_x];
             } else {
                 shared_mask[j * shared_width + i] = MASKED_PIXEL;
             }
@@ -106,7 +107,8 @@ __device__ bool determine_erasure(cg::thread_block block,
     bool should_erase = false;
     for (int i = -radius; i <= radius; ++i) {
         for (int j = -radius; j <= radius; ++j) {
-            if (shared_mask[(local_y + j) * shared_width + (local_x + i)] == MASKED_PIXEL) {
+            if (shared_mask[(local_y + j) * shared_width + (local_x + i)]
+                == MASKED_PIXEL) {
                 int chebyshev_distance = max(abs(i), abs(j));
                 if (chebyshev_distance <= distance_threshold) {
                     should_erase = true;
@@ -214,18 +216,6 @@ __global__ void erosion_kernel(
     // Synchronize threads to ensure all shared memory is loaded
     block.sync();
 
-    // If this is the first block, print out the shared memory buffer
-    // if (threadParams.x == 10 && threadParams.y == 10) {
-    //     printf("Printing shared memory buffer for block (%d, %d)\n", block.group_index().x, block.group_index().y);
-    //     printf("Block (%d, %d) shared memory:\n", block.group_index().x, block.group_index().y);
-    //     for (int j = 0; j < threadParams.shared_height; ++j) {
-    //         for (int i = 0; i < threadParams.shared_width; ++i) {
-    //             printf("%d ", shared_mask[j * threadParams.shared_width + i]);
-    //         }
-    //         printf("\n");
-    //     }
-    // }
-
     /*
      * If the current pixel is outside the image bounds, return without doing anything.
      * We do this after loading shared memory as it may be necessary for this thread 
@@ -241,8 +231,9 @@ __global__ void erosion_kernel(
     }
 
     // Determine if the current pixel should be erased
-    bool should_erase = determine_erasure(block, shared_mask, radius, 2);  // Use 2 as the Chebyshev distance threshold
-    
+    bool should_erase = determine_erasure(
+      block, shared_mask, radius, 2);  // Use 2 as the Chebyshev distance threshold
+
     // dynamic parrelism based
     // bool should_erase_gpu =
     //   launch_determine_erasure_kernel(shared_mask,

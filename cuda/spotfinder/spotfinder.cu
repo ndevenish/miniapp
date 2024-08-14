@@ -10,8 +10,8 @@
 #include <cooperative_groups/reduce.h>
 #include <lodepng.h>
 
-#include "spotfinder.h"
 #include "kernels/erosion.hu"
+#include "spotfinder.h"
 
 namespace cg = cooperative_groups;
 
@@ -412,13 +412,13 @@ void call_do_spotfinding_extended(dim3 blocks,
     {
         auto buffer = std::vector<uint8_t>(width * height);
         cudaMemcpy2DAsync(buffer.data(),
-                     width,
-                     d_result_strong_buffer,
-                     mask_pitch,
-                     width,
-                     height,
-                     cudaMemcpyDeviceToHost,
-                     stream);
+                          width,
+                          d_result_strong_buffer,
+                          mask_pitch,
+                          width,
+                          height,
+                          cudaMemcpyDeviceToHost,
+                          stream);
         for (auto &pixel : buffer) {
             pixel = pixel ? 0 : 255;
         }
@@ -467,13 +467,13 @@ void call_do_spotfinding_extended(dim3 blocks,
         // Print the erosion mask to png
         auto mask_buffer = std::vector<uint8_t>(width * height);
         cudaMemcpy2DAsync(mask_buffer.data(),
-                     width,
-                     d_erosion_mask,
-                     mask_pitch,
-                     width,
-                     height,
-                     cudaMemcpyDeviceToHost,
-                     stream);
+                          width,
+                          d_erosion_mask,
+                          mask_pitch,
+                          width,
+                          height,
+                          cudaMemcpyDeviceToHost,
+                          stream);
         for (auto &pixel : mask_buffer) {
             pixel = pixel ? 255 : 0;
         }
@@ -483,7 +483,7 @@ void call_do_spotfinding_extended(dim3 blocks,
                         height,
                         LCT_GREY);
     }
-    
+
     constexpr int second_pass_kernel_radius = 5;
 
     // Perform the second step of spotfinding
