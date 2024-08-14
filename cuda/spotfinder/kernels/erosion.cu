@@ -6,44 +6,6 @@
 namespace cg = cooperative_groups;
 
 /**
- * @brief Structure to store thread-specific information for the erosion kernel.
- */
-struct KernelThreadParams {
-    int x;
-    int y;
-    int local_x;
-    int local_y;
-    int shared_width;
-    int shared_height;
-};
-
-/**
- * @brief Calculate block information for the current thread.
- * @param block The cooperative group for the current block.
- * @param radius The radius each thread should consider around a pixel
- * @return KernelThreadParams structure containing thread-specific information.
- */
-__device__ KernelThreadParams calculate_block_info(cg::thread_block block, int radius) {
-    KernelThreadParams threadParams;
-
-    // Calculate global coordinates
-    threadParams.x =
-      block.group_index().x * block.group_dim().x + block.thread_index().x;
-    threadParams.y =
-      block.group_index().y * block.group_dim().y + block.thread_index().y;
-
-    // Calculate local coordinates in shared memory
-    threadParams.local_x = block.thread_index().x + radius;
-    threadParams.local_y = block.thread_index().y + radius;
-
-    // Calculate shared memory dimensions
-    threadParams.shared_width = block.group_dim().x + 2 * radius;
-    threadParams.shared_height = block.group_dim().y + 2 * radius;
-
-    return threadParams;
-}
-
-/**
  * @brief Load central pixels into shared memory.
  * @param block The cooperative group for the current block.
  * @param mask Pointer to the mask data.
