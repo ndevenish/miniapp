@@ -434,7 +434,7 @@ void call_do_spotfinding_extended(dim3 blocks,
                          erosion_shared_memory,
                          stream>>>(d_result_strong_buffer,
                                    d_erosion_mask,
-                                   image_pitch,
+                                   mask_pitch,
                                    width,
                                    height,
                                    first_pass_kernel_radius);
