@@ -408,6 +408,27 @@ void call_do_spotfinding_extended(dim3 blocks,
       d_result_strong_buffer);
     cudaStreamSynchronize(stream);
 
+    // Print the first pass result to png
+    {
+        auto buffer = std::vector<uint8_t>(width * height);
+        cudaMemcpy2DAsync(buffer.data(),
+                     width,
+                     d_result_strong_buffer,
+                     mask_pitch,
+                     width,
+                     height,
+                     cudaMemcpyDeviceToHost,
+                     stream);
+        for (auto &pixel : buffer) {
+            pixel = pixel ? 0 : 255;
+        }
+        lodepng::encode("first_pass_result.png",
+                        reinterpret_cast<uint8_t *>(buffer.data()),
+                        width,
+                        height,
+                        LCT_GREY);
+    }
+
     /*
      * Allocate memory for the erosion mask. This is a mask of pixels that
      * are considered strong in the first pass, but were removed in the
