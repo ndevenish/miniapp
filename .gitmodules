@@ -1,6 +1,3 @@
-[submodule "dependencies/span"]
-    	path = dependencies/span
-		url = https://github.com/tcbrindle/span.git
 [submodule "dependencies/TinyTIFF"]
     path = dependencies/TinyTIFF
     url = https://github.com/jkriege2/TinyTIFF
