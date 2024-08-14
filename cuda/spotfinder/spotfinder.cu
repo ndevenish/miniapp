@@ -445,7 +445,14 @@ void call_do_spotfinding_extended(dim3 blocks,
     {
         // Print the erosion mask to png
         auto mask_buffer = std::vector<uint8_t>(width * height);
-        cudaMemcpy(mask_buffer.data(), d_erosion_mask, width * height, cudaMemcpyDeviceToHost);
+        cudaMemcpy2DAsync(mask_buffer.data(),
+                     width,
+                     d_erosion_mask,
+                     mask_pitch,
+                     width,
+                     height,
+                     cudaMemcpyDeviceToHost,
+                     stream);
         for (auto &pixel : mask_buffer) {
             pixel = pixel ? 255 : 0;
         }
