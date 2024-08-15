@@ -107,6 +107,7 @@ void do_spotfinding(dim3 blocks,
                     size_t mask_pitch,
                     int width,
                     int height,
+                    pixel_t max_valid_pixel_value,
                     DispersionAlgorithm dispersion_algorithm,
                     uint8_t *result_strong);
 

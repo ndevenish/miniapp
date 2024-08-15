@@ -31,6 +31,9 @@ SHMRead::SHMRead(const std::string &path) : _base_path(path) {
         throw std::runtime_error(format(
           "Can not read image with bit_depth_image={}, only 16", bit_depth_image));
     }
+    _trusted_range = {
+      0, data["countrate_correction_count_cutoff"].template get<image_t_type>()};
+
     // Read the mask
     std::vector<int32_t> raw_mask;
     raw_mask.resize(_image_shape[0] * _image_shape[1]);
@@ -50,7 +53,8 @@ bool SHMRead::is_image_available(size_t index) {
     return std::filesystem::exists(format("{}/image_{:06d}_2", _base_path, index));
 }
 
-SPAN<uint8_t> SHMRead::get_raw_chunk(size_t index, SPAN<uint8_t> destination) {
+std::span<uint8_t> SHMRead::get_raw_chunk(size_t index,
+                                          std::span<uint8_t> destination) {
     std::ifstream f(format("{}/image_{:06d}_2", _base_path, index),
                     std::ios::in | std::ios::binary);
     f.read(reinterpret_cast<char *>(destination.data()), destination.size());

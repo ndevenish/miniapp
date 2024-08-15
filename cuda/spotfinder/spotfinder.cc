@@ -2,6 +2,7 @@
 
 #include <bitshuffle.h>
 #include <fmt/core.h>
+#include <fmt/os.h>
 #include <lodepng.h>
 #include <nppi_filtering_functions.h>
 
@@ -413,6 +414,7 @@ int main(int argc, char **argv) {
 
     int height = reader.image_shape()[0];
     int width = reader.image_shape()[1];
+    auto trusted_px_max = reader.get_trusted_range()[1];
 
     std::signal(SIGINT, stop_processing);
 
@@ -437,17 +439,36 @@ int main(int argc, char **argv) {
 
     auto mask = upload_mask(reader);
 
+    // Create a mask image for debugging
+    if (do_writeout) {
+        auto image_mask =
+          std::vector<std::array<uint8_t, 3>>(width * height, {0, 0, 0});
+
+        // Write out the raw image mask
+        auto image_mask_source = reader.get_mask()->data();
+        for (int y = 0, k = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x, ++k) {
+                image_mask[k] = {255, 255, 255};
+                if (!image_mask_source[k]) {
+                    image_mask[k] = {255, 0, 0};
+                }
+            }
+        }
+        lodepng::encode("mask_source.png",
+                        reinterpret_cast<uint8_t *>(image_mask.data()),
+                        width,
+                        height,
+                        LCT_RGB);
+    }
+
     // If set, apply resolution filtering
     if (dmin > 0 || dmax > 0) {
         apply_resolution_filtering(
           mask, width, height, wavelength, detector, dmin, dmax);
-
-        // Create a mask image for debugging
         if (do_writeout) {
-            auto mask_buffer = std::vector<uint8_t>(width * height, 0);
-
             // Copy the mask back from the GPU
-            cudaMemcpy2D(mask_buffer.data(),
+            auto calculated_mask = std::vector<uint8_t>(width * height, 0);
+            cudaMemcpy2D(calculated_mask.data(),
                          width,
                          mask.get(),
                          mask.pitch_bytes(),
@@ -455,21 +476,22 @@ int main(int argc, char **argv) {
                          height,
                          cudaMemcpyDeviceToHost);
 
-            // Convert the mask to a binary image
-            for (auto &pixel : mask_buffer) {
-                /*
-               * Since the mask is a binary image, 1 for valid, 0 for invalid,
-               * we can use a simple ternary operator to convert the mask to a
-               * binary - black and white - image.
-              */
-                pixel = pixel ? 255 : 0;
-            }
+            auto image_mask =
+              std::vector<std::array<uint8_t, 3>>(width * height, {0, 0, 0});
 
-            lodepng::encode("mask.png",
-                            reinterpret_cast<uint8_t *>(mask_buffer.data()),
+            for (int y = 0, k = 0; y < height; ++y) {
+                for (int x = 0; x < width; ++x, ++k) {
+                    image_mask[k] = {255, 255, 255};
+                    if (!calculated_mask[k]) {
+                        image_mask[k] = {255, 0, 0};
+                    }
+                }
+            }
+            lodepng::encode("mask_calculated.png",
+                            reinterpret_cast<uint8_t *>(image_mask.data()),
                             width,
                             height,
-                            LCT_GREY);
+                            LCT_RGB);
         }
     }
 
@@ -557,7 +579,7 @@ int main(int argc, char **argv) {
                         .count();
                 }
                 // Sized buffer for the actual data read from file
-                span<uint8_t> buffer;
+                std::span<uint8_t> buffer;
                 // Fetch the image data from the reader
                 while (true) {
                     {
@@ -566,10 +588,10 @@ int main(int argc, char **argv) {
                     }
                     // /dev/shm we might not have an atomic write
                     if (buffer.size() == 0) {
-                        print(
+                        print(fmt::runtime(
                           "\033[1mRace Condition?!?? Got buffer size 0 for image "
                           "{image_num}. "
-                          "Sleeping.\033[0m\n");
+                          "Sleeping.\033[0m\n"));
                         std::this_thread::sleep_for(100ms);
                         continue;
                     }
@@ -590,7 +612,7 @@ int main(int argc, char **argv) {
                     decompress_byte_offset<pixel_t>(
                       buffer,
                       {host_image.get(),
-                       static_cast<tcb::span<short unsigned int>::size_type>(
+                       static_cast<std::span<short unsigned int>::size_type>(
                          width * height)});
                     // std::copy(buffer.begin(), buffer.end(), host_image.get());
                     // std::exit(1);
@@ -618,6 +640,7 @@ int main(int argc, char **argv) {
                                mask.pitch,
                                width,
                                height,
+                               trusted_px_max,
                                dispersion_algorithm,
                                device_results.get());
                 post.record(stream);
@@ -786,6 +809,16 @@ int main(int argc, char **argv) {
                                     width,
                                     height,
                                     LCT_RGB);
+                    // Also write a list of pixels out here
+                    auto out =
+                      fmt::output_file(fmt::format("pixels_{:05d}.txt", image_num));
+                    for (int y = 0, k = 0; y < height; ++y) {
+                        for (int x = 0; x < width; ++x, ++k) {
+                            if (host_results[k]) {
+                                out.print("{:4d}, {:4d}\n", x, y);
+                            }
+                        }
+                    }
                 }
 
                 // Check if pipeHandler was initialized
@@ -814,7 +847,8 @@ int main(int argc, char **argv) {
                     auto converted_image = std::vector<double>{
                       host_image.get(), host_image.get() + width * height};
                     auto dials_strong = spotfinder.standard_dispersion(
-                      converted_image, reader.get_mask().value_or(span<uint8_t>{}));
+                      converted_image,
+                      reader.get_mask().value_or(std::span<uint8_t>{}));
                     size_t mismatch_x = 0, mismatch_y = 0;
                     bool validation_matches = compare_results(dials_strong.data(),
                                                               width,
@@ -886,9 +920,9 @@ int main(int argc, char **argv) {
         std::chrono::high_resolution_clock::now() - all_images_start_time)
         .count();
     print(
-      "\n{} images in {:.2f} s (\033[1;34m{:.2f} GBps\033[0m) "
-      "(\033[1;34m{:.1f} fps\033[0m)\n",
-      completed_images,
+      "\n{} images in {:.2f} s (\033[1;34m{:.2f} GBps\033[0m) (\033[1;34m{:.1f} "
+      "fps\033[0m)\n",
+      int(completed_images),
       total_time,
       GBps<pixel_t>(
         total_time * 1000,

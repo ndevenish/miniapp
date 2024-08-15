@@ -4,12 +4,11 @@ cmake_minimum_required(VERSION 3.20)
 
 project(h5read LANGUAGES C CXX)
 
-set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD 11)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/../cmake/Modules")
 include(SetDefaultBuildRelWithDebInfo)
 include(AlwaysColourCompilation)
-include(UseSpanBackportIfNeeded)
 
 find_package(HDF5)
 
@@ -30,8 +29,10 @@ if (TARGET hdf5::hdf5)
   set_target_properties(hdf5::hdf5 PROPERTIES INTERFACE_COMPILE_DEFINITIONS "${_hdf5_interface_defs}")
 endif()
 
+option(H5READ_BUILD_EXE "Always build the H5Read executables, even if a subproject.")
+
 # Only build the example reader as a root script
-if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR OR H5READ_BUILD_EXE)
     add_executable(read_h5read src/read_h5read.c)
     target_link_libraries(read_h5read PUBLIC h5read)
 

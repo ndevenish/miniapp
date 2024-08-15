@@ -271,6 +271,7 @@ __global__ void do_spotfinding_dispersion(pixel_t *image,
                                           size_t mask_pitch,
                                           int width,
                                           int height,
+                                          pixel_t max_valid_pixel_value,
                                           int kernel_width,
                                           int kernel_height,
                                           //  int *result_sum,
@@ -296,8 +297,9 @@ __global__ void do_spotfinding_dispersion(pixel_t *image,
     int y = block.group_index().y * block.group_dim().y + block.thread_index().y;
 
     // Don't calculate for masked pixels
-    bool px_is_valid = mask[y * mask_pitch + x] != 0;
     pixel_t this_pixel = image[y * image_pitch + x];
+    bool px_is_valid =
+      mask[y * mask_pitch + x] != 0 && this_pixel <= max_valid_pixel_value;
 
     if (px_is_valid) {
         calculate_sums(image,
@@ -341,6 +343,7 @@ void call_do_spotfinding_naive(dim3 blocks,
                                size_t mask_pitch,
                                int width,
                                int height,
+                               pixel_t max_valid_pixel_value,
                                //  int *result_sum,
                                //  size_t *result_sumsq,
                                //  uint8_t *result_n,
@@ -358,6 +361,7 @@ void call_do_spotfinding_naive(dim3 blocks,
       mask_pitch,
       width,
       height,
+      max_valid_pixel_value,
       basic_kernel_width,
       basic_kernel_height,
       result_strong);
@@ -387,6 +391,7 @@ void call_do_spotfinding_extended(dim3 blocks,
                                   size_t mask_pitch,
                                   int width,
                                   int height,
+                                  pixel_t max_valid_pixel_value,
                                   uint8_t *result_strong) {
     // Allocate memory for the intermediate result buffer
     uint8_t *d_result_strong_buffer;
@@ -403,6 +408,7 @@ void call_do_spotfinding_extended(dim3 blocks,
       mask_pitch,
       width,
       height,
+      max_valid_pixel_value,
       first_pass_kernel_radius,  // One-direction width of kernel. Total kernel span is (width * 2 + 1)
       first_pass_kernel_radius,  // One-direction height of kernel. Total kernel span is (height * 2 + 1)
       d_result_strong_buffer);
@@ -528,6 +534,7 @@ void do_spotfinding(dim3 blocks,
                     size_t mask_pitch,
                     int width,
                     int height,
+                    pixel_t max_valid_pixel_value,
                     DispersionAlgorithm dispersion_algorithm,
                     uint8_t *result_strong) {
     void (*dispersion_algorithm_call_function)(dim3,
@@ -563,5 +570,6 @@ void do_spotfinding(dim3 blocks,
                                        mask_pitch,
                                        width,
                                        height,
+                                       max_valid_pixel_value,
                                        result_strong);
 }

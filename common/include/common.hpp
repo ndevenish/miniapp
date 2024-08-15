@@ -5,23 +5,16 @@
 
 #include <algorithm>
 #include <cinttypes>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
 
-// We might be on an implementation that doesn't have <span>, so use a backport
-#ifdef USE_SPAN_BACKPORT
-#include "span.hpp"
-using tcb::span;
-#else
-#include <span>
-using std::span;
-#endif
-
 template <typename T1, typename... TS>
 auto with_formatting(const std::string &code, const T1 &first, TS... args)
   -> std::string {
-    return code + fmt::format(fmt::format("{}", first), args...) + "\033[0m";
+    return code + fmt::format(fmt::runtime(fmt::format("{}", first)), args...)
+           + "\033[0m";
 }
 
 template <typename... T>
@@ -77,7 +70,7 @@ void draw_image_data(const T *data,
         for (int row = slow; row < std::min(slow + height, data_height); ++row) {
             auto val = data[col + data_width * row];
             auto fmt_spec = fmt::format("{{:{}}}", format_type);
-            maxw = std::max(maxw, fmt::formatted_size(fmt_spec, val));
+            maxw = std::max(maxw, fmt::formatted_size(fmt::runtime(fmt_spec), val));
             accum = std::max(accum, val);
         }
         col_widths.push_back(maxw);
@@ -109,9 +102,9 @@ void draw_image_data(const T *data,
 
     for (int i = 0; i < width; ++i) {
         for (int j = 0; j < col_widths[i]; ++j) {
-            fmt::print(is_top ? "═" : "─");
+            fmt::print("{}", is_top ? "═" : "─");
         }
-        fmt::print(is_top ? "═" : "─");
+        fmt::print("{}", is_top ? "═" : "─");
     }
     if (is_top) {
         if (is_right) {
@@ -155,7 +148,7 @@ void draw_image_data(const T *data,
             }
             auto fmt_spec =
               fmt::format("{{:{}{}}} ", col_widths[i - fast], format_type);
-            fmt::print(fmt_spec, dat);
+            fmt::print(fmt::runtime(fmt_spec), dat);
             if (dat == accum) {
                 fmt::print("\033[0m");
             }
@@ -175,7 +168,7 @@ void draw_image_data(const std::unique_ptr<T, U> &data,
       static_cast<T *>(data.get()), fast, slow, width, height, data_width, data_height);
 }
 template <typename T>
-void draw_image_data(const span<T> data,
+void draw_image_data(const std::span<T> data,
                      size_t fast,
                      size_t slow,
                      size_t width,
@@ -236,7 +229,7 @@ auto count_nonzero(const T *data, I width, I height, I2 pitch = 0) -> size_t {
     return strong;
 }
 template <typename T, typename I, typename I2 = size_t>
-auto count_nonzero(const span<const T> data, I width, I height, I2 pitch = 0)
+auto count_nonzero(const std::span<const T> data, I width, I height, I2 pitch = 0)
   -> size_t {
     return count_nonzero(data.data(), width, height, pitch);
 }
