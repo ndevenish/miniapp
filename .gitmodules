@@ -1,20 +1,6 @@
-[submodule "dependencies/fmt"]
-	path = dependencies/fmt
-	url = https://github.com/fmtlib/fmt.git
 [submodule "dependencies/span"]
-	path = dependencies/span
-	url = https://github.com/tcbrindle/span.git
-[submodule "dependencies/argparse"]
-	path = dependencies/argparse
-	url = https://github.com/ndevenish/argparse
-    ignore = untracked
+    	path = dependencies/span
+		url = https://github.com/tcbrindle/span.git
 [submodule "dependencies/TinyTIFF"]
     path = dependencies/TinyTIFF
     url = https://github.com/jkriege2/TinyTIFF
-[submodule "dependencies/lodepng"]
-	path = dependencies/lodepng
-	url = https://github.com/lvandeve/lodepng.git
-[submodule "dependencies/json"]
-	path = dependencies/json
-	url = git@github.com:nlohmann/json.git
-	branch = 3.11.2
