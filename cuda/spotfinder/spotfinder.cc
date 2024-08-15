@@ -585,8 +585,13 @@ int main(int argc, char **argv) {
                       buffer.data() + 12, host_image.get(), width * height, 2, 0);
                     break;
                 case Reader::ChunkCompression::BYTE_OFFSET_32:
-                    decompress_byte_offset<pixel_t>(buffer,
-                                                    {host_image.get(), width * height});
+                    // decompress_byte_offset<pixel_t>(buffer,
+                    //                                 {host_image.get(), width * height});
+                    decompress_byte_offset<pixel_t>(
+                      buffer,
+                      {host_image.get(),
+                       static_cast<tcb::span<short unsigned int>::size_type>(
+                         width * height)});
                     // std::copy(buffer.begin(), buffer.end(), host_image.get());
                     // std::exit(1);
                     break;
@@ -747,9 +752,6 @@ int main(int argc, char **argv) {
                             uint8_t graysc_value = std::max(
                               0.0f, 255.99f - static_cast<float>(host_image[k]) * 10);
                             buffer[k] = {graysc_value, graysc_value, graysc_value};
-                            if (host_results[k]) {
-                                buffer[k] = color_pixel;
-                            }
                         }
                     }
                     // Go over each shoebox and write a square
@@ -768,6 +770,14 @@ int main(int argc, char **argv) {
                             for (int y = box.t - edge; y <= box.b + edge; ++y) {
                                 buffer[width * y + box.l - edge] = color_shoebox;
                                 buffer[width * y + box.r + edge] = color_shoebox;
+                            }
+                        }
+                    }
+                    // Go over everything again, so that strong spots are visible over the boxes
+                    for (int y = 0, k = 0; y < height; ++y) {
+                        for (int x = 0; x < width; ++x, ++k) {
+                            if (host_results[k]) {
+                                buffer[k] = color_pixel;
                             }
                         }
                     }
