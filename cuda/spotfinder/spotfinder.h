@@ -156,6 +156,7 @@ void call_do_spotfinding_extended(dim3 blocks,
                                   int width,
                                   int height,
                                   pixel_t max_valid_pixel_value,
-                                  uint8_t *result_strong);
+                                  uint8_t *result_strong,
+                                  bool do_writeout = false);
 
 #endif
