@@ -649,7 +649,8 @@ int main(int argc, char **argv) {
                                                  width,
                                                  height,
                                                  trusted_px_max,
-                                                 device_results.get());
+                                                 device_results.get(),
+                                                 do_writeout);
                     break;
                 }
                 post.record(stream);

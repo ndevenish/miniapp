@@ -412,7 +412,8 @@ void call_do_spotfinding_extended(dim3 blocks,
                                   int width,
                                   int height,
                                   pixel_t max_valid_pixel_value,
-                                  uint8_t *result_strong) {
+                                  uint8_t *result_strong,
+                                  bool do_writeout) {
     // Allocate memory for the intermediate result buffer
     PitchedMalloc<uint8_t> d_result_strong_buffer(width, height);
 
@@ -486,7 +487,7 @@ void call_do_spotfinding_extended(dim3 blocks,
         cudaStreamSynchronize(stream);
     }
 
-    {
+    if (do_writeout) {
         // Print the erosion mask to png
         auto mask_buffer = std::vector<uint8_t>(width * height);
         cudaMemcpy2DAsync(mask_buffer.data(),
@@ -497,14 +498,26 @@ void call_do_spotfinding_extended(dim3 blocks,
                           height,
                           cudaMemcpyDeviceToHost,
                           stream);
-        for (auto &pixel : mask_buffer) {
-            pixel = pixel ? 255 : 0;
+        // Create an RGB buffer to store the image data
+        auto image_mask =
+          std::vector<std::array<uint8_t, 3>>(width * height, {0, 0, 0});
+
+        for (int y = 0, k = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x, ++k) {
+                image_mask[k] = {255, 0, 0};  // Default to white
+                if (mask_buffer[k]) {
+                    image_mask[k] = {
+                      255,
+                      255,
+                      255};  // Set to red if the pixel is part of the erosion mask
+                }
+            }
         }
         lodepng::encode("erosion_mask.png",
-                        reinterpret_cast<uint8_t *>(mask_buffer.data()),
+                        reinterpret_cast<uint8_t *>(image_mask.data()),
                         width,
                         height,
-                        LCT_GREY);
+                        LCT_RGB);
     }
 
     constexpr int second_pass_kernel_radius = 5;
