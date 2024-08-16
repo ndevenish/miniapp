@@ -629,20 +629,38 @@ int main(int argc, char **argv) {
                                              cudaMemcpyHostToDevice,
                                              stream));
                 copy.record(stream);
-                // When done, launch the spotfind kernel
-                do_spotfinding(blocks_dims,
-                               gpu_thread_block_size,
-                               0,
-                               stream,
-                               device_image.get(),
-                               device_image.pitch,
-                               mask.get(),
-                               mask.pitch,
-                               width,
-                               height,
-                               trusted_px_max,
-                               dispersion_algorithm,
-                               device_results.get());
+// When done, launch the spotfind kernel
+#pragma region Spotfinding
+                switch (dispersion_algorithm) {
+                case DispersionAlgorithm::DISPERSION:
+                    call_do_spotfinding_dispersion(blocks_dims,
+                                                   gpu_thread_block_size,
+                                                   0,
+                                                   stream,
+                                                   device_image.get(),
+                                                   device_image.pitch,
+                                                   mask.get(),
+                                                   mask.pitch,
+                                                   width,
+                                                   height,
+                                                   trusted_px_max,
+                                                   device_results.get());
+                    break;
+                case DispersionAlgorithm::DISPERSION_EXTENDED:
+                    call_do_spotfinding_extended(blocks_dims,
+                                                 gpu_thread_block_size,
+                                                 0,
+                                                 stream,
+                                                 device_image.get(),
+                                                 device_image.pitch,
+                                                 mask.get(),
+                                                 mask.pitch,
+                                                 width,
+                                                 height,
+                                                 trusted_px_max,
+                                                 device_results.get());
+                    break;
+                }
                 post.record(stream);
 
                 // Copy the results buffer back to the CPU

@@ -97,18 +97,30 @@ void call_apply_resolution_mask(dim3 blocks,
                                 uint8_t *mask,
                                 ResolutionMaskParams params);
 
-void do_spotfinding(dim3 blocks,
-                    dim3 threads,
-                    size_t shared_memory,
-                    cudaStream_t stream,
-                    pixel_t *image,
-                    size_t image_pitch,
-                    uint8_t *mask,
-                    size_t mask_pitch,
-                    int width,
-                    int height,
-                    pixel_t max_valid_pixel_value,
-                    DispersionAlgorithm dispersion_algorithm,
-                    uint8_t *result_strong);
+void call_do_spotfinding_dispersion(dim3 blocks,
+                                    dim3 threads,
+                                    size_t shared_memory,
+                                    cudaStream_t stream,
+                                    pixel_t *image,
+                                    size_t image_pitch,
+                                    uint8_t *mask,
+                                    size_t mask_pitch,
+                                    int width,
+                                    int height,
+                                    pixel_t max_valid_pixel_value,
+                                    uint8_t *result_strong);
+
+void call_do_spotfinding_extended(dim3 blocks,
+                                  dim3 threads,
+                                  size_t shared_memory,
+                                  cudaStream_t stream,
+                                  pixel_t *image,
+                                  size_t image_pitch,
+                                  uint8_t *mask,
+                                  size_t mask_pitch,
+                                  int width,
+                                  int height,
+                                  pixel_t max_valid_pixel_value,
+                                  uint8_t *result_strong);
 
 #endif

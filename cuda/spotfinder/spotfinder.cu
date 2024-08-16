@@ -333,21 +333,18 @@ __global__ void do_spotfinding_dispersion(pixel_t *image,
     }
 }
 
-void call_do_spotfinding_naive(dim3 blocks,
-                               dim3 threads,
-                               size_t shared_memory,
-                               cudaStream_t stream,
-                               pixel_t *image,
-                               size_t image_pitch,
-                               uint8_t *mask,
-                               size_t mask_pitch,
-                               int width,
-                               int height,
-                               pixel_t max_valid_pixel_value,
-                               //  int *result_sum,
-                               //  size_t *result_sumsq,
-                               //  uint8_t *result_n,
-                               uint8_t *result_strong) {
+void call_do_spotfinding_dispersion(dim3 blocks,
+                                    dim3 threads,
+                                    size_t shared_memory,
+                                    cudaStream_t stream,
+                                    pixel_t *image,
+                                    size_t image_pitch,
+                                    uint8_t *mask,
+                                    size_t mask_pitch,
+                                    int width,
+                                    int height,
+                                    pixel_t max_valid_pixel_value,
+                                    uint8_t *result_strong) {
     /// One-direction width of kernel. Total kernel span is (K_W * 2 + 1)
     constexpr int basic_kernel_width = 3;
     /// One-direction height of kernel. Total kernel span is (K_H * 2 + 1)
@@ -501,75 +498,11 @@ void call_do_spotfinding_extended(dim3 blocks,
       mask_pitch,
       width,
       height,
+      max_valid_pixel_value,
       second_pass_kernel_radius,
       second_pass_kernel_radius,
       result_strong);
     cudaStreamSynchronize(stream);
 
     cudaFree(d_erosion_mask);
-}
-
-/**
- * @brief Wrapper function to allow for the selection of the spotfinding algorithm.
- * @param blocks The dimensions of the grid of blocks.
- * @param threads The dimensions of the grid of threads within each block.
- * @param shared_memory The size of shared memory required per block (in bytes).
- * @param stream The CUDA stream to execute the kernel.
- * @param image Device pointer to the image data.
- * @param image_pitch The pitch (width in bytes) of the image data.
- * @param mask Device pointer to the mask data indicating valid pixels.
- * @param mask_pitch The pitch (width in bytes) of the mask data.
- * @param width The width of the image.
- * @param height The height of the image.
- * @param dispersion_algorithm The algorithm to use for spotfinding.
- * @param result_strong (Output) Device pointer for the strong pixel mask data to be written to.
- */
-void do_spotfinding(dim3 blocks,
-                    dim3 threads,
-                    size_t shared_memory,
-                    cudaStream_t stream,
-                    pixel_t *image,
-                    size_t image_pitch,
-                    uint8_t *mask,
-                    size_t mask_pitch,
-                    int width,
-                    int height,
-                    pixel_t max_valid_pixel_value,
-                    DispersionAlgorithm dispersion_algorithm,
-                    uint8_t *result_strong) {
-    void (*dispersion_algorithm_call_function)(dim3,
-                                               dim3,
-                                               size_t,
-                                               cudaStream_t,
-                                               pixel_t *,
-                                               size_t,
-                                               uint8_t *,
-                                               size_t,
-                                               int,
-                                               int,
-                                               uint8_t *);  // Function pointer
-
-    switch (dispersion_algorithm) {
-    case DispersionAlgorithm::DISPERSION:
-        dispersion_algorithm_call_function = call_do_spotfinding_naive;
-        break;
-    case DispersionAlgorithm::DISPERSION_EXTENDED:
-        dispersion_algorithm_call_function = call_do_spotfinding_extended;
-        break;
-    default:
-        throw std::runtime_error("Invalid dispersion algorithm");
-    }
-
-    dispersion_algorithm_call_function(blocks,
-                                       threads,
-                                       shared_memory,
-                                       stream,
-                                       image,
-                                       image_pitch,
-                                       mask,
-                                       mask_pitch,
-                                       width,
-                                       height,
-                                       max_valid_pixel_value,
-                                       result_strong);
 }
