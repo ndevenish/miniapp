@@ -6,6 +6,7 @@
 
 namespace cg = cooperative_groups;
 
+#pragma region Device Functions
 /**
  * @brief Load central pixels into shared memory.
  * @param block The cooperative group for the current block.
@@ -178,7 +179,9 @@ __device__ bool determine_erasure(cg::thread_block block,
 
 //     return h_should_erase_uint == 1u;
 // }
+#pragma endregion Device Functions
 
+#pragma region Kernel
 /**
  * @brief CUDA kernel to apply erosion based on the mask and update the erosion_mask.
  * 
@@ -248,3 +251,4 @@ __global__ void erosion_kernel(
         erosion_mask[y * mask_pitch + x] = VALID_PIXEL;
     }
 }
+#pragma endregion Kernel

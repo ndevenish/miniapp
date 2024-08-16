@@ -15,6 +15,7 @@
 
 namespace cg = cooperative_groups;
 
+#pragma region Res Mask Functions
 /**
  * @brief Function to calculate the distance of a pixel from the beam center.
  * @param x The x-coordinate of the pixel in the image
@@ -59,7 +60,9 @@ __device__ float get_resolution(float wavelength,
     float theta = 0.5 * atanf(distance_from_centre / distance_to_detector);
     return wavelength / (2 * sinf(theta));
 }
+#pragma endregion Res Mask Functions
 
+#pragma region Res Mask Kernel
 /**
  * @brief CUDA kernel to apply a resolution mask for an image.
  *
@@ -164,7 +167,9 @@ void call_apply_resolution_mask(dim3 blocks,
       params.dmin,
       params.dmax);
 }
+#pragma endregion Res Mask Kernel
 
+#pragma region Spotfinding Functions
 /**
  * @brief Calculate the sum, sum of squares, and count of valid pixels in the neighborhood.
  * @param image Device pointer to the image data.
@@ -247,7 +252,9 @@ __device__ bool is_strong_pixel(uint sum, size_t sumsq, uint8_t n, pixel_t this_
 
     return not_background && is_signal;
 }
+#pragma endregion Spotfinding Functions
 
+#pragma region Spotfinding Kernel
 /**
  * @brief CUDA kernel to perform spotfinding using a dispersion-based algorithm.
  * 
@@ -330,7 +337,9 @@ __global__ void do_spotfinding_dispersion(pixel_t *image,
         }
     }
 }
+#pragma endregion Spotfinding Kernel
 
+#pragma region Launch Wrappers
 /**
  * @brief Wrapper function to call the dispersion-based spotfinding algorithm.
  * @param blocks The dimensions of the grid of blocks.
@@ -515,3 +524,4 @@ void call_do_spotfinding_extended(dim3 blocks,
       result_strong);
     cudaStreamSynchronize(stream);
 }
+#pragma endregion Spotfinding Wrappers
