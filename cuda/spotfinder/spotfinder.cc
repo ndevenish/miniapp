@@ -52,38 +52,23 @@ auto operator==(const int2 &left, const int2 &right) -> bool {
     return left.x == right.x && left.y == right.y;
 }
 
+// Don't force inclusion of npp headers
+#ifdef NV_NPPIDEFS_H
+template <typename T>
+inline void _npp_check_error(T status, const char *file, int line_num) {
+    if (status != NPP_SUCCESS) {
+        throw cuda_error(fmt::format("{}:{}: NPP returned non-successful status ({})",
+                                     file,
+                                     line_num,
+                                     static_cast<int>(status)));
+    }
+}
+#define NPP_CHECK(x) _npp_check_error((x), __FILE__, __LINE__)
+#endif
+
 struct Reflection {
     int l, t, r, b;
     int num_pixels = 0;
-};
-
-template <typename T>
-struct PitchedMalloc {
-  public:
-    using value_type = T;
-    PitchedMalloc(std::shared_ptr<T[]> data, size_t width, size_t height, size_t pitch)
-        : _data(data), width(width), height(height), pitch(pitch) {}
-
-    PitchedMalloc(size_t width, size_t height) : width(width), height(height) {
-        auto [alloc, alloc_pitch] = make_cuda_pitched_malloc<T>(width, height);
-        _data = alloc;
-        pitch = alloc_pitch;
-    }
-
-    auto get() {
-        return _data.get();
-    }
-    auto size_bytes() -> size_t const {
-        return pitch * height * sizeof(T);
-    }
-    auto pitch_bytes() -> size_t const {
-        return pitch * sizeof(T);
-    }
-
-    std::shared_ptr<T[]> _data;
-    size_t width;
-    size_t height;
-    size_t pitch;
 };
 
 /// Copy the mask from a reader into a pitched GPU area
