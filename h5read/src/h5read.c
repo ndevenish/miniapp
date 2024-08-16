@@ -528,7 +528,7 @@ image_t_type _read_single_value(hid_t dataset, const char *dataset_name) {
           datatype_size);
         exit(1);
     }
-    static_assert(sizeof(image_t_type) == 2);
+    assert(sizeof(image_t_type) == 2);
     image_t_type value;
     if (H5Dread(dataset, H5T_NATIVE_UINT16, H5S_ALL, H5S_ALL, H5P_DEFAULT, &value)
         < 0) {
