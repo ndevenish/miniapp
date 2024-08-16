@@ -66,6 +66,8 @@ inline void _npp_check_error(T status, const char *file, int line_num) {
 #define NPP_CHECK(x) _npp_check_error((x), __FILE__, __LINE__)
 #endif
 
+enum class DispersionAlgorithm { DISPERSION, DISPERSION_EXTENDED };
+
 struct Reflection {
     int l, t, r, b;
     int num_pixels = 0;
