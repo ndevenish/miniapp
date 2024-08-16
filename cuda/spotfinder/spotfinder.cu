@@ -260,6 +260,7 @@ __device__ bool is_strong_pixel(uint sum, size_t sumsq, uint8_t n, pixel_t this_
  * @param mask_pitch The pitch (width in bytes) of the mask data.
  * @param width The width of the image.
  * @param height The height of the image.
+ * @param max_valid_pixel_value The maximum valid trusted pixel value.
  * @param kernel_width The radius of the kernel in the x-direction.
  * @param kernel_height The radius of the kernel in the y-direction.
  * @param result_strong (Output) Device pointer for the strong pixel mask data to be written to.
@@ -274,9 +275,6 @@ __global__ void do_spotfinding_dispersion(pixel_t *image,
                                           pixel_t max_valid_pixel_value,
                                           int kernel_width,
                                           int kernel_height,
-                                          //  int *result_sum,
-                                          //  size_t *result_sumsq,
-                                          //  uint8_t *result_n,
                                           uint8_t *result_strong) {
     image = image + (image_pitch * height * blockIdx.z);
     // result_sum = result_sum + (image_pitch * height * blockIdx.z);
@@ -333,6 +331,21 @@ __global__ void do_spotfinding_dispersion(pixel_t *image,
     }
 }
 
+/**
+ * @brief Wrapper function to call the dispersion-based spotfinding algorithm.
+ * @param blocks The dimensions of the grid of blocks.
+ * @param threads The dimensions of the grid of threads within each block.
+ * @param shared_memory The size of shared memory required per block (in bytes).
+ * @param stream The CUDA stream to execute the kernel.
+ * @param image Device pointer to the image data.
+ * @param image_pitch The pitch (width in bytes) of the image data.
+ * @param mask Device pointer to the mask data indicating valid pixels.
+ * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param width The width of the image.
+ * @param height The height of the image.
+ * @param max_valid_pixel_value The maximum valid trusted pixel value.
+ * @param result_strong (Output) Device pointer for the strong pixel mask data to be written to.
+ */
 void call_do_spotfinding_dispersion(dim3 blocks,
                                     dim3 threads,
                                     size_t shared_memory,
@@ -376,6 +389,7 @@ void call_do_spotfinding_dispersion(dim3 blocks,
  * @param mask_pitch The pitch (width in bytes) of the mask data.
  * @param width The width of the image.
  * @param height The height of the image.
+ * @param max_valid_pixel_value The maximum valid trusted pixel value.
  * @param result_strong (Output) Device pointer for the strong pixel mask data to be written to.
  */
 void call_do_spotfinding_extended(dim3 blocks,
