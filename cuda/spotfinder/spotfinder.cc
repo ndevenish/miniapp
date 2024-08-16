@@ -446,6 +446,7 @@ int main(int argc, char **argv) {
                         LCT_RGB);
     }
 
+#pragma region Resolution Filtering
     // If set, apply resolution filtering
     if (dmin > 0 || dmax > 0) {
         apply_resolution_filtering(
@@ -479,6 +480,7 @@ int main(int argc, char **argv) {
                             LCT_RGB);
         }
     }
+#pragma endregion Resolution Filtering
 
     auto all_images_start_time = std::chrono::high_resolution_clock::now();
 
@@ -582,6 +584,7 @@ int main(int argc, char **argv) {
                     }
                     break;
                 }
+#pragma region Decompression
                 // Decompress this data, outside of the mutex.
                 // We do this here rather than in the reader, because we
                 // anticipate that we will want to eventually offload
@@ -614,8 +617,9 @@ int main(int argc, char **argv) {
                                              cudaMemcpyHostToDevice,
                                              stream));
                 copy.record(stream);
-// When done, launch the spotfind kernel
+#pragma endregion Decompression
 #pragma region Spotfinding
+                // When done, launch the spotfind kernel
                 switch (dispersion_algorithm) {
                 case DispersionAlgorithm::DISPERSION:
                     call_do_spotfinding_dispersion(blocks_dims,
@@ -660,6 +664,7 @@ int main(int argc, char **argv) {
                 postcopy.record(stream);
                 // Now, wait for stream to finish
                 CUDA_CHECK(cudaStreamSynchronize(stream));
+#pragma endregion Spotfinding
 
                 // Manually reproduce what the DIALS connected components does
                 // Start with the behaviour of the PixelList class:
