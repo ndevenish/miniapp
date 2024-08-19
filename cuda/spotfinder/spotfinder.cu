@@ -346,10 +346,8 @@ __global__ void do_spotfinding_dispersion(pixel_t *image,
  * @param threads The dimensions of the grid of threads within each block.
  * @param shared_memory The size of shared memory required per block (in bytes).
  * @param stream The CUDA stream to execute the kernel.
- * @param image Device pointer to the image data.
- * @param image_pitch The pitch (width in bytes) of the image data.
- * @param mask Device pointer to the mask data indicating valid pixels.
- * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param image PitchedMalloc object for the image data.
+ * @param mask PitchedMalloc object for the mask data indicating valid pixels.
  * @param width The width of the image.
  * @param height The height of the image.
  * @param max_valid_pixel_value The maximum valid trusted pixel value.
@@ -359,11 +357,8 @@ void call_do_spotfinding_dispersion(dim3 blocks,
                                     dim3 threads,
                                     size_t shared_memory,
                                     cudaStream_t stream,
-                                    pixel_t *image,
-                                    size_t image_pitch,
-                                    uint8_t *mask,
-                                    size_t mask_pitch,
-                                    int width,
+                                    PitchedMalloc<pixel_t> &image,
+                                    PitchedMalloc<uint8_t> &mask int width,
                                     int height,
                                     pixel_t max_valid_pixel_value,
                                     uint8_t *result_strong) {
@@ -373,9 +368,9 @@ void call_do_spotfinding_dispersion(dim3 blocks,
     constexpr int basic_kernel_height = 3;
 
     do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
-      image,
-      image_pitch,
-      mask,
+      image.get(),
+      image.pitch_bytes(),
+      mask.get(),
       nullptr,  // No background mask
       mask_pitch,
       width,
@@ -392,10 +387,8 @@ void call_do_spotfinding_dispersion(dim3 blocks,
  * @param threads The dimensions of the grid of threads within each block.
  * @param shared_memory The size of shared memory required per block (in bytes).
  * @param stream The CUDA stream to execute the kernel.
- * @param image Device pointer to the image data.
- * @param image_pitch The pitch (width in bytes) of the image data.
- * @param mask Device pointer to the mask data indicating valid pixels.
- * @param mask_pitch The pitch (width in bytes) of the mask data.
+ * @param image PitchedMalloc object for the image data.
+ * @param mask PitchedMalloc object for the mask data indicating valid pixels.
  * @param width The width of the image.
  * @param height The height of the image.
  * @param max_valid_pixel_value The maximum valid trusted pixel value.
@@ -405,10 +398,8 @@ void call_do_spotfinding_extended(dim3 blocks,
                                   dim3 threads,
                                   size_t shared_memory,
                                   cudaStream_t stream,
-                                  pixel_t *image,
-                                  size_t image_pitch,
-                                  uint8_t *mask,
-                                  size_t mask_pitch,
+                                  PitchedMalloc<pixel_t> &image,
+                                  PitchedMalloc<uint8_t> &mask,
                                   int width,
                                   int height,
                                   pixel_t max_valid_pixel_value,
@@ -421,9 +412,9 @@ void call_do_spotfinding_extended(dim3 blocks,
 
     // Do the first step of spotfinding
     do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
-      image,
-      image_pitch,
-      mask,
+      image.get(),
+      image.pitch,
+      mask.get(),
       nullptr,  // No background mask
       d_result_strong_buffer.pitch_bytes(),
       width,
@@ -486,7 +477,6 @@ void call_do_spotfinding_extended(dim3 blocks,
                                    first_pass_kernel_radius);
         cudaStreamSynchronize(stream);
     }
-
     if (do_writeout) {
         // Print the erosion mask to png
         auto mask_buffer = std::vector<uint8_t>(width * height);
@@ -521,12 +511,12 @@ void call_do_spotfinding_extended(dim3 blocks,
     }
 
     constexpr int second_pass_kernel_radius = 5;
-
+    printf("Second pass\n");
     // Perform the second step of spotfinding
     do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
-      image,
-      image_pitch,
-      mask,
+      image.get(),
+      image.pitch,
+      mask.get(),
       d_erosion_mask.get(),
       d_erosion_mask.pitch_bytes(),
       width,
@@ -536,5 +526,6 @@ void call_do_spotfinding_extended(dim3 blocks,
       second_pass_kernel_radius,
       result_strong);
     cudaStreamSynchronize(stream);
+    printf("Second pass done\n");
 }
 #pragma endregion Spotfinding Wrappers
