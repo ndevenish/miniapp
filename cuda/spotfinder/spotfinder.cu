@@ -435,7 +435,7 @@ void call_do_spotfinding_extended(dim3 blocks,
     cudaStreamSynchronize(stream);
 
     // Print the first pass result to png
-    {
+    if (do_writeout) {
         auto buffer = std::vector<uint8_t>(width * height);
         cudaMemcpy2DAsync(buffer.data(),
                           width,
