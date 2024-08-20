@@ -358,7 +358,8 @@ void call_do_spotfinding_dispersion(dim3 blocks,
                                     size_t shared_memory,
                                     cudaStream_t stream,
                                     PitchedMalloc<pixel_t> &image,
-                                    PitchedMalloc<uint8_t> &mask int width,
+                                    PitchedMalloc<uint8_t> &mask,
+                                    int width,
                                     int height,
                                     pixel_t max_valid_pixel_value,
                                     uint8_t *result_strong) {
@@ -477,6 +478,7 @@ void call_do_spotfinding_extended(dim3 blocks,
                                    first_pass_kernel_radius);
         cudaStreamSynchronize(stream);
     }
+
     if (do_writeout) {
         // Print the erosion mask to png
         auto mask_buffer = std::vector<uint8_t>(width * height);
@@ -511,7 +513,7 @@ void call_do_spotfinding_extended(dim3 blocks,
     }
 
     constexpr int second_pass_kernel_radius = 5;
-    printf("Second pass\n");
+
     // Perform the second step of spotfinding
     do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
       image.get(),
@@ -526,6 +528,5 @@ void call_do_spotfinding_extended(dim3 blocks,
       second_pass_kernel_radius,
       result_strong);
     cudaStreamSynchronize(stream);
-    printf("Second pass done\n");
 }
 #pragma endregion Spotfinding Wrappers
