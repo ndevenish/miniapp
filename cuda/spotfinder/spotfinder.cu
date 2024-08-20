@@ -373,7 +373,7 @@ void call_do_spotfinding_dispersion(dim3 blocks,
       image.pitch_bytes(),
       mask.get(),
       nullptr,  // No background mask
-      mask_pitch,
+      mask.pitch,
       width,
       height,
       max_valid_pixel_value,
@@ -478,7 +478,6 @@ void call_do_spotfinding_extended(dim3 blocks,
                                    first_pass_kernel_radius);
         cudaStreamSynchronize(stream);
     }
-
     if (do_writeout) {
         // Print the erosion mask to png
         auto mask_buffer = std::vector<uint8_t>(width * height);
@@ -513,7 +512,6 @@ void call_do_spotfinding_extended(dim3 blocks,
     }
 
     constexpr int second_pass_kernel_radius = 5;
-
     // Perform the second step of spotfinding
     do_spotfinding_dispersion<<<blocks, threads, shared_memory, stream>>>(
       image.get(),
