@@ -569,6 +569,8 @@ int main(int argc, char **argv) {
                 }
                 // Sized buffer for the actual data read from file
                 std::span<uint8_t> buffer;
+                // Buffer to hold decompressed 32-bit data
+                std::vector<uint32_t> decompressed_buffer(width * height);
                 // Fetch the image data from the reader
                 while (true) {
                     {
@@ -593,8 +595,12 @@ int main(int argc, char **argv) {
                 // the decompression
                 switch (reader.get_raw_chunk_compression()) {
                 case Reader::ChunkCompression::BITSHUFFLE_LZ4:
-                    bshuf_decompress_lz4(
-                      buffer.data() + 12, host_image.get(), width * height, 2, 0);
+                    printf("Decompressing with bitshuffle\n");
+                    bshuf_decompress_lz4(buffer.data() + 12,
+                                         decompressed_buffer.data(),
+                                         width * height,
+                                         4,
+                                         0);
                     break;
                 case Reader::ChunkCompression::BYTE_OFFSET_32:
                     // decompress_byte_offset<pixel_t>(buffer,
@@ -608,11 +614,19 @@ int main(int argc, char **argv) {
                     // std::exit(1);
                     break;
                 }
+                // Downcast the decompressed 32-bit data to 16-bit and store it in the host_image buffer
+                uint16_t *host_image_16bit =
+                  reinterpret_cast<uint16_t *>(host_image.get());
+                for (size_t i = 0; i < width * height; ++i) {
+                    if (i == 1) print("Pixel value: {}\n", decompressed_buffer[i]);
+                    host_image_16bit[i] = static_cast<uint16_t>(decompressed_buffer[i]);
+                }
                 start.record(stream);
                 // Copy the image to GPU
                 CUDA_CHECK(cudaMemcpy2DAsync(device_image.get(),
                                              device_image.pitch_bytes(),
-                                             host_image.get(),
+                                             //  host_image.get(),
+                                             host_image_16bit,
                                              width * sizeof(pixel_t),
                                              width * sizeof(pixel_t),
                                              height,
@@ -650,7 +664,6 @@ int main(int argc, char **argv) {
                     break;
                 }
                 post.record(stream);
-
                 // Copy the results buffer back to the CPU
                 CUDA_CHECK(cudaMemcpy2DAsync(host_results.get(),
                                              width * sizeof(uint8_t),
