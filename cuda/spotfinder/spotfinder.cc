@@ -617,10 +617,33 @@ int main(int argc, char **argv) {
                 // Downcast the decompressed 32-bit data to 16-bit and store it in the host_image buffer
                 uint16_t *host_image_16bit =
                   reinterpret_cast<uint16_t *>(host_image.get());
+                size_t truncation_count = 0;
+
                 for (size_t i = 0; i < width * height; ++i) {
-                    if (i == 1) print("Pixel value: {}\n", decompressed_buffer[i]);
-                    host_image_16bit[i] = static_cast<uint16_t>(decompressed_buffer[i]);
+                    uint32_t original_value = decompressed_buffer[i];
+
+                    // Manually truncate to 16 bits by selecting the lower 16 bits
+                    uint16_t truncated_value = original_value & 0xFFFF;
+
+                    // Increment the counter if truncation occurs
+                    if (original_value != truncated_value) {
+                        ++truncation_count;
+                        truncated_value = trusted_px_max + 1;
+                    }
+
+                    // Assign the truncated value to the 16-bit image
+                    host_image_16bit[i] = truncated_value;
+
+                    // Optional: Print the first pixel value after truncation
+                    if (i == 1) {
+                        print("Pixel value after truncation: {}\n",
+                              host_image_16bit[i]);
+                    }
                 }
+
+                // After the loop, you can print the total number of truncated values
+                print("Total truncated values: {}\n", truncation_count);
+
                 start.record(stream);
                 // Copy the image to GPU
                 CUDA_CHECK(cudaMemcpy2DAsync(device_image.get(),
