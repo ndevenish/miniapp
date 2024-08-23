@@ -402,6 +402,8 @@ int main(int argc, char **argv) {
     int height = reader.image_shape()[0];
     int width = reader.image_shape()[1];
     auto trusted_px_max = reader.get_trusted_range()[1];
+    trusted_px_max = 64000;  // Temporarily hard code this value
+    printf("Trusted pixel max: %d\n", trusted_px_max);
 
     std::signal(SIGINT, stop_processing);
 
