@@ -624,7 +624,8 @@ int main(int argc, char **argv) {
                     uint32_t original_value = decompressed_buffer[i];
 
                     // Manually truncate to 16 bits by selecting the lower 16 bits
-                    uint16_t truncated_value = original_value & 0xFFFF;
+                    // uint16_t truncated_value = original_value & 0xFFFF;
+                    uint16_t truncated_value = static_cast<uint16_t>(original_value);
 
                     // Increment the counter if truncation occurs
                     if (original_value != truncated_value) {
