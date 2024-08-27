@@ -617,8 +617,7 @@ int main(int argc, char **argv) {
                     break;
                 }
                 // Downcast the decompressed 32-bit data to 16-bit and store it in the host_image buffer
-                uint16_t *host_image_16bit =
-                  reinterpret_cast<uint16_t *>(host_image.get());
+                uint16_t *host_image_16bit = new uint16_t[width * height];
                 size_t truncation_count = 0;
 
                 for (size_t i = 0; i < width * height; ++i) {
