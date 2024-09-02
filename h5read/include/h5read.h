@@ -151,9 +151,7 @@ class Reader {
     virtual std::array<image_t_type, 2> get_trusted_range() const = 0;
     virtual std::array<size_t, 2> image_shape() const = 0;
     virtual std::optional<std::span<const uint8_t>> get_mask() const = 0;
-    virtual std::optional<float> get_wavelength() const {
-        return std::nullopt;
-    }
+    virtual std::optional<float> get_wavelength() const = 0;
 };
 
 // Declare a C++ "object" version so we don't have to keep track of allocations
