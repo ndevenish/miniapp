@@ -403,6 +403,7 @@ int main(int argc, char **argv) {
             std::exit(1);
         }
         wavelength = wavelength_opt.value();
+        printf("Got wavelength from file: %f Å\n", wavelength);
     }
 
     std::signal(SIGINT, stop_processing);
