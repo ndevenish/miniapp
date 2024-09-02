@@ -48,6 +48,8 @@ size_t h5read_get_image_slow(h5read_handle *obj);
 size_t h5read_get_image_fast(h5read_handle *obj);
 /// Get the trusted range for this dataset
 void h5read_get_trusted_range(h5read_handle *obj, image_t_type *min, image_t_type *max);
+/// Get the wavelength for this dataset
+float h5read_get_wavelength(h5read_handle *obj);
 
 /** Borrow a pointer to the image mask.
  *
@@ -234,6 +236,16 @@ class H5Read : public Reader {
         image_t_type min, max;
         h5read_get_trusted_range(_handle.get(), &min, &max);
         return {min, max};
+    }
+    /// Get the wavelength of the X-ray beam
+    virtual std::optional<float> get_wavelength() const {
+        float wavelength = h5read_get_wavelength(_handle.get());
+        if (wavelength == -1) {  // No wavelength provided
+            return std::nullopt;
+        } else {
+            std::optional<float> result = wavelength;
+            return result;
+        }
     }
 
     std::mutex mutex;
