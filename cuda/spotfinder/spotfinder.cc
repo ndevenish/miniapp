@@ -539,6 +539,9 @@ int main(int argc, char **argv) {
             cpu_sync.arrive_and_wait();
             CudaEvent start, copy, post, postcopy, end;
 
+            // Get the time the lastimage was received to avoid waiting for too long
+            auto last_image_received = std::chrono::high_resolution_clock::now();
+
             while (!stop_token.stop_requested()) {
                 auto image_num = next_image.fetch_add(1);
                 if (image_num >= num_images) {
@@ -561,12 +564,12 @@ int main(int argc, char **argv) {
                     // Check that our image is available and wait if not
                     while (!reader.is_image_available(offset_image_num)) {
                         auto current_time = std::chrono::high_resolution_clock::now();
-                        auto elapsed_time =
+                        auto elapsed_wait_time =
                           std::chrono::duration_cast<std::chrono::duration<double>>(
-                            current_time - swmr_wait_start_time)
+                            current_time - last_image_received)
                             .count();
 
-                        if (elapsed_time > wait_timeout) {
+                        if (elapsed_wait_time > wait_timeout) {
                             print("Timeout waiting for image {}\n", offset_image_num);
                             timed_out = true;
                             break;
@@ -579,6 +582,9 @@ int main(int argc, char **argv) {
                     if (timed_out) {
                         break;
                     }
+
+                    // If the image is available, update the last image received time
+                    last_image_received = std::chrono::high_resolution_clock::now();
 
                     time_waiting_for_images +=
                       std::chrono::duration_cast<std::chrono::duration<double>>(
