@@ -39,7 +39,7 @@ class SHMRead : public Reader {
     virtual std::array<image_t_type, 2> get_trusted_range() const {
         return _trusted_range;
     }
-    std::optional<float> get_wavelength() const override {
+    std::optional<float> get_wavelength() const {
         return _wavelength;
     }
 };
