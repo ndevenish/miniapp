@@ -397,7 +397,9 @@ int main(int argc, char **argv) {
     } else {
         auto wavelength_opt = reader.get_wavelength();
         if (!wavelength_opt) {
-            print("Error: No wavelength provided\n");
+            print(
+              "Error: No wavelength provided. Please pass wavelength using: "
+              "--wavelength\n");
             std::exit(1);
         }
         wavelength = wavelength_opt.value();
