@@ -403,8 +403,6 @@ int main(int argc, char **argv) {
         wavelength = wavelength_opt.value();
     }
 
-    printf("Wavelength: %f\n", wavelength);
-
     std::signal(SIGINT, stop_processing);
 
     // Work out how many blocks this is
