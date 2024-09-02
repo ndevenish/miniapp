@@ -550,7 +550,6 @@ int main(int argc, char **argv) {
                 auto offset_image_num = image_num + parser.get<uint32_t>("start-index");
                 {
                     // TODO:
-                    // - This loop does not handle the stop token
                     //  - Counting time like this does not work efficiently
                     //    because it might not be the "next" image that
                     //    gets the lock.
