@@ -547,13 +547,10 @@ int main(int argc, char **argv) {
                 auto offset_image_num = image_num + parser.get<uint32_t>("start-index");
                 {
                     // TODO:
-                    //  - This loop does not handle the stop token
                     //  - Counting time like this does not work efficiently
                     //    because it might not be the "next" image that
                     //    gets the lock.
-                    //  - This freezes if the collection is stopped;
-                    //    continue implementing timout feature
-                    //
+
                     // Lock so we don't duplicate wait count, and also
                     // because we don't know if the HDF5 function is threadsafe
                     std::scoped_lock lock(reader_mutex);
