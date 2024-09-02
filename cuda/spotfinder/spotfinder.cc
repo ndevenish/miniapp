@@ -559,10 +559,30 @@ int main(int argc, char **argv) {
                     std::scoped_lock lock(reader_mutex);
                     auto swmr_wait_start_time =
                       std::chrono::high_resolution_clock::now();
+
+                    bool timed_out = false;
                     // Check that our image is available and wait if not
                     while (!reader.is_image_available(offset_image_num)) {
+                        auto current_time = std::chrono::high_resolution_clock::now();
+                        auto elapsed_time =
+                          std::chrono::duration_cast<std::chrono::duration<double>>(
+                            current_time - swmr_wait_start_time)
+                            .count();
+
+                        if (elapsed_time > wait_timeout) {
+                            print("Timeout waiting for image {}\n", offset_image_num);
+                            timed_out = true;
+                            break;
+                        }
+
+                        // Sleep for a bit to avoid busy-waiting
                         std::this_thread::sleep_for(100ms);
                     }
+
+                    if (timed_out) {
+                        break;
+                    }
+
                     time_waiting_for_images +=
                       std::chrono::duration_cast<std::chrono::duration<double>>(
                         std::chrono::high_resolution_clock::now()
