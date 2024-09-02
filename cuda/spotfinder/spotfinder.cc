@@ -550,6 +550,7 @@ int main(int argc, char **argv) {
                 auto offset_image_num = image_num + parser.get<uint32_t>("start-index");
                 {
                     // TODO:
+                    // - This loop does not handle the stop token
                     //  - Counting time like this does not work efficiently
                     //    because it might not be the "next" image that
                     //    gets the lock.
@@ -560,9 +561,9 @@ int main(int argc, char **argv) {
                     auto swmr_wait_start_time =
                       std::chrono::high_resolution_clock::now();
 
-                    bool timed_out = false;
                     // Check that our image is available and wait if not
-                    while (!reader.is_image_available(offset_image_num)) {
+                    while (!reader.is_image_available(offset_image_num)
+                           && !stop_token.stop_requested()) {
                         auto current_time = std::chrono::high_resolution_clock::now();
                         auto elapsed_wait_time =
                           std::chrono::duration_cast<std::chrono::duration<double>>(
@@ -571,7 +572,7 @@ int main(int argc, char **argv) {
 
                         if (elapsed_wait_time > wait_timeout) {
                             print("Timeout waiting for image {}\n", offset_image_num);
-                            timed_out = true;
+                            global_stop.request_stop();
                             break;
                         }
 
@@ -579,7 +580,7 @@ int main(int argc, char **argv) {
                         std::this_thread::sleep_for(100ms);
                     }
 
-                    if (timed_out) {
+                    if (stop_token.stop_requested()) {
                         break;
                     }
 
