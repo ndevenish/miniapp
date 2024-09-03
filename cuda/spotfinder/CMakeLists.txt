@@ -14,6 +14,7 @@ include(AlwaysColourCompilation)
 
 
 include_directories(../common/include)
+include_directories(./kernels)
 
 # Dependency fetching
 set(FETCHCONTENT_QUIET OFF)
@@ -49,7 +50,13 @@ find_package(CUDAToolkit REQUIRED)
 find_package(Boost REQUIRED COMPONENTS graph)
 find_package(lodepng)
 
-add_executable(spotfinder spotfinder.cc spotfinder.cu shmread.cc cbfread.cc)
+add_executable(spotfinder 
+    spotfinder.cc 
+    spotfinder.cu 
+    shmread.cc 
+    cbfread.cc
+    kernels/erosion.cu
+)
 target_link_libraries(spotfinder
     PRIVATE
     fmt
