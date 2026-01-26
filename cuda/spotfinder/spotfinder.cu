@@ -83,7 +83,7 @@ __device__ float get_resolution(float wavelength,
  * @param dmin The minimum resolution (d-spacing) threshold.
  * @param dmax The maximum resolution (d-spacing) threshold.
  */
-__global__ void apply_resolution_mask(uint8_t *mask,
+__global__ void apply_resolution_mask(uint8_t* mask,
                                       size_t mask_pitch,
                                       int width,
                                       int height,
@@ -148,7 +148,7 @@ void call_apply_resolution_mask(dim3 blocks,
                                 dim3 threads,
                                 size_t shared_memory,
                                 cudaStream_t stream,
-                                uint8_t *mask,
+                                uint8_t* mask,
                                 ResolutionMaskParams params) {
     // Launch the kernel
     apply_resolution_mask<<<blocks, threads, shared_memory, stream>>>(
@@ -166,9 +166,9 @@ void call_apply_resolution_mask(dim3 blocks,
       params.dmax);
 }
 
-__global__ void do_spotfinding_naive(pixel_t *image,
+__global__ void do_spotfinding_naive(pixel_t* image,
                                      size_t image_pitch,
-                                     uint8_t *mask,
+                                     uint8_t* mask,
                                      size_t mask_pitch,
                                      int width,
                                      int height,
@@ -176,7 +176,7 @@ __global__ void do_spotfinding_naive(pixel_t *image,
                                      //  int *result_sum,
                                      //  size_t *result_sumsq,
                                      //  uint8_t *result_n,
-                                     uint8_t *result_strong) {
+                                     uint8_t* result_strong) {
     image = image + (image_pitch * height * blockIdx.z);
     // result_sum = result_sum + (image_pitch * height * blockIdx.z);
     // result_sumsq = result_sumsq + (image_pitch * height * blockIdx.z);
@@ -251,9 +251,9 @@ void call_do_spotfinding_naive(dim3 blocks,
                                dim3 threads,
                                size_t shared_memory,
                                cudaStream_t stream,
-                               pixel_t *image,
+                               pixel_t* image,
                                size_t image_pitch,
-                               uint8_t *mask,
+                               uint8_t* mask,
                                size_t mask_pitch,
                                int width,
                                int height,
@@ -261,7 +261,7 @@ void call_do_spotfinding_naive(dim3 blocks,
                                //  int *result_sum,
                                //  size_t *result_sumsq,
                                //  uint8_t *result_n,
-                               uint8_t *result_strong) {
+                               uint8_t* result_strong) {
     do_spotfinding_naive<<<blocks, threads, shared_memory, stream>>>(
       image,
       image_pitch,

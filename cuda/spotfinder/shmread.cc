@@ -12,7 +12,7 @@
 using json = nlohmann::json;
 using namespace fmt;
 
-SHMRead::SHMRead(const std::string &path) : _base_path(path) {
+SHMRead::SHMRead(const std::string& path) : _base_path(path) {
     // Read the header
     auto header_path = path + "/start_1";
     std::ifstream f(header_path);
@@ -45,11 +45,11 @@ SHMRead::SHMRead(const std::string &path) : _base_path(path) {
     raw_mask.resize(_image_shape[0] * _image_shape[1]);
     std::ifstream f_mask(format("{}/start_4", _base_path),
                          std::ios::in | std::ios::binary);
-    f_mask.read(reinterpret_cast<char *>(raw_mask.data()),
+    f_mask.read(reinterpret_cast<char*>(raw_mask.data()),
                 raw_mask.size() * sizeof(decltype(raw_mask)::value_type));
     // draw_image_data(raw_mask.data(), 0, 0, 20, 20, _image_shape[1], _image_shape[0]);
     _mask.reserve(_image_shape[0] * _image_shape[1]);
-    for (auto &v : raw_mask) {
+    for (auto& v : raw_mask) {
         _mask.push_back(!v);
     }
     // return {destination.data(), static_cast<size_t>(f.gcount())};
@@ -63,12 +63,12 @@ std::span<uint8_t> SHMRead::get_raw_chunk(size_t index,
                                           std::span<uint8_t> destination) {
     std::ifstream f(format("{}/image_{:06d}_2", _base_path, index),
                     std::ios::in | std::ios::binary);
-    f.read(reinterpret_cast<char *>(destination.data()), destination.size());
+    f.read(reinterpret_cast<char*>(destination.data()), destination.size());
     return {destination.data(), static_cast<size_t>(f.gcount())};
 }
 
 template <>
-bool is_ready_for_read<SHMRead>(const std::string &path) {
+bool is_ready_for_read<SHMRead>(const std::string& path) {
     // We need headers.1, and headers.5, to read the metadata
     return std::filesystem::exists(format("{}/start_1", path))
            && std::filesystem::exists(format("{}/start_4", path));

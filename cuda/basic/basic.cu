@@ -26,8 +26,8 @@ using namespace fmt;
 using pixel_t = H5Read::image_type;
 
 /// GPU Kernel to sum a whole image
-__global__ void do_sum_image(size_t *block_store,
-                             pixel_t *data,
+__global__ void do_sum_image(size_t* block_store,
+                             pixel_t* data,
                              size_t pitch,
                              size_t width,
                              size_t height) {
@@ -88,7 +88,7 @@ __global__ void do_sum_image(size_t *block_store,
     }
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
     // Parse arguments and get our H5Reader
     auto parser = CUDAArgumentParser();
     parser.add_h5read_arguments();
@@ -117,7 +117,7 @@ int main(int argc, char **argv) {
     auto host_image = std::make_unique<pixel_t[]>(width * height);
 
     // Create a device-side pitched area
-    pixel_t *dev_image = nullptr;
+    pixel_t* dev_image = nullptr;
     size_t device_pitch = 0;
     cudaMallocPitch(&dev_image, &device_pitch, width * sizeof(pixel_t), height);
     print("Allocated device memory. Pitch = {} vs naive {}\n",
@@ -126,7 +126,7 @@ int main(int argc, char **argv) {
     cuda_throw_error();
 
     // And a device-side location to store per-block results
-    size_t *dev_result = nullptr;
+    size_t* dev_result = nullptr;
     cudaMalloc(&dev_result, sizeof(decltype(*dev_result)) * num_blocks);
     cuda_throw_error();
 

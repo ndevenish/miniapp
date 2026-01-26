@@ -30,16 +30,16 @@ constexpr int KERNEL_WIDTH = 3;
 /// One-direction height of kernel. Total kernel span is (K_H * 2 + 1)
 constexpr int KERNEL_HEIGHT = 3;
 
-__global__ void do_spotfinding_naive(pixel_t *image,
+__global__ void do_spotfinding_naive(pixel_t* image,
                                      size_t image_pitch,
-                                     uint8_t *mask,
+                                     uint8_t* mask,
                                      size_t mask_pitch,
                                      int width,
                                      int height,
-                                     int *result_sum,
-                                     size_t *result_sumsq,
-                                     uint8_t *result_n,
-                                     uint8_t *result_strong) {
+                                     int* result_sum,
+                                     size_t* result_sumsq,
+                                     uint8_t* result_n,
+                                     uint8_t* result_strong) {
     image = image + (image_pitch * height * blockIdx.z);
     result_sum = result_sum + (image_pitch * height * blockIdx.z);
     result_sumsq = result_sumsq + (image_pitch * height * blockIdx.z);
@@ -110,7 +110,7 @@ __global__ void do_spotfinding_naive(pixel_t *image,
     }
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
     // Parse arguments and get our H5Reader
     auto parser = CUDAArgumentParser();
     parser.add_h5read_arguments();
