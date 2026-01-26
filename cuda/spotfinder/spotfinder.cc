@@ -47,7 +47,7 @@ extern "C" void stop_processing(int sig) {
 }
 
 /// Very basic comparison operator for convenience
-auto operator==(const int2 &left, const int2 &right) -> bool {
+auto operator==(const int2& left, const int2& right) -> bool {
     return left.x == right.x && left.y == right.y;
 }
 
@@ -87,7 +87,7 @@ struct PitchedMalloc {
 
 /// Copy the mask from a reader into a pitched GPU area
 template <typename T>
-auto upload_mask(T &reader) -> PitchedMalloc<uint8_t> {
+auto upload_mask(T& reader) -> PitchedMalloc<uint8_t> {
     size_t height = reader.image_shape()[0];
     size_t width = reader.image_shape()[1];
 
@@ -165,7 +165,7 @@ void apply_resolution_filtering(PitchedMalloc<uint8_t> mask,
 }
 
 /// Handle setting up an NppStreamContext from a specific stream
-auto create_npp_context_from_stream(const CudaStream &stream) -> NppStreamContext {
+auto create_npp_context_from_stream(const CudaStream& stream) -> NppStreamContext {
     NppStreamContext npp_context;
     npp_context.hStream = stream;
     CUDA_CHECK(cudaGetDevice(&npp_context.nCudaDeviceId));
@@ -187,8 +187,8 @@ auto create_npp_context_from_stream(const CudaStream &stream) -> NppStreamContex
     return npp_context;
 }
 
-void wait_for_ready_for_read(const std::string &path,
-                             std::function<bool(const std::string &)> checker,
+void wait_for_ready_for_read(const std::string& path,
+                             std::function<bool(const std::string&)> checker,
                              float timeout = 120.0f) {
     if (!checker(path)) {
         auto start_time = std::chrono::high_resolution_clock::now();
@@ -254,7 +254,7 @@ class PipeHandler {
      * @brief Sends data through the pipe in a thread-safe manner.
      * @param json_data A json object containing the data to be sent.
      */
-    void sendData(const json &json_data) {
+    void sendData(const json& json_data) {
         // Lock the mutex, to ensure that only one thread writes to the pipe at a time
         // This unlocks the mutex when the function returns
         std::lock_guard<std::mutex> lock(mtx);
@@ -277,7 +277,7 @@ class PipeHandler {
     }
 };
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
     // Parse arguments and get our H5Reader
     auto parser = CUDAArgumentParser();
     parser.add_h5read_arguments();
@@ -360,7 +360,7 @@ int main(int argc, char **argv) {
     if (!std::filesystem::exists(args.file)) {
         wait_for_ready_for_read(
           args.file,
-          [](const std::string &s) { return std::filesystem::exists(s); },
+          [](const std::string& s) { return std::filesystem::exists(s); },
           wait_timeout);
     }
     if (std::filesystem::is_directory(args.file)) {
@@ -380,7 +380,7 @@ int main(int argc, char **argv) {
                                        : std::make_unique<H5Read>(args.file);
     }
     // Bind this as a reference
-    Reader &reader = *reader_ptr;
+    Reader& reader = *reader_ptr;
 
     auto reader_mutex = std::mutex{};
 
@@ -445,7 +445,7 @@ int main(int argc, char **argv) {
             }
         }
         lodepng::encode("mask_source.png",
-                        reinterpret_cast<uint8_t *>(image_mask.data()),
+                        reinterpret_cast<uint8_t*>(image_mask.data()),
                         width,
                         height,
                         LCT_RGB);
@@ -478,7 +478,7 @@ int main(int argc, char **argv) {
                 }
             }
             lodepng::encode("mask_calculated.png",
-                            reinterpret_cast<uint8_t *>(image_mask.data()),
+                            reinterpret_cast<uint8_t*>(image_mask.data()),
                             width,
                             height,
                             LCT_RGB);
@@ -740,7 +740,7 @@ int main(int argc, char **argv) {
                 for (int i = 0; i < labels.size(); ++i) {
                     auto label = labels[i];
                     auto coord = px_coords[i];
-                    Reflection &box = boxes[label];
+                    Reflection& box = boxes[label];
                     box.l = std::min(box.l, coord.x);
                     box.r = std::max(box.r, coord.x);
                     box.t = std::min(box.t, coord.y);
@@ -750,7 +750,7 @@ int main(int argc, char **argv) {
 
                 if (min_spot_size > 0) {
                     std::vector<Reflection> filtered_boxes;
-                    for (auto &box : boxes) {
+                    for (auto& box : boxes) {
                         if (box.num_pixels >= min_spot_size) {
                             filtered_boxes.emplace_back(box);
                         }
@@ -796,7 +796,7 @@ int main(int argc, char **argv) {
                     // Go over each shoebox and write a square
                     // for (auto box : boxes) {
                     for (int i = 0; i < boxes.size(); ++i) {
-                        auto &box = boxes[i];
+                        auto& box = boxes[i];
                         constexpr std::array<uint8_t, 3> color_shoebox{0, 0, 255};
 
                         // edgeMin/edgeMax define how thick the border is
@@ -821,7 +821,7 @@ int main(int argc, char **argv) {
                         }
                     }
                     lodepng::encode(format("image_{:05d}.png", image_num),
-                                    reinterpret_cast<uint8_t *>(buffer.data()),
+                                    reinterpret_cast<uint8_t*>(buffer.data()),
                                     width,
                                     height,
                                     LCT_RGB);
@@ -927,7 +927,7 @@ int main(int argc, char **argv) {
         });
     }
     // For now, just wait on all threads to finish
-    for (auto &thread : threads) {
+    for (auto& thread : threads) {
         thread.join();
     }
 

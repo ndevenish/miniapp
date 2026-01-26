@@ -33,7 +33,7 @@ constexpr int KERNEL_HEIGHT = 3;
 
 template <typename T, typename Sum = T>
 __device__ auto calculate_area_sum(T exchange_block[32][32],
-                                   const cg::thread_block &block) -> Sum {
+                                   const cg::thread_block& block) -> Sum {
     Sum sum = 0;
     // If we aren't in the edge KERNEL pixels, then we calculate and update
     if (block.thread_index().x >= KERNEL_WIDTH
@@ -63,20 +63,20 @@ __device__ auto calculate_area_sum(T exchange_block[32][32],
     }
     return sum;
 }
-__global__ void do_spotfinding_sat(pixel_t *image,
+__global__ void do_spotfinding_sat(pixel_t* image,
                                    size_t image_pitch,
-                                   uint8_t *mask,
+                                   uint8_t* mask,
                                    size_t mask_pitch,
                                    int width,
                                    int height,
-                                   int *result_sum,
-                                   size_t *result_sumsq,
-                                   uint8_t *result_n,
-                                   uint8_t *result_strong) {
+                                   int* result_sum,
+                                   size_t* result_sumsq,
+                                   uint8_t* result_n,
+                                   uint8_t* result_strong) {
     assert(blockDim.x == 32 && blockDim.y == 32. "Expect 32x32 block operation area");
     __shared__ uint64_t block_exchange_8[32][32];
-    auto block_exchange_4 = reinterpret_cast<uint32_t(*)[32]>(block_exchange_8);
-    auto block_exchange_2 = reinterpret_cast<uint16_t(*)[32]>(block_exchange_8);
+    auto block_exchange_4 = reinterpret_cast<uint32_t (*)[32]>(block_exchange_8);
+    auto block_exchange_2 = reinterpret_cast<uint16_t (*)[32]>(block_exchange_8);
     // uint32_t block_exchange_4[32][32] = (uint32_t[32][32])block_exchange_8;
     // uint16_t *block_exchange_2 = (uint16_t *)block_exchange_8;
 
@@ -190,7 +190,7 @@ __global__ void do_spotfinding_sat(pixel_t *image,
     }
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
     // Parse arguments and get our H5Reader
     auto parser = CUDAArgumentParser();
     parser.add_h5read_arguments();

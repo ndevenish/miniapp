@@ -7,7 +7,7 @@
 
 using namespace sycl;
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
     auto parser = FPGAArgumentParser();
     parser.add_h5read_arguments();
     auto args = parser.parse_args(argc, argv);

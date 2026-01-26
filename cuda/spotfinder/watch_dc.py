@@ -3,14 +3,15 @@ from __future__ import annotations
 import argparse
 import itertools
 import os
+import re
 import shlex
+import shutil
 import subprocess
 import sys
 import time
-import re
 from functools import lru_cache
 from pathlib import Path
-import shutil
+
 import requests
 
 R = "\033[31m"
@@ -216,7 +217,7 @@ def run():
                     f"Discarding {BOLD}{len(existing)}{NC} pre-existing data collections"
                 )
             else:
-                print(f"No existing data collections.")
+                print("No existing data collections.")
 
     if is_visit(args.visit_or_beamline):
         word = "in"

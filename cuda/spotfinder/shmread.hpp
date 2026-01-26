@@ -17,7 +17,7 @@ class SHMRead : public Reader {
     std::optional<float> _wavelength;
 
   public:
-    SHMRead(const std::string &path);
+    SHMRead(const std::string& path);
 
     bool is_image_available(size_t index);
 
@@ -45,4 +45,4 @@ class SHMRead : public Reader {
 };
 
 template <>
-bool is_ready_for_read<SHMRead>(const std::string &path);
+bool is_ready_for_read<SHMRead>(const std::string& path);

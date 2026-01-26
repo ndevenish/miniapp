@@ -55,7 +55,7 @@ struct detector_geometry {
         std::vector<std::string> required_keys = {
           "pixel_size_x", "pixel_size_y", "beam_center_x", "beam_center_y", "distance"};
 
-        for (const auto &key : required_keys) {
+        for (const auto& key : required_keys) {
             if (geometry_data.find(key) == geometry_data.end()) {
                 throw std::invalid_argument("Key " + key
                                             + " is missing from the input JSON");
@@ -94,16 +94,16 @@ void call_apply_resolution_mask(dim3 blocks,
                                 dim3 threads,
                                 size_t shared_memory,
                                 cudaStream_t stream,
-                                uint8_t *mask,
+                                uint8_t* mask,
                                 ResolutionMaskParams params);
 
 void call_do_spotfinding_naive(dim3 blocks,
                                dim3 threads,
                                size_t shared_memory,
                                cudaStream_t stream,
-                               pixel_t *image,
+                               pixel_t* image,
                                size_t image_pitch,
-                               uint8_t *mask,
+                               uint8_t* mask,
                                size_t mask_pitch,
                                int width,
                                int height,
@@ -111,6 +111,6 @@ void call_do_spotfinding_naive(dim3 blocks,
                                //  int *result_sum,
                                //  size_t *result_sumsq,
                                //  uint8_t *result_n,
-                               uint8_t *result_strong);
+                               uint8_t* result_strong);
 
 #endif

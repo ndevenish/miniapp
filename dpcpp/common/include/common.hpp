@@ -49,13 +49,13 @@ class fpga_index_selector {
     static std::vector<std::string> get_device_list(void) {
         std::vector<std::string> devices;
         // Iterate over all platforms to find the FPGA ones
-        for (auto const &platform : sycl::platform::get_platforms()) {
+        for (auto const& platform : sycl::platform::get_platforms()) {
             if (platform.get_info<sycl::info::platform::name>()
                 != HARDWARE_PLATFORM_NAME) {
                 continue;
             }
             // We've found an FPGA platform. Get the name of all devices
-            for (auto &device : platform.get_devices()) {
+            for (auto& device : platform.get_devices()) {
                 auto device_name = device.get_info<sycl::info::device::name>();
                 if (std::find(devices.begin(), devices.end(), device_name)
                     != devices.end()) {
@@ -86,12 +86,12 @@ class fpga_index_selector {
     }
 
     /// Used by SYCL to choose a device. Only scores devices that match the expected names.
-    virtual int operator()(const sycl::device &device) const {
+    virtual int operator()(const sycl::device& device) const {
 #if defined(FPGA_EMULATOR)
         // if we've specified FPGA emulator, then let's always choose that, regardless
         // of system-FPGA-platform-order.
-        const sycl::platform &pf = device.get_platform();
-        const std::string &platform_name = pf.get_info<sycl::info::platform::name>();
+        const sycl::platform& pf = device.get_platform();
+        const std::string& platform_name = pf.get_info<sycl::info::platform::name>();
         if (platform_name == EMULATION_PLATFORM_NAME) {
             return 10000;
         }
@@ -139,24 +139,24 @@ class FPGAArgumentParser : public argparse::ArgumentParser {
         this->add_argument("-v", "--verbose")
           .help("Verbose output")
           .implicit_value(false)
-          .action([&](const std::string &value) { _arguments.verbose = true; });
+          .action([&](const std::string& value) { _arguments.verbose = true; });
 
         this->add_argument("-d", "--device")
           .help("Index of the FPGA device to target.")
           .default_value(0)
           .metavar("INDEX")
-          .action([&](const std::string &value) {
+          .action([&](const std::string& value) {
               _arguments.device_index = std::stoi(value);
               return _arguments.device_index;
           });
         this->add_argument("--list-devices")
           .help("List the order of FPGA devices, then quit.")
           .implicit_value(false)
-          .action([](const std::string &value) {
+          .action([](const std::string& value) {
               auto devices = fpga_index_selector::get_device_list();
               int index = 0;
               fmt::print("System devices:\n");
-              for (auto &device : devices) {
+              for (auto& device : devices) {
                   fmt::print("  {:2d}: {}{}{}\n", index, BOLD, device, NC);
                   ++index;
               }
@@ -174,10 +174,10 @@ class FPGAArgumentParser : public argparse::ArgumentParser {
         return _device.value();
     }
 
-    auto parse_args(int argc, char **argv) -> ARGS {
+    auto parse_args(int argc, char** argv) -> ARGS {
         try {
             ArgumentParser::parse_args(argc, argv);
-        } catch (std::runtime_error &e) {
+        } catch (std::runtime_error& e) {
             fmt::print("{}{}Error: {}{}{}{}\n{}\n",
                        BOLD,
                        R,
@@ -188,7 +188,7 @@ class FPGAArgumentParser : public argparse::ArgumentParser {
                        ArgumentParser::usage());
             std::exit(1);
         }
-        FPGAArguments &args = static_cast<FPGAArguments &>(_arguments);
+        FPGAArguments& args = static_cast<FPGAArguments&>(_arguments);
         // Print information about the device we are using
         auto device = _arguments.device();
         std::string device_kind = device.is_cpu()           ? "CPU"
@@ -216,7 +216,7 @@ class FPGAArgumentParser : public argparse::ArgumentParser {
     void add_h5read_arguments() {
         bool implicit_sample = std::getenv("H5READ_IMPLICIT_SAMPLE") != NULL;
 
-        auto &group = add_mutually_exclusive_group(!implicit_sample);
+        auto& group = add_mutually_exclusive_group(!implicit_sample);
         group.add_argument("--sample")
           .help(
             "Don't load a data file, instead use generated test data. If "
@@ -226,7 +226,7 @@ class FPGAArgumentParser : public argparse::ArgumentParser {
         group.add_argument("file")
           .metavar("FILE.nxs")
           .help("Path to the Nexus file to parse")
-          .action([&](const std::string &value) { _arguments.file = value; });
+          .action([&](const std::string& value) { _arguments.file = value; });
         _activated_h5read = true;
     }
 

@@ -27,11 +27,11 @@ class cuda_error : public std::runtime_error {
 };
 
 inline auto cuda_error_string(cudaError_t err) {
-    const char *err_name = cudaGetErrorName(err);
-    const char *err_str = cudaGetErrorString(err);
+    const char* err_name = cudaGetErrorName(err);
+    const char* err_str = cudaGetErrorString(err);
     return fmt::format("{}: {}", std::string{err_name}, std::string{err_str});
 }
-inline auto _cuda_check_error(cudaError_t err, const char *file, int line_num) {
+inline auto _cuda_check_error(cudaError_t err, const char* file, int line_num) {
     if (err != cudaSuccess) {
         throw cuda_error(
           fmt::format("{}:{}: {}", file, line_num, cuda_error_string(err)));
@@ -41,7 +41,7 @@ inline auto _cuda_check_error(cudaError_t err, const char *file, int line_num) {
 // Don't force inclusion of npp headers
 #ifdef NV_NPPIDEFS_H
 template <typename T>
-inline void _npp_check_error(T status, const char *file, int line_num) {
+inline void _npp_check_error(T status, const char* file, int line_num) {
     if (status != NPP_SUCCESS) {
         throw cuda_error(fmt::format("{}:{}: NPP returned non-successful status ({})",
                                      file,
@@ -84,27 +84,27 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
         this->add_argument("-v", "--verbose")
           .help("Verbose output")
           .implicit_value(false)
-          .action([&](const std::string &value) { _arguments.verbose = true; });
+          .action([&](const std::string& value) { _arguments.verbose = true; });
 
         this->add_argument("-d", "--device")
           .help("Index of the CUDA device device to target.")
           .default_value(0)
           .metavar("INDEX")
-          .action([&](const std::string &value) {
+          .action([&](const std::string& value) {
               _arguments.device_index = std::stoi(value);
               return _arguments.device_index;
           });
         this->add_argument("--image")
           .help("Single image number to analyse, if not all")
           .metavar("NUM")
-          .action([&](const std::string &value) {
+          .action([&](const std::string& value) {
               _arguments.image_number = std::stoi(value);
               return _arguments.image_number;
           });
         this->add_argument("--list-devices")
           .help("List the order of CUDA devices, then quit.")
           .implicit_value(false)
-          .action([](const std::string &value) {
+          .action([](const std::string& value) {
               int deviceCount;
               if (cudaGetDeviceCount(&deviceCount) != cudaSuccess) {
                   fmt::print("\033[1;31mError: Could not get GPU count ({})\033[0m\n",
@@ -130,7 +130,7 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
           });
     }
 
-    auto parse_args(int argc, char **argv) -> CUDAArguments {
+    auto parse_args(int argc, char** argv) -> CUDAArguments {
         // Convert these to std::string
         std::vector<std::string> args{argv, argv + argc};
         // Look for a "common.args" file in the current folder. If
@@ -158,7 +158,7 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
 
         try {
             ArgumentParser::parse_args(args);
-        } catch (std::runtime_error &e) {
+        } catch (std::runtime_error& e) {
             fmt::print("{}: {}\n{}\n",
                        bold(red("Error")),
                        red(e.what()),
@@ -199,7 +199,7 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
     void add_h5read_arguments() {
         bool implicit_sample = std::getenv("H5READ_IMPLICIT_SAMPLE") != NULL;
 
-        auto &group = add_mutually_exclusive_group(!implicit_sample);
+        auto& group = add_mutually_exclusive_group(!implicit_sample);
         group.add_argument("--sample")
           .help(
             "Don't load a data file, instead use generated test data. If "
@@ -209,7 +209,7 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
         group.add_argument("file")
           .metavar("FILE.nxs")
           .help("Path to the Nexus file to parse")
-          .action([&](const std::string &value) { _arguments.file = value; });
+          .action([&](const std::string& value) { _arguments.file = value; });
         _activated_h5read = true;
     }
 
@@ -221,27 +221,27 @@ class CUDAArgumentParser : public argparse::ArgumentParser {
 template <typename T>
 auto make_cuda_malloc(size_t num_items = 1) {
     using Tb = typename std::remove_extent<T>::type;
-    Tb *obj = nullptr;
+    Tb* obj = nullptr;
     auto err = cudaMalloc(&obj, sizeof(Tb) * num_items);
     if (err != cudaSuccess || obj == nullptr) {
         throw cuda_error(
           fmt::format("Error in make_cuda_malloc: {}", cuda_error_string(err)));
     }
-    auto deleter = [](Tb *ptr) { cudaFree(ptr); };
+    auto deleter = [](Tb* ptr) { cudaFree(ptr); };
     return std::unique_ptr<T, decltype(deleter)>{obj, deleter};
 }
 
 template <typename T>
 auto make_cuda_managed_malloc(size_t num_items) {
     using Tb = typename std::remove_extent<T>::type;
-    Tb *obj = nullptr;
+    Tb* obj = nullptr;
     auto err = cudaMallocManaged(&obj, sizeof(Tb) * num_items);
     if (err != cudaSuccess || obj == nullptr) {
         throw cuda_error(
           fmt::format("Error in make_cuda_managed_malloc: {}", cuda_error_string(err)));
     }
 
-    auto deleter = [](Tb *ptr) { cudaFree(ptr); };
+    auto deleter = [](Tb* ptr) { cudaFree(ptr); };
     return std::unique_ptr<T, decltype(deleter)>{obj, deleter};
 }
 
@@ -249,13 +249,13 @@ auto make_cuda_managed_malloc(size_t num_items) {
 template <typename T>
 auto make_cuda_pinned_malloc(size_t num_items = 1) {
     using Tb = typename std::remove_extent<T>::type;
-    Tb *obj = nullptr;
+    Tb* obj = nullptr;
     auto err = cudaMallocHost(&obj, sizeof(Tb) * num_items);
     if (err != cudaSuccess || obj == nullptr) {
         throw cuda_error(
           fmt::format("Error in make_cuda_pinned_malloc: {}", cuda_error_string(err)));
     }
-    auto deleter = [](Tb *ptr) { cudaFreeHost(ptr); };
+    auto deleter = [](Tb* ptr) { cudaFreeHost(ptr); };
     return std::shared_ptr<T[]>{obj, deleter};
 }
 
@@ -264,14 +264,14 @@ auto make_cuda_pitched_malloc(size_t width, size_t height) {
     static_assert(!std::is_unbounded_array_v<T>,
                   "T automatically returns unbounded array pointer");
     size_t pitch = 0;
-    T *obj = nullptr;
+    T* obj = nullptr;
     auto err = cudaMallocPitch(&obj, &pitch, width * sizeof(T), height);
     if (err != cudaSuccess || obj == nullptr) {
         throw cuda_error(
           fmt::format("Error in make_cuda_pitched_malloc: {}", cuda_error_string(err)));
     }
 
-    auto deleter = [](T *ptr) { cudaFree(ptr); };
+    auto deleter = [](T* ptr) { cudaFree(ptr); };
 
     return std::make_pair(std::shared_ptr<T[]>(obj, deleter), pitch / sizeof(T));
 }
@@ -311,7 +311,7 @@ class CudaEvent {
         }
     }
     /// Elapsed Event time, in milliseconds
-    float elapsed_time(CudaEvent &since) {
+    float elapsed_time(CudaEvent& since) {
         float elapsed_time = 0.0f;
         if (cudaEventElapsedTime(&elapsed_time, since.event, event) != cudaSuccess) {
             cuda_throw_error();
